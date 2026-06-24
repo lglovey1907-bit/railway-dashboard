@@ -1,0 +1,580 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Workspace Layout Engine
+// Persists per-cell layouts in localStorage under rly_layout_[cell]
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type WidgetType =
+ | 'table' | 'kpi' | 'text' | 'chart' | 'staff' | 'activity'
+ | 'shared_table' | 'approval_queue' | 'staff_requests' | 'announcements'
+ | 'quick_links' | 'embed' | 'google_sheet';
+
+export interface LayoutWidget {
+ id: string;
+ type: WidgetType;
+ title: string;
+ // type-specific data
+ tableId?: string; // for 'table' widgets
+ sharedTableId?: string; // for 'shared_table' widgets
+ kpiLabel?: string;
+ kpiValue?: string;
+ kpiSuffix?: string;
+ content?: string; // text/announcements/embed URL
+ links?: { label: string; url: string }[];
+ collapsed?: boolean;
+ pinned?: boolean;
+ fullscreen?: boolean;
+ googleSheetUrl?: string;
+}
+
+export interface LayoutColumn {
+ id: string;
+ widthPercent: number; // flexible, columns sum to 100
+ widgets: LayoutWidget[];
+}
+
+export interface LayoutVersion {
+ id: string;
+ label: string; // e.g."Daily Operations"
+ savedAt: string;
+ savedBy: string;
+ savedByName: string;
+ columns: LayoutColumn[];
+}
+
+export interface CellLayout {
+ cell: string;
+ activeLayoutId: string;
+ layouts: LayoutVersion[]; // named saved layouts
+ columns: LayoutColumn[]; // current working layout
+ columnCount: number;
+ updatedAt: string;
+ updatedBy?: string;
+ updatedByName?: string;
+}
+
+// ── Default templates ─────────────────────────────────────────────────────────
+function gid() { return `w${Date.now()}${Math.floor(Math.random()*9999)}`; }
+
+function makeCol(widthPercent: number, widgets: LayoutWidget[] = []): LayoutColumn {
+ return { id: gid(), widthPercent, widgets };
+}
+
+function makeWidget(type: WidgetType, title: string, extra: Partial<LayoutWidget> = {}): LayoutWidget {
+ return { id: gid(), type, title, collapsed: false, pinned: false, ...extra };
+}
+
+export const TEMPLATES: Record<string, { label: string; columns: LayoutColumn[] }> = {
+ blank_1: {
+ label: '1 Column',
+ columns: [makeCol(100)],
+ },
+ blank_2: {
+ label: '2 Columns (50/50)',
+ columns: [makeCol(50), makeCol(50)],
+ },
+ blank_3: {
+ label: '3 Columns (33/33/34)',
+ columns: [makeCol(33), makeCol(33), makeCol(34)],
+ },
+ blank_4: {
+ label: '4 Columns (25 each)',
+ columns: [makeCol(25), makeCol(25), makeCol(25), makeCol(25)],
+ },
+ blank_5: {
+ label: '5 Columns (20 each)',
+ columns: [makeCol(20), makeCol(20), makeCol(20), makeCol(20), makeCol(20)],
+ },
+ wide_side: {
+ label: 'Wide + Sidebar (70/30)',
+ columns: [makeCol(70), makeCol(30)],
+ },
+ dashboard: {
+ label: 'Dashboard (40/30/30)',
+ columns: [makeCol(40), makeCol(30), makeCol(30)],
+ },
+ manpower: {
+ label: 'Manpower Planning Template',
+ columns: [
+ makeCol(30, [
+ makeWidget('staff', 'Staff Summary'),
+ makeWidget('kpi', 'Vacancy Positions', { kpiLabel: 'Vacancies', kpiValue: '12' }),
+ ]),
+ makeCol(40, [
+ makeWidget('table', 'DRM Office Staff'),
+ makeWidget('shared_table', 'Shared Databases'),
+ ]),
+ makeCol(30, [
+ makeWidget('approval_queue', 'Pending Approvals'),
+ makeWidget('staff_requests', 'Transfer Requests'),
+ makeWidget('activity', 'Recent Activity'),
+ ]),
+ ],
+ },
+ commercial_control: {
+ label: 'Commercial Control Template',
+ columns: [
+ makeCol(20, [makeWidget('kpi', 'UTS Revenue')]),
+ makeCol(20, [makeWidget('kpi', 'PRS Bookings')]),
+ makeCol(20, [makeWidget('kpi', 'Footfall')]),
+ makeCol(20, [makeWidget('kpi', 'Pending Complaints')]),
+ makeCol(20, [makeWidget('announcements', 'Notices & Circulars')]),
+ ],
+ },
+ publicity: {
+ label: 'Publicity Template',
+ columns: [
+ makeCol(60, [makeWidget('table', 'Campaign Register')]),
+ makeCol(40, [
+ makeWidget('kpi', 'Active Campaigns'),
+ makeWidget('announcements', 'Announcements'),
+ makeWidget('activity', 'Recent Activity'),
+ ]),
+ ],
+ },
+};
+
+const DEFAULT_TEMPLATE = 'wide_side';
+
+// ── Storage ───────────────────────────────────────────────────────────────────
+function storageKey(cell: string) {
+ return `rly_layout_${cell.replace(/[^a-zA-Z0-9]/g, '_')}`;
+}
+
+function deepCloneColumns(cols: LayoutColumn[]): LayoutColumn[] {
+ return JSON.parse(JSON.stringify(cols));
+}
+
+export function getLayout(cell: string): CellLayout {
+ if (typeof window === 'undefined') {
+ return makeDefaultLayout(cell);
+ }
+ try {
+ const raw = localStorage.getItem(storageKey(cell));
+ if (raw) return JSON.parse(raw) as CellLayout;
+ } catch { /* ignore */ }
+ return makeDefaultLayout(cell);
+}
+
+function makeDefaultLayout(cell: string): CellLayout {
+ const tpl = TEMPLATES[DEFAULT_TEMPLATE];
+ const now = new Date().toISOString();
+ const id = gid();
+ return {
+ cell,
+ activeLayoutId: id,
+ layouts: [],
+ columns: deepCloneColumns(tpl.columns),
+ columnCount: tpl.columns.length,
+ updatedAt: now,
+ };
+}
+
+export function saveLayout(layout: CellLayout) {
+ if (typeof window === 'undefined') return;
+ localStorage.setItem(storageKey(layout.cell), JSON.stringify({
+ ...layout,
+ updatedAt: new Date().toISOString(),
+ }));
+}
+
+// ── Layout mutations ──────────────────────────────────────────────────────────
+export function applyTemplate(
+ current: CellLayout, templateKey: string,
+): CellLayout {
+ const tpl = TEMPLATES[templateKey];
+ if (!tpl) return current;
+ return {
+ ...current,
+ columns: deepCloneColumns(tpl.columns),
+ columnCount: tpl.columns.length,
+ };
+}
+
+export function setColumns(current: CellLayout, count: number): CellLayout {
+ const cols = [...current.columns];
+ while (cols.length < count) cols.push(makeCol(0));
+ const trimmed = cols.slice(0, count);
+ // Redistribute widths evenly
+ const total = 100;
+ const base = Math.floor(total / count);
+ const rem = total - base * count;
+ const normalized = trimmed.map((c, i) => ({
+ ...c,
+ widthPercent: base + (i === trimmed.length - 1 ? rem : 0),
+ }));
+ return { ...current, columns: normalized, columnCount: count };
+}
+
+export function resizeColumn(
+ current: CellLayout, colId: string, newPercent: number,
+): CellLayout {
+ const idx = current.columns.findIndex(c => c.id === colId);
+ if (idx < 0) return current;
+ // Adjust adjacent column to compensate
+ const cols = [...current.columns];
+ const oldPct = cols[idx].widthPercent;
+ const delta = newPercent - oldPct;
+ const adjIdx = idx < cols.length - 1 ? idx + 1 : idx - 1;
+ if (adjIdx < 0 || adjIdx >= cols.length) return current;
+ const adjNew = Math.max(5, cols[adjIdx].widthPercent - delta);
+ const fixedNew = Math.min(90, Math.max(5, newPercent));
+ cols[idx] = { ...cols[idx], widthPercent: fixedNew };
+ cols[adjIdx] = { ...cols[adjIdx], widthPercent: adjNew };
+ return { ...current, columns: cols };
+}
+
+export function addWidget(
+ current: CellLayout, colId: string, widget: Partial<LayoutWidget>,
+): CellLayout {
+ const w = makeWidget(widget.type ?? 'text', widget.title ?? 'Widget', widget);
+ return {
+ ...current,
+ columns: current.columns.map(c =>
+ c.id !== colId ? c : { ...c, widgets: [...c.widgets, w] }
+ ),
+ };
+}
+
+export function removeWidget(
+ current: CellLayout, colId: string, widgetId: string,
+): CellLayout {
+ return {
+ ...current,
+ columns: current.columns.map(c =>
+ c.id !== colId ? c : { ...c, widgets: c.widgets.filter(w => w.id !== widgetId) }
+ ),
+ };
+}
+
+export function updateWidget(
+ current: CellLayout, colId: string, widgetId: string, patch: Partial<LayoutWidget>,
+): CellLayout {
+ return {
+ ...current,
+ columns: current.columns.map(c =>
+ c.id !== colId ? c : {
+ ...c,
+ widgets: c.widgets.map(w => w.id !== widgetId ? w : { ...w, ...patch }),
+ }
+ ),
+ };
+}
+
+export function moveWidget(
+ current: CellLayout,
+ fromColId: string, fromIdx: number,
+ toColId: string, toIdx: number,
+): CellLayout {
+ let widget: LayoutWidget | null = null;
+ let cols = current.columns.map(c => {
+ if (c.id !== fromColId) return c;
+ const widgets = [...c.widgets];
+ [widget] = widgets.splice(fromIdx, 1);
+ return { ...c, widgets };
+ });
+ if (!widget) return current;
+ const w = widget;
+ cols = cols.map(c => {
+ if (c.id !== toColId) return c;
+ const widgets = [...c.widgets];
+ widgets.splice(toIdx, 0, w);
+ return { ...c, widgets };
+ });
+ return { ...current, columns: cols };
+}
+
+export function toggleWidgetProp(
+ current: CellLayout, colId: string, widgetId: string,
+ prop: 'collapsed' | 'pinned' | 'fullscreen',
+): CellLayout {
+ return {
+ ...current,
+ columns: current.columns.map(c =>
+ c.id !== colId ? c : {
+ ...c,
+ widgets: c.widgets.map(w =>
+ w.id !== widgetId ? w : { ...w, [prop]: !w[prop] }
+ ),
+ }
+ ),
+ };
+}
+
+// ── Named layouts (saved snapshots) ──────────────────────────────────────────
+export function saveNamedLayout(
+ current: CellLayout, label: string, userId: string, userName: string,
+): CellLayout {
+ const version: LayoutVersion = {
+ id: gid(),
+ label,
+ savedAt: new Date().toISOString(),
+ savedBy: userId,
+ savedByName: userName,
+ columns: deepCloneColumns(current.columns),
+ };
+ return { ...current, layouts: [version, ...current.layouts].slice(0, 20) };
+}
+
+export function loadNamedLayout(
+ current: CellLayout, versionId: string,
+): CellLayout {
+ const v = current.layouts.find(l => l.id === versionId);
+ if (!v) return current;
+ return { ...current, columns: deepCloneColumns(v.columns), columnCount: v.columns.length };
+}
+
+export const AVAILABLE_WIDGETS: { type: WidgetType; label: string; description: string; icon: string }[] = [
+ { type: 'table', label: 'Table', description: 'Create or embed a database table', icon: 'Table2' },
+ { type: 'kpi', label: 'KPI Card', description: 'Show a key metric at a glance', icon: 'BarChart3' },
+ { type: 'text', label: 'Notes / Text', description: 'Rich text notes and documentation', icon: 'FileText' },
+ { type: 'staff', label: 'Staff List', description: 'Cell staff roster', icon: 'Users2' },
+ { type: 'activity', label: 'Activity Feed', description: 'Recent changes and actions', icon: 'Activity' },
+ { type: 'approval_queue', label: 'Approval Queue', description: 'Pending staff approvals', icon: 'UserCheck' },
+ { type: 'staff_requests', label: 'Staff Requests', description: 'Submit add/remove/transfer requests', icon: 'ClipboardList' },
+ { type: 'shared_table', label: 'Shared Tables', description: 'Tables shared from other cells', icon: 'Share2' },
+ { type: 'announcements', label: 'Announcements', description: 'Notices and circulars', icon: 'Megaphone' },
+ { type: 'quick_links', label: 'Quick Links', description: 'Useful links and shortcuts', icon: 'Link2' },
+ { type: 'google_sheet', label: 'Google Sheet View', description: 'Live embedded Google Sheet', icon: 'FileSpreadsheet' },
+ { type: 'embed', label: 'Embed', description: 'Embed any URL (Power BI, reports, etc.)', icon: 'Globe' },
+ { type: 'chart', label: 'Chart', description: 'Revenue / statistics chart', icon: 'TrendingUp' },
+];
+
+// ── Row-based layout extension (req 76–78) ────────────────────────────────────
+// A workspace can be divided into rows, each with its own column layout.
+// This enables the full nested layout model: rows of columns, each cell
+// containing widgets.
+
+export interface LayoutRow {
+  id: string;
+  label?: string;           // e.g. "KPI Row", "Tables Row"
+  heightMode: 'auto' | 'fixed';
+  fixedHeight?: number;     // px, used when heightMode === 'fixed'
+  columns: LayoutColumn[];  // reuse existing LayoutColumn/Widget types
+  collapsed: boolean;
+}
+
+export interface RowBasedLayout {
+  cell: string;
+  rows: LayoutRow[];
+  updatedAt: string;
+  updatedBy?: string;
+  updatedByName?: string;
+  versions: Array<{
+    id: string; label: string; savedAt: string;
+    savedBy: string; savedByName: string;
+    rows: LayoutRow[];
+  }>;
+}
+
+const ROW_KEY = (cell: string) =>
+  `rly_rowlayout_${cell.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+function gidR() { return `r${Date.now()}${Math.floor(Math.random() * 9999)}`; }
+
+function defaultRow(widths: number[] = [100]): LayoutRow {
+  return {
+    id: gidR(),
+    heightMode: 'auto',
+    collapsed: false,
+    columns: widths.map(w => ({ id: gidR(), widthPercent: w, widgets: [] })),
+  };
+}
+
+export function getRowLayout(cell: string): RowBasedLayout {
+  if (typeof window === 'undefined') return makeDefaultRowLayout(cell);
+  try {
+    const raw = localStorage.getItem(ROW_KEY(cell));
+    if (raw) return JSON.parse(raw) as RowBasedLayout;
+  } catch { /* ignore */ }
+  return makeDefaultRowLayout(cell);
+}
+
+function makeDefaultRowLayout(cell: string): RowBasedLayout {
+  return {
+    cell, updatedAt: new Date().toISOString(), versions: [],
+    rows: [
+      { ...defaultRow([100]), label: 'KPI Overview' },
+      { ...defaultRow([65, 35]), label: 'Main Content' },
+      { ...defaultRow([33, 33, 34]), label: 'Additional' },
+    ],
+  };
+}
+
+export function saveRowLayout(layout: RowBasedLayout): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(ROW_KEY(layout.cell), JSON.stringify({
+    ...layout, updatedAt: new Date().toISOString(),
+  }));
+}
+
+// Row mutations
+export function addRow(layout: RowBasedLayout, afterRowId?: string): RowBasedLayout {
+  const newRow = defaultRow([100]);
+  if (!afterRowId) return { ...layout, rows: [...layout.rows, newRow] };
+  const idx = layout.rows.findIndex(r => r.id === afterRowId);
+  const rows = [...layout.rows];
+  rows.splice(idx + 1, 0, newRow);
+  return { ...layout, rows };
+}
+
+export function removeRow(layout: RowBasedLayout, rowId: string): RowBasedLayout {
+  return { ...layout, rows: layout.rows.filter(r => r.id !== rowId) };
+}
+
+export function moveRow(layout: RowBasedLayout, rowId: string, dir: 'up' | 'down'): RowBasedLayout {
+  const rows = [...layout.rows];
+  const idx = rows.findIndex(r => r.id === rowId);
+  if (idx < 0) return layout;
+  const newIdx = dir === 'up' ? idx - 1 : idx + 1;
+  if (newIdx < 0 || newIdx >= rows.length) return layout;
+  [rows[idx], rows[newIdx]] = [rows[newIdx], rows[idx]];
+  return { ...layout, rows };
+}
+
+export function updateRow(layout: RowBasedLayout, rowId: string, patch: Partial<LayoutRow>): RowBasedLayout {
+  return { ...layout, rows: layout.rows.map(r => r.id !== rowId ? r : { ...r, ...patch }) };
+}
+
+export function setRowColumns(layout: RowBasedLayout, rowId: string, widths: number[]): RowBasedLayout {
+  return {
+    ...layout,
+    rows: layout.rows.map(r => {
+      if (r.id !== rowId) return r;
+      // Redistribute while preserving existing widgets where possible
+      const newCols = widths.map((w, i) => ({
+        id: r.columns[i]?.id ?? gidR(),
+        widthPercent: w,
+        widgets: r.columns[i]?.widgets ?? [],
+      }));
+      return { ...r, columns: newCols };
+    }),
+  };
+}
+
+export function addWidgetToRow(
+  layout: RowBasedLayout, rowId: string, colId: string, widget: Partial<LayoutWidget>
+): RowBasedLayout {
+  const w = { id: gidR(), type: widget.type ?? 'text', title: widget.title ?? 'Widget',
+    collapsed: false, pinned: false, ...widget };
+  return {
+    ...layout,
+    rows: layout.rows.map(r => r.id !== rowId ? r : {
+      ...r,
+      columns: r.columns.map(c => c.id !== colId ? c : {
+        ...c, widgets: [...c.widgets, w],
+      }),
+    }),
+  };
+}
+
+export function removeWidgetFromRow(
+  layout: RowBasedLayout, rowId: string, colId: string, widgetId: string
+): RowBasedLayout {
+  return {
+    ...layout,
+    rows: layout.rows.map(r => r.id !== rowId ? r : {
+      ...r,
+      columns: r.columns.map(c => c.id !== colId ? c : {
+        ...c, widgets: c.widgets.filter(w => w.id !== widgetId),
+      }),
+    }),
+  };
+}
+
+export function updateWidgetInRow(
+  layout: RowBasedLayout, rowId: string, colId: string, widgetId: string, patch: Partial<LayoutWidget>
+): RowBasedLayout {
+  return {
+    ...layout,
+    rows: layout.rows.map(r => r.id !== rowId ? r : {
+      ...r,
+      columns: r.columns.map(c => c.id !== colId ? c : {
+        ...c, widgets: c.widgets.map(w => w.id !== widgetId ? w : { ...w, ...patch }),
+      }),
+    }),
+  };
+}
+
+export function moveWidgetInRow(
+  layout: RowBasedLayout,
+  fromRowId: string, fromColId: string, fromIdx: number,
+  toRowId: string, toColId: string, toIdx: number
+): RowBasedLayout {
+  // Extract the widget
+  let widget: LayoutWidget | null = null;
+  let rows = layout.rows.map(r => {
+    if (r.id !== fromRowId) return r;
+    return {
+      ...r, columns: r.columns.map(c => {
+        if (c.id !== fromColId) return c;
+        const ws = [...c.widgets];
+        [widget] = ws.splice(fromIdx, 1);
+        return { ...c, widgets: ws };
+      }),
+    };
+  });
+  if (!widget) return layout;
+  const w = widget;
+  rows = rows.map(r => {
+    if (r.id !== toRowId) return r;
+    return {
+      ...r, columns: r.columns.map(c => {
+        if (c.id !== toColId) return c;
+        const ws = [...c.widgets];
+        ws.splice(toIdx, 0, w);
+        return { ...c, widgets: ws };
+      }),
+    };
+  });
+  return { ...layout, rows };
+}
+
+export function resizeRowColumn(
+  layout: RowBasedLayout, rowId: string, colId: string, newPct: number
+): RowBasedLayout {
+  return {
+    ...layout,
+    rows: layout.rows.map(r => {
+      if (r.id !== rowId) return r;
+      const idx = r.columns.findIndex(c => c.id === colId);
+      if (idx < 0 || idx >= r.columns.length - 1) return r;
+      const cols = [...r.columns];
+      const adjIdx = idx + 1;
+      const total = cols[idx].widthPercent + cols[adjIdx].widthPercent;
+      const fixed = Math.max(5, Math.min(total - 5, newPct));
+      cols[idx] = { ...cols[idx], widthPercent: fixed };
+      cols[adjIdx] = { ...cols[adjIdx], widthPercent: total - fixed };
+      return { ...r, columns: cols };
+    }),
+  };
+}
+
+export function saveRowLayoutVersion(
+  layout: RowBasedLayout, label: string, userId: string, userName: string
+): RowBasedLayout {
+  const version = {
+    id: gidR(), label, savedAt: new Date().toISOString(),
+    savedBy: userId, savedByName: userName,
+    rows: JSON.parse(JSON.stringify(layout.rows)),
+  };
+  return { ...layout, versions: [version, ...layout.versions].slice(0, 20) };
+}
+
+export function loadRowLayoutVersion(layout: RowBasedLayout, versionId: string): RowBasedLayout {
+  const v = layout.versions.find(v => v.id === versionId);
+  if (!v) return layout;
+  return { ...layout, rows: JSON.parse(JSON.stringify(v.rows)) };
+}
+
+export const ROW_COLUMN_PRESETS: { label: string; widths: number[] }[] = [
+  { label: '1 Column',      widths: [100] },
+  { label: '2 Equal',       widths: [50, 50] },
+  { label: '3 Equal',       widths: [33, 33, 34] },
+  { label: '4 Equal',       widths: [25, 25, 25, 25] },
+  { label: '5 Equal',       widths: [20, 20, 20, 20, 20] },
+  { label: '60 / 40',       widths: [60, 40] },
+  { label: '70 / 30',       widths: [70, 30] },
+  { label: '40 / 30 / 30',  widths: [40, 30, 30] },
+  { label: '60 / 20 / 20',  widths: [60, 20, 20] },
+  { label: '50 / 25 / 25',  widths: [50, 25, 25] },
+];
