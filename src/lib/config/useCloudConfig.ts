@@ -1,13 +1,4 @@
 'use client';
-/**
- * useCloudConfig — cross-device config sync via API → Upstash Redis
- *
- * Behaviour:
- * - On mount / userId change: loads from Upstash, falls back to localStorage
- * - On write: saves to BOTH localStorage (instant) AND Upstash (cross-device)
- * - If Upstash not configured: silently works as localStorage-only
- * - Upstash value takes precedence over localStorage when available
- */
 import { useState, useEffect, useCallback, useRef } from 'react';
 
 export interface CloudConfigState<T> {
@@ -54,28 +45,38 @@ function lsSet(ns: string, v: string | null) {
 
 export function useCloudConfig<T>(namespace: string, userId: string | undefined): CloudConfigState<T> {
   const [value,       setValue]   = useState<T | null>(() => {
-    // Initialise from localStorage synchronously to avoid blank flash
+    // Sync init from localStorage — shows data instantly, no flash
     const raw = lsGet(namespace);
     if (!raw) return null;
     try { return JSON.parse(raw); } catch { return raw as unknown as T; }
   });
-  const [loading,     setLoading] = useState(true);
+  const [loading,     setLoading] = useState(false);
   const [kvAvailable, setKvAvail] = useState(false);
-  const alive = useRef(true);
-  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  const alive     = useRef(true);
+  const lastUserId = useRef<string>('');
 
-  // Load from Upstash whenever userId is known (handles login / user change)
   useEffect(() => {
-    if (!userId) { setLoading(false); return; }
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
+
+  // ── Fetch from Upstash whenever userId becomes available ──────────────────
+  // This effect re-runs when userId changes from undefined/'' to 'm1'
+  // That's the critical moment: authStore has hydrated, user is now known
+  useEffect(() => {
+    if (!userId) return;                        // wait until user is known
+    if (userId === lastUserId.current) return;  // already fetched for this user
+    lastUserId.current = userId;
+
     setLoading(true);
     apiGet(userId, namespace).then(({ value: kvRaw, kvAvailable: kv }) => {
       if (!alive.current) return;
       setKvAvail(kv);
       setLoading(false);
       if (kvRaw !== null) {
-        // Upstash has a value — it's the authoritative cross-device source
+        // Upstash has a value — write it to localStorage and update state
         lsSet(namespace, kvRaw);
-        try { setValue(JSON.parse(kvRaw)); }
+        try { setValue(JSON.parse(kvRaw) as T); }
         catch { setValue(kvRaw as unknown as T); }
       }
     });
@@ -83,10 +84,8 @@ export function useCloudConfig<T>(namespace: string, userId: string | undefined)
 
   const set = useCallback(async (v: T | null) => {
     const serialised = v === null ? null : JSON.stringify(v);
-    // Write localStorage immediately (instant, offline)
     lsSet(namespace, serialised);
     setValue(v);
-    // Write to Upstash in background (cross-device)
     if (userId) await apiSet(userId, namespace, serialised);
   }, [namespace, userId]);
 

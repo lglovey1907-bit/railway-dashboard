@@ -26,12 +26,20 @@ export interface PageSheetState {
   kvAvailable: boolean;
   setUrl: (url: string, linkedBy?: string) => void;
   setPollInterval: (ms: number) => void;
-  setUserId: (id: string) => void;
+  setUserId: (id: string) => void;  // kept for API compat, no longer needed
   refetch: () => void;
   clear: () => void;
 }
 
-export function usePageSheet(storageKey: string, initialUserId?: string): PageSheetState {
+/**
+ * FIX: userId is passed directly to useCloudConfig — NOT stored in useState.
+ * Previously: useState(initialUserId) → only set once on first render when
+ * user was null → userId stayed '' forever → Upstash never queried.
+ *
+ * Now: userId prop is passed directly. When authStore hydrates and user.id
+ * becomes available, useCloudConfig's useEffect re-runs and fetches from Upstash.
+ */
+export function usePageSheet(storageKey: string, userId?: string): PageSheetState {
   const [url,       setUrlState]  = useState('');
   const [rows,      setRows]      = useState<SheetRow[]>([]);
   const [headers,   setHeaders]   = useState<string[]>([]);
@@ -41,15 +49,15 @@ export function usePageSheet(storageKey: string, initialUserId?: string): PageSh
   const [linkedAt,  setLinkedAt]  = useState('');
   const [linkedBy,  setLinkedBy]  = useState('');
   const [sheetName, setSheetName] = useState('');
-  const [userId,    setUserId]    = useState(initialUserId ?? '');
   const pollRef         = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollIntervalRef = useRef<number>(POLL_INTERVAL_MS);
-  const appliedCloud    = useRef(false);   // track if we already applied cloud value
+  const appliedRef      = useRef<string>(''); // tracks which userId's cloud value was applied
 
-  // Cloud config — reads Upstash on mount whenever userId is known
-  const cloud = useCloudConfig<string>(storageKey, userId || undefined);
+  // ── KEY FIX: userId passed directly, not stored in useState ──────────────
+  // useCloudConfig re-fetches from Upstash whenever userId changes
+  const cloud = useCloudConfig<string>(storageKey, userId);
 
-  // ── Step 1: On mount, load from localStorage immediately ─────────────────
+  // ── Step 1: Load from localStorage on mount ───────────────────────────────
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
@@ -68,7 +76,6 @@ export function usePageSheet(storageKey: string, initialUserId?: string): PageSh
       }
     } catch { /* ignore */ }
 
-    // Restore cached rows so page shows data instantly
     try {
       const rawCache = localStorage.getItem(cacheKey(storageKey));
       if (rawCache) {
@@ -82,32 +89,29 @@ export function usePageSheet(storageKey: string, initialUserId?: string): PageSh
     } catch { /* ignore */ }
   }, [storageKey]);
 
-  // ── Step 2: When Upstash resolves, apply URL if it differs ───────────────
-  // This is the critical fix: we watch cloud.value directly and apply it
-  // as soon as it arrives, without waiting for cloud.loading to be false
-  // (loading can stay true on devices where KV fetch is slow)
+  // ── Step 2: Apply Upstash value when it arrives ───────────────────────────
+  // Runs whenever cloud.value changes (i.e. when Upstash fetch completes)
+  // appliedRef prevents re-applying the same value on subsequent renders
   useEffect(() => {
     const cloudUrl = cloud.value;
-    if (!cloudUrl) return;               // Upstash has nothing — keep localStorage
-    if (appliedCloud.current) return;    // only apply once per session
-    // Cloud URL is the authoritative cross-device value
-    // Always apply it, even if it matches current url
-    appliedCloud.current = true;
+    if (!cloudUrl) return;
+    if (!userId) return;                       // no user yet, wait
+    if (appliedRef.current === userId) return; // already applied for this user
+    appliedRef.current = userId;               // mark as applied for this user
+
+    // Apply the Upstash URL — this is the cross-device value
     setUrlState(cloudUrl);
-    // Write back to localStorage so future mounts are instant
+
+    // Persist to localStorage so future mounts are instant
     if (typeof window !== 'undefined') {
       localStorage.setItem(storageKey, cloudUrl);
-      const existing = localStorage.getItem(metaKey(storageKey));
-      if (!existing) {
+      if (!localStorage.getItem(metaKey(storageKey))) {
         localStorage.setItem(metaKey(storageKey), JSON.stringify({ url: cloudUrl }));
       }
     }
-  }, [cloud.value, storageKey]);
+  }, [cloud.value, userId, storageKey]);
 
-  // Reset appliedCloud flag when userId changes (e.g. different user logs in)
-  useEffect(() => { appliedCloud.current = false; }, [userId]);
-
-  // ── Step 3: Fetch sheet data whenever url changes ────────────────────────
+  // ── Step 3: Fetch + poll when URL changes ─────────────────────────────────
   const doFetch = useCallback(async (targetUrl: string) => {
     if (!targetUrl) { setRows([]); setHeaders([]); setError(null); return; }
     setLoading(true);
@@ -137,7 +141,7 @@ export function usePageSheet(storageKey: string, initialUserId?: string): PageSh
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [url, doFetch]);
 
-  // ── Mutations ────────────────────────────────────────────────────────────
+  // ── Mutations ─────────────────────────────────────────────────────────────
   const setUrl = useCallback((newUrl: string, by?: string) => {
     const now = new Date().toISOString();
     setUrlState(newUrl);
@@ -145,8 +149,9 @@ export function usePageSheet(storageKey: string, initialUserId?: string): PageSh
     if (by) setLinkedBy(by);
     if (typeof window !== 'undefined') {
       if (newUrl) {
-        const meta: SheetMeta = { url: newUrl, linkedAt: now, linkedBy: by ?? '' };
-        localStorage.setItem(metaKey(storageKey), JSON.stringify(meta));
+        localStorage.setItem(metaKey(storageKey), JSON.stringify({
+          url: newUrl, linkedAt: now, linkedBy: by ?? '',
+        }));
         localStorage.setItem(storageKey, newUrl);
       } else {
         localStorage.removeItem(metaKey(storageKey));
@@ -155,7 +160,7 @@ export function usePageSheet(storageKey: string, initialUserId?: string): PageSh
         setRows([]); setHeaders([]); setFetchedAt(null); setError(null);
       }
     }
-    // Save to Upstash for cross-device sync
+    // Save to Upstash — this is the cross-device write
     cloud.set(newUrl || null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey, cloud.set]);
@@ -166,8 +171,9 @@ export function usePageSheet(storageKey: string, initialUserId?: string): PageSh
     if (url) pollRef.current = setInterval(() => doFetch(url), ms);
   }, [url, doFetch]);
 
-  const refetch = useCallback(() => { if (url) doFetch(url); }, [url, doFetch]);
-  const clear   = useCallback(() => setUrl(''), [setUrl]);
+  const refetch   = useCallback(() => { if (url) doFetch(url); }, [url, doFetch]);
+  const clear     = useCallback(() => setUrl(''), [setUrl]);
+  const setUserId = useCallback(() => {}, []); // no-op, kept for API compat
 
   return {
     url, rows, headers, fetchedAt, loading, error, sheetName,
