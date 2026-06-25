@@ -16,6 +16,7 @@ import { PageSheetLinkBar } from '@/components/sheets/PageSheetLinkBar';
 import { SheetViewBuilder } from '@/components/sheets/SheetViewBuilder';
 import { PowerBIEmbed } from '@/components/embeds/PowerBIEmbed';
 import { PoliciesWorkspace } from '@/components/policies/PoliciesWorkspace';
+import { OverviewWorkspace } from '@/components/overview/OverviewWorkspace';
 import ProfilePage from '@/app/dashboard/profile/page';
 import {
  ChevronRight, ChevronDown, Train, Users, MonitorCheck,
@@ -257,12 +258,19 @@ function NSGGroupCard({
 type ViewMode = 'nsg' | 'station' | 'section' | 'cmi';
 
 const VIEW_OPTIONS: { id: ViewMode; label: string }[] = [
- { id: 'nsg', label: 'NSG Category Wise' },
- { id: 'station', label: 'Station Wise' },
- { id: 'section', label: 'Section Wise' },
- { id: 'cmi', label: 'CMI Wise' },
+  { id: 'nsg', label: 'NSG Category Wise' },
+  { id: 'station', label: 'Station Wise' },
+  { id: 'section', label: 'Section Wise' },
+  { id: 'cmi', label: 'CMI Wise' },
 ];
 
+type RevenueSubTab = 'prs' | 'uts' | 'footfall' | 'tc';
+const REVENUE_SUBTABS: { id: RevenueSubTab; label: string }[] = [
+  { id: 'prs', label: 'PRS' },
+  { id: 'uts', label: 'UTS' },
+  { id: 'footfall', label: 'Footfall' },
+  { id: 'tc', label: 'Ticket Checking' },
+];
 // Shared tabular view for Station / Section / CMI modes
 function StationTableView({
  stations, sheetRows, sheetConnected, fields,
@@ -322,253 +330,6 @@ function StationTableView({
  );
 }
 
-function OverviewTab() {
- const { user } = useAuthStore();
- const canEdit = user?.cell === 'Planning' || user?.role === 'maintenance' || user?.role === 'admin';
- const [search, setSearch] = useState('');
- const [groupFilter, setGroupFilter] = useState<string>('All');
-
- // ── Single consolidated Google Sheet ──────────────────────────────────────
- const pageSheet = usePageSheet('sheet_nsg_category_wise', user?.id);
- const sheetConnected = !!pageSheet.url;
-
- // ── View store (persists across refresh/deploy) ────────────────────────────
- const [viewStore, setViewStore] = useState<ViewStore>(() => getViewStore('sheet_nsg_category_wise'));
- const activeView = viewStore.views.find(v => v.id === viewStore.activeViewId) ?? viewStore.views[0];
-
- const commitStore = (next: ViewStore) => { setViewStore(next); saveViewStore(next); };
-
- // Sync view fields from sheet headers whenever headers change
- useEffect(() => {
-   if (pageSheet.headers.length === 0 || !activeView) return;
-   const synced = syncViewFields(activeView, pageSheet.headers);
-   if (synced.length !== activeView.fields.length) {
-     commitStore(updateViewFields(viewStore, activeView.id, synced));
-   }
- // eslint-disable-next-line react-hooks/exhaustive-deps
- }, [pageSheet.headers.join(','), activeView?.id]);
-
- // Sync interval → pageSheet poll
- useEffect(() => {
-   pageSheet.setPollInterval(viewStore.syncIntervalMinutes * 60_000);
- // eslint-disable-next-line react-hooks/exhaustive-deps
- }, [viewStore.syncIntervalMinutes]);
-
- // Derive viewMode from active view for backwards-compat with existing rendering code
- const viewMode: ViewMode = (activeView?.id === 'v_nsg' ? 'nsg' :
-   activeView?.id === 'v_station' ? 'station' :
-   activeView?.id === 'v_section' ? 'section' :
-   activeView?.id === 'v_cmi' ? 'cmi' : 'station') as ViewMode;
-
- // ── User-configurable field list ───────────────────────────────────────────
- const pageFields = usePageFields('fields_nsg_category_wise');
-
- const CATEGORIES = ['NSG-1','NSG-2','NSG-3','NSG-4','NSG-5','NSG-6','HG-1','HG-2','HG-3'];
-
- const grouped = useMemo(() => {
- return CATEGORIES.reduce((acc, cat) => {
- acc[cat] = STATION_MASTER.filter(s =>
- s.category === cat &&
- (search === '' || s.name.toLowerCase().includes(search.toLowerCase()) || s.code.toLowerCase().includes(search.toLowerCase()))
- );
- return acc;
- }, {} as Record<string, typeof STATION_MASTER>);
- }, [search]);
-
- const totals = useMemo(() => ({
- total: STATION_MASTER.length,
- byState: Array.from(new Set(STATION_MASTER.map(s => s.state))).length,
- filled: Object.keys(STATION_PLANNING_DATA).length,
- }), []);
-
- // All sections / CMIs present in the master list, for grouping + filter dropdown
- const allSections = useMemo(() => Array.from(new Set(STATION_MASTER.map(s => s.section))).sort(), []);
- const allCMIs = useMemo(() => Array.from(new Set(STATION_MASTER.map(s => s.cmi))).sort(), []);
-
- // Filtered station list shared by station/section/cmi table views
- const filteredStations = useMemo(() => {
- return STATION_MASTER.filter(s =>
- (search === '' || s.name.toLowerCase().includes(search.toLowerCase()) || s.code.toLowerCase().includes(search.toLowerCase()))
- );
- }, [search]);
-
-
- return (
- <div className="space-y-4">
- {/* Consolidated Google Sheet — single source for the whole page */}
- <PageSheetLinkBar sheet={pageSheet} canEdit={canEdit} pageLabel="NSG Category Wise"
- expectedFields={['Code', ...pageFields.fields.map(f => f.column)]} />
-
-      {/* View field configurator — dynamically maps sheet columns to display fields */}
-      {canEdit && (
-        <div className="flex justify-end -mt-1.5">
-          <SheetViewBuilder
-            fields={pageFields.fields}
-            sheetHeaders={pageSheet.headers}
-            canEdit={canEdit}
-            onToggle={pageFields.toggleField}
-            onRename={pageFields.renameField}
-            onMove={pageFields.moveField}
-            onAdd={pageFields.addField}
-            onRemove={pageFields.removeField}
-            onReset={pageFields.resetToDefaults}
-          />
-        </div>
-      )}
- {/* Summary strip */}
- <div className="grid grid-cols-3 gap-3">
- {[
- { label: 'Total Stations', value: totals.total, sub: 'Delhi Division', accent: 'blue' },
- { label: 'States / UTs', value: totals.byState, sub: 'covered', accent: 'violet' },
- { label: 'Data Entries', value: totals.filled, sub: 'of ' + totals.total, accent: 'emerald' },
- ].map(({ label, value, sub, accent }) => (
- <GlassCard key={label} className="p-4 relative overflow-hidden">
- <div className={cn('absolute top-0 left-0 right-0 h-0.5',
- accent === 'blue' && 'bg-gradient-to-r from-blue-500 to-blue-400',
- accent === 'violet' && 'bg-gradient-to-r from-violet-500 to-violet-400',
- accent === 'emerald' && 'bg-gradient-to-r from-emerald-500 to-emerald-400')} />
- <p className="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">{label}</p>
- <p className="text-slate-900 text-3xl font-bold mt-1 tracking-tight">{value}</p>
- <p className="text-slate-400 text-[11px] mt-0.5">{sub}</p>
- </GlassCard>
- ))}
- </div>
-
-      {/* ── Notion-style View Bar (req 105-115) ── */}
-      <ViewBar
-        store={viewStore}
-        canEdit={canEdit}
-        userId={user?.id ?? ''}
-        sheetRows={pageSheet.rows.length}
-        fetchedAt={pageSheet.fetchedAt}
-        loading={pageSheet.loading}
-        onSetActive={id => { const next = setActiveView(viewStore, id); commitStore(next); }}
-        onCreate={(label, layout, tplId) => commitStore(createView(viewStore, label, layout, user?.id ?? '', tplId))}
-        onRename={(id, label) => commitStore(renameView(viewStore, id, label))}
-        onDuplicate={id => commitStore(duplicateView(viewStore, id))}
-        onDelete={id => commitStore(deleteView(viewStore, id))}
-        onSetDefault={id => commitStore(setDefaultView(viewStore, id))}
-        onRefetch={pageSheet.refetch}
-        onSyncIntervalChange={m => commitStore(updateSyncInterval(viewStore, m))}
-        syncInterval={viewStore.syncIntervalMinutes}
-      />
-
-      {/* Linked Data Sources overview — shows sync status + cross-device indicator */}
-      <LinkedSourcesPanel
-        sources={[{
-          namespace: 'sheet_nsg_category_wise',
-          label: 'NSG Category Wise Data',
-          url: pageSheet.url,
-          rows: pageSheet.rows.length,
-          fetchedAt: pageSheet.fetchedAt,
-          loading: pageSheet.loading,
-          error: pageSheet.error,
-          linkedAt: pageSheet.linkedAt,
-          linkedBy: pageSheet.linkedBy,
-        }]}
-        kvAvailable={pageSheet.kvAvailable}
-        onRefetch={() => pageSheet.refetch()}
-        onUnlink={() => pageSheet.setUrl('')}
-      />
- {/* Search + group filter + edit notice */}
- <div className="flex items-center gap-3 flex-wrap">
- <div className="relative flex-1 min-w-48">
- <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-800/30"/>
- <input value={search} onChange={e => setSearch(e.target.value)}
- placeholder="Search station name or code…"
- className="w-full bg-white border border-slate-900/10 rounded-xl shadow-elevation-xs pl-8 pr-3 py-2 text-xs text-slate-800/70 focus:outline-none focus:border-blue-400/40 placeholder:text-slate-400"/>
- </div>
-
- {viewMode === 'section' && (
- <select value={groupFilter} onChange={e => setGroupFilter(e.target.value)}
- className="bg-white border border-slate-900/10 rounded-xl shadow-elevation-xs px-3 py-2 text-xs text-slate-800/70 focus:outline-none focus:border-blue-400/40">
- <option value="All"className="bg-slate-900">All Sections</option>
- {allSections.map(sec => <option key={sec} value={sec} className="bg-slate-900">{sec}</option>)}
- </select>
- )}
- {viewMode === 'cmi' && (
- <select value={groupFilter} onChange={e => setGroupFilter(e.target.value)}
- className="bg-white border border-slate-900/10 rounded-xl shadow-elevation-xs px-3 py-2 text-xs text-slate-800/70 focus:outline-none focus:border-blue-400/40">
- <option value="All"className="bg-slate-900">All CMIs</option>
- {allCMIs.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
- </select>
- )}
-
- {canEdit && viewMode === 'nsg' && !sheetConnected && (
- <div className="flex items-center gap-1.5 text-xs text-emerald-600 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-3 py-2">
- <Edit3 size={11} /> You can edit station data directly, or connect a Google Sheet above
- </div>
- )}
- {!canEdit && viewMode === 'nsg' && (
- <p className="text-xs text-slate-800/30 italic">Contact Planning cell to update station data</p>
- )}
- </div>
-
- {/* ── NSG Category Wise (drill-down cards) ── */}
- {viewMode === 'nsg' && CATEGORIES.map(cat => {
- const stations = grouped[cat];
- if (stations.length === 0) return null;
- return <NSGGroupCard key={cat} category={cat} stations={stations} canEdit={canEdit}
- sheetRows={pageSheet.rows} sheetConnected={sheetConnected} fields={pageFields.visibleFields} />;
- })}
-
- {/* ── Station Wise (flat table) ── */}
- {viewMode === 'station' && (
- <StationTableView stations={filteredStations} sheetRows={pageSheet.rows} sheetConnected={sheetConnected} fields={pageFields.visibleFields} />
- )}
-
- {/* ── Section Wise (grouped tables) ── */}
- {viewMode === 'section' && (
- <div className="space-y-4">
- {(groupFilter === 'All' ? allSections : [groupFilter]).map(sec => {
- const stations = filteredStations.filter(s => s.section === sec);
- if (stations.length === 0) return null;
- return (
- <div key={sec}>
- <div className="flex items-center gap-2 mb-2 px-1">
- <div className="w-1.5 h-1.5 rounded-full bg-cyan-400"/>
- <p className="text-slate-800/70 text-sm font-semibold">{sec}</p>
- <span className="text-slate-800/30 text-xs">({stations.length} stations)</span>
- </div>
- <StationTableView stations={stations} sheetRows={pageSheet.rows} sheetConnected={sheetConnected} fields={pageFields.visibleFields} />
- </div>
- );
- })}
- </div>
- )}
-
- {/* ── CMI Wise (grouped tables) ── */}
- {viewMode === 'cmi' && (
- <div className="space-y-4">
- {(groupFilter === 'All' ? allCMIs : [groupFilter]).map(cmiName => {
- const stations = filteredStations.filter(s => s.cmi === cmiName);
- if (stations.length === 0) return null;
- return (
- <div key={cmiName}>
- <div className="flex items-center gap-2 mb-2 px-1">
- <div className="w-1.5 h-1.5 rounded-full bg-indigo-400"/>
- <p className="text-slate-800/70 text-sm font-semibold">{cmiName}</p>
- <span className="text-slate-800/30 text-xs">({stations.length} stations)</span>
- </div>
- <StationTableView stations={stations} sheetRows={pageSheet.rows} sheetConnected={sheetConnected} fields={pageFields.visibleFields} />
- </div>
- );
- })}
- </div>
- )}
- </div>
- );
-}
-
-// ─── Tab: Revenue ─────────────────────────────────────────────────────────────
-// ─── Revenue sub-tabs: Summary | PRS | UTS | Footfall | Ticket Checking ───────
-const REVENUE_SUBTABS = [
- { id: 'prs', label: 'PRS' },
- { id: 'uts', label: 'UTS' },
- { id: 'footfall', label: 'Footfall' },
- { id: 'tc', label: 'Ticket Checking' },
-] as const;
-type RevenueSubTab = typeof REVENUE_SUBTABS[number]['id'];
 
 function RevenueTab() {
  const { user } = useAuthStore();
@@ -766,7 +527,7 @@ export default function DashboardHomePage() {
       {/* Tab content */}
       <AnimatePresence mode="wait">
         <motion.div key={activeTab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-          {activeTab === 'overview'  && !activeCustomTab && <OverviewTab />}
+          {activeTab === 'overview'  && !activeCustomTab && <OverviewWorkspace />}
           {activeTab === 'profile'   && !activeCustomTab && <ProfilePage />}
           {activeTab === 'revenue'   && !activeCustomTab && <RevenueTab />}
           {activeTab === 'policies'  && !activeCustomTab && <PoliciesWorkspace />}
