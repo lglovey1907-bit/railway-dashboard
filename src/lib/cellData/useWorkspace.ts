@@ -7,6 +7,7 @@ import type {
 import { makeField, makeRow, makeSection, makeTable, makeHistoryId, makeDraftTrashId } from './types';
 import { fetchGoogleSheet } from '@/lib/sheets/googleSheets';
 import { logActivity, createTableMeta, touchTableMeta, createRowMeta, touchRowMeta, saveVersion } from './collaboration';
+import { cloudWrite, cloudRead } from '@/lib/config/cloudSync';
 
 function ck(rId: string, fId: string) { return `${rId}:${fId}`; }
 function gid(p: string) { return `${p}${Date.now()}${Math.floor(Math.random()*1000)}`; }

@@ -1,3 +1,4 @@
+import { syncedSave, NS } from '@/lib/config/SyncManager';
 // ─────────────────────────────────────────────────────────────────────────────
 // Collaboration & Audit Trail System
 // All collaboration state lives in a separate localStorage namespace so it

@@ -1,8 +1,9 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
-import { Link2, Plus, Trash2, ExternalLink, Tag, Edit3, Check, X, Search } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Link2, Plus, Trash2, ExternalLink, Tag, Edit3, Check, X, Search, Cloud, Monitor } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { canManageCellStructure } from '@/lib/cellData/useCellDataStructure';
+import { useCloudConfig } from '@/lib/config/useCloudConfig';
 import { cn } from '@/lib/utils';
 
 export interface GoogleLink {
@@ -18,26 +19,23 @@ export interface GoogleLink {
 const CATEGORIES = ['Google Sheets', 'Google Docs', 'Google Forms', 'Google Drive', 'Power BI', 'Railway Portal', 'Other'];
 
 const CAT_COLORS: Record<string, string> = {
-  'Google Sheets': 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  'Google Docs':   'bg-blue-50 text-blue-700 border-blue-200',
-  'Google Forms':  'bg-violet-50 text-violet-700 border-violet-200',
-  'Google Drive':  'bg-amber-50 text-amber-700 border-amber-200',
-  'Power BI':      'bg-yellow-50 text-yellow-700 border-yellow-200',
-  'Railway Portal':'bg-rail-50 text-rail-700 border-rail-200',
-  'Other':         'bg-slate-50 text-slate-600 border-slate-200',
+  'Google Sheets':  'bg-emerald-50 text-emerald-700 border-emerald-200',
+  'Google Docs':    'bg-blue-50 text-blue-700 border-blue-200',
+  'Google Forms':   'bg-violet-50 text-violet-700 border-violet-200',
+  'Google Drive':   'bg-amber-50 text-amber-700 border-amber-200',
+  'Power BI':       'bg-yellow-50 text-yellow-700 border-yellow-200',
+  'Railway Portal': 'bg-rail-50 text-rail-700 border-rail-200',
+  'Other':          'bg-slate-50 text-slate-600 border-slate-200',
 };
 
-function storageKey(cell: string) {
+// localStorage cache key (fast local read)
+function lsKey(cell: string) {
   return `rly_links_${cell.replace(/[^a-zA-Z0-9]/g, '_')}`;
 }
 
-function loadLinks(cell: string): GoogleLink[] {
-  if (typeof window === 'undefined') return [];
-  try { return JSON.parse(localStorage.getItem(storageKey(cell)) ?? '[]'); } catch { return []; }
-}
-
-function saveLinks(cell: string, links: GoogleLink[]) {
-  if (typeof window !== 'undefined') localStorage.setItem(storageKey(cell), JSON.stringify(links));
+// Upstash namespace key
+function nsKey(cell: string) {
+  return `links_${cell.replace(/[^a-zA-Z0-9]/g, '_')}`;
 }
 
 interface AddLinkForm { title: string; url: string; description: string; category: string; }
@@ -50,16 +48,48 @@ export function GoogleLinksRepo({ cell }: { cell: string }) {
   const [search, setSearch] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState<AddLinkForm>(EMPTY);
-  const [editing, setEditing] = useState<string | null>(null);
 
-  useEffect(() => { setLinks(loadLinks(cell)); }, [cell]);
+  // ── FIXED: pass user?.id directly so Upstash re-fetches when user hydrates ─
+  const cloud = useCloudConfig<GoogleLink[]>(nsKey(cell), user?.id);
+  const appliedRef = useRef<string>('');
 
-  const persist = (next: GoogleLink[]) => { setLinks(next); saveLinks(cell, next); };
+  // Step 1: Load from localStorage immediately on mount
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = localStorage.getItem(lsKey(cell));
+      if (raw) setLinks(JSON.parse(raw));
+    } catch { /* ignore */ }
+  }, [cell]);
+
+  // Step 2: Apply Upstash value when it arrives (cross-device sync)
+  useEffect(() => {
+    if (!cloud.value) return;
+    if (!user?.id) return;
+    if (appliedRef.current === `${user.id}:${cell}`) return; // already applied
+    appliedRef.current = `${user.id}:${cell}`;
+    if (Array.isArray(cloud.value) && cloud.value.length > 0) {
+      setLinks(cloud.value);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(lsKey(cell), JSON.stringify(cloud.value));
+      }
+    }
+  }, [cloud.value, user?.id, cell]);
+
+  // Reset when user or cell changes
+  useEffect(() => { appliedRef.current = ''; }, [user?.id, cell]);
+
+  const persist = useCallback((next: GoogleLink[]) => {
+    setLinks(next);
+    if (typeof window !== 'undefined') localStorage.setItem(lsKey(cell), JSON.stringify(next));
+    cloud.set(next.length > 0 ? next : null);
+  }, [cell, cloud]);
 
   const handleAdd = () => {
     if (!form.title.trim() || !form.url.trim()) return;
     const newLink: GoogleLink = {
-      id: `lnk_${Date.now()}`, title: form.title.trim(),
+      id: `lnk_${Date.now()}`,
+      title: form.title.trim(),
       url: form.url.startsWith('http') ? form.url.trim() : `https://${form.url.trim()}`,
       description: form.description.trim() || undefined,
       category: form.category,
@@ -88,7 +118,18 @@ export function GoogleLinksRepo({ cell }: { cell: string }) {
           </div>
           <div>
             <p className="text-xs font-bold text-slate-900">Links Repository</p>
-            <p className="text-[10px] text-slate-400">{links.length} link{links.length !== 1 ? 's' : ''} saved</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-[10px] text-slate-400">{links.length} link{links.length !== 1 ? 's' : ''}</p>
+              {cloud.kvAvailable ? (
+                <span className="inline-flex items-center gap-0.5 text-[9px] text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-full px-1 py-0.5">
+                  <Cloud size={7}/> Synced
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-0.5 text-[9px] text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-1 py-0.5">
+                  <Monitor size={7}/> Local
+                </span>
+              )}
+            </div>
           </div>
         </div>
         {canManage && (
@@ -140,7 +181,7 @@ export function GoogleLinksRepo({ cell }: { cell: string }) {
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-8">
             <Link2 size={20} className="text-slate-200"/>
-            <p className="text-[11px] text-slate-400">{links.length === 0 ? 'No links saved yet' : 'No links match your search'}</p>
+            <p className="text-[11px] text-slate-400">{links.length === 0 ? 'No links saved yet' : 'No links match'}</p>
             {canManage && links.length === 0 && (
               <button onClick={() => setShowAdd(true)} className="text-[11px] text-rail-600 hover:text-rail-700 font-medium">+ Add first link</button>
             )}

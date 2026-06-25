@@ -1,3 +1,5 @@
+import { cloudWrite, cloudRead } from '@/lib/config/cloudSync';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // View Engine — Notion-style multiple views per data source (req 105-115)
 //
@@ -103,9 +105,25 @@ function makeDefault(sourceKey: string): ViewStore {
   };
 }
 
-export function saveViewStore(store: ViewStore): void {
+export function saveViewStore(store: ViewStore, userId?: string): void {
   if (typeof window === 'undefined') return;
   localStorage.setItem(storeKey(store.sourceKey), JSON.stringify(store));
+  // Sync to Upstash for cross-device persistence
+  if (userId) {
+    cloudWrite(userId, `view_store_${store.sourceKey}`, store)
+      .catch(e => console.warn('[viewEngine] cloud write failed:', e));
+  }
+}
+
+export async function loadViewStoreFromCloud(sourceKey: string, userId: string): Promise<ViewStore | null> {
+  if (!userId) return null;
+  const { value } = await cloudRead(userId, `view_store_${sourceKey}`);
+  if (!value) return null;
+  const store = value as ViewStore;
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(storeKey(sourceKey), JSON.stringify(store));
+  }
+  return store;
 }
 
 // ── View mutations ────────────────────────────────────────────────────────────

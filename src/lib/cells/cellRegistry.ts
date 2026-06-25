@@ -1,3 +1,4 @@
+import { syncedSave, NS } from '@/lib/config/SyncManager';
 // ─────────────────────────────────────────────────────────────────────────────
 // Cell Registry — Dynamic Cell Management System
 // ─────────────────────────────────────────────────────────────────────────────

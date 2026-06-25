@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { useAppSync } from '@/lib/config/useAppSync';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { Sidebar, NAV_ITEMS } from '@/components/layout/Sidebar';
@@ -16,6 +17,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     initialize();
   }, [initialize]);
+
+  // ── Cross-device sync: bulk-load all workspace data from Upstash on login ──
+  const syncStatus = useAppSync(user?.id);
 
   useEffect(() => {
     if (isInitialized && !user) {
