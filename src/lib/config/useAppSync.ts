@@ -103,7 +103,7 @@ export function useAppSync(userId: string | undefined): SyncStatus {
         entries.push(
           { lsKey: `workspace_v2_${cn.replace(/\W/g, '_')}`,     nsKey: NS.cellWorkspace(cn) },
           { lsKey: `rly_rowlayout_${cn.replace(/\W/g, '_')}`,    nsKey: NS.cellRowLayout(cn) },
-          { lsKey: `rly_links_${cn.replace(/\W/g, '_')}`,        nsKey: NS.cellLinks(cn) },
+          { lsKey: `rly_links_${cn.replace(/[^a-zA-Z0-9]/g, '_')}`,  nsKey: NS.cellLinks(cn) },
         );
       });
 

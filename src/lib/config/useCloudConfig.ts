@@ -53,20 +53,21 @@ export function useCloudConfig<T>(namespace: string, userId: string | undefined)
   const [loading,     setLoading] = useState(false);
   const [kvAvailable, setKvAvail] = useState(false);
   const alive     = useRef(true);
-  const lastUserId = useRef<string>('');
+  // Track which userId+namespace combo has been fetched to avoid duplicate requests
+  const lastFetched = useRef<string>('');
 
   useEffect(() => {
     alive.current = true;
     return () => { alive.current = false; };
   }, []);
 
-  // ── Fetch from Upstash whenever userId becomes available ──────────────────
-  // This effect re-runs when userId changes from undefined/'' to 'm1'
-  // That's the critical moment: authStore has hydrated, user is now known
+  // ── Fetch from Upstash whenever userId OR namespace changes ───────────────
+  // Using userId+namespace as the cache key so switching sub-heads re-fetches
   useEffect(() => {
-    if (!userId) return;                        // wait until user is known
-    if (userId === lastUserId.current) return;  // already fetched for this user
-    lastUserId.current = userId;
+    if (!userId) return;
+    const fetchKey = `${userId}::${namespace}`;
+    if (fetchKey === lastFetched.current) return;
+    lastFetched.current = fetchKey;
 
     setLoading(true);
     apiGet(userId, namespace).then(({ value: kvRaw, kvAvailable: kv }) => {
@@ -74,7 +75,6 @@ export function useCloudConfig<T>(namespace: string, userId: string | undefined)
       setKvAvail(kv);
       setLoading(false);
       if (kvRaw !== null) {
-        // Upstash has a value — write it to localStorage and update state
         lsSet(namespace, kvRaw);
         try { setValue(JSON.parse(kvRaw) as T); }
         catch { setValue(kvRaw as unknown as T); }

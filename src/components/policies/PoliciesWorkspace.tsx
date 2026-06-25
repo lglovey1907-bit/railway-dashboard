@@ -361,12 +361,28 @@ export function PoliciesWorkspace() {
   const [newTitle, setNewTitle] = useState('');
 
   useEffect(() => {
-    // Load from localStorage immediately (instant render)
+    // Step 1: Show localStorage data immediately (instant, no flash)
     const local = getPolicyWorkspace(activeSubHead);
     setWs(local);
-  }, [activeSubHead]);
 
-  // When bulk cloud sync completes, reload from localStorage (which was just updated)
+    // Step 2: Load from Upstash directly (cross-device sync)
+    // This runs every time subHead changes OR user changes
+    // Does not depend on useAppSync event timing
+    if (user?.id) {
+      loadPolicyWorkspaceFromCloud(activeSubHead, user.id).then(cloud => {
+        if (!cloud) return;
+        // Apply if cloud is newer (or local has no data)
+        const cloudTime = cloud.updatedAt ?? '';
+        const localTime = local.updatedAt ?? '';
+        if (!local || !local.updatedAt || cloudTime > localTime) {
+          setWs(cloud);
+        }
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSubHead, user?.id]);
+
+  // Also update when bulk useAppSync completes (belt-and-suspenders)
   useEffect(() => {
     const handler = () => {
       const fresh = getPolicyWorkspace(activeSubHead);
