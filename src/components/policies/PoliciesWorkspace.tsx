@@ -92,23 +92,25 @@ function PolicyLinksWidget({ links, onChange, canEdit, addedBy }: PLWProps) {
 
       {/* Add form */}
       {showAdd && canEdit && (
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2" style={{ overflow: 'visible' }}>
           <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
             placeholder="Title (e.g. Circular No. 45/2026)"
             className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-rail-400"/>
           <input value={form.url} onChange={e => setForm(f => ({ ...f, url: e.target.value }))}
             placeholder="https://docs.google.com/…" onKeyDown={e => e.key === 'Enter' && handleAdd()}
             className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-rail-400"/>
-          <div className="flex gap-2">
-            <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-              placeholder="Description (optional)"
-              className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-rail-400"/>
+          <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+            placeholder="Description (optional)"
+            className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-rail-400"/>
+          {/* Category on its own row — gives native select dropdown room to open */}
+          <div className="relative" style={{ zIndex: 100 }}>
+            <label className="text-[10px] font-semibold text-slate-500 block mb-1">Category</label>
             <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-              className="bg-white border border-slate-200 rounded-lg px-2.5 py-2 text-xs text-slate-700 focus:outline-none">
-              {LINK_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-700 focus:outline-none focus:border-rail-400">
+              {LINK_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
             </select>
           </div>
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 pt-1">
             <button onClick={() => setShowAdd(false)} className="px-3 py-1.5 text-xs text-slate-500 hover:bg-white rounded-lg">Cancel</button>
             <button onClick={handleAdd} disabled={!form.title.trim() || !form.url.trim()}
               className="flex items-center gap-1 px-3 py-1.5 text-xs bg-rail-600 text-white rounded-lg hover:bg-rail-700 disabled:opacity-40 font-semibold">
