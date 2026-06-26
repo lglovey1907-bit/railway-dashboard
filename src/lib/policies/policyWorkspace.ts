@@ -24,6 +24,16 @@ export interface PolicyLink {
   addedBy: string; addedAt: string;
 }
 
+export interface PolicyLink {
+  id: string;
+  title: string;
+  url: string;
+  description?: string;
+  category: string;
+  addedBy: string;
+  addedAt: string;
+}
+
 export interface PolicySection {
   id: string;
   title: string;
@@ -46,6 +56,8 @@ export interface PolicySection {
         powerBiUrl?: string;
         sheetUrl?: string;
         checklistItems?: Array<{ id: string; text: string; done: boolean }>;
+        // Links stored directly in widget — ensures complete data isolation per widget
+        links?: PolicyLink[];
       }>;
     }>;
   }>;
