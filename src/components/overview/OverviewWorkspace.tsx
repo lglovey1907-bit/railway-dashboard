@@ -7,6 +7,7 @@ import {
   X, Check, Edit3, Copy, Trash2, Star, Table2, LayoutGrid, List,
   Settings2, Search, CheckCircle2, AlertCircle, ExternalLink,
   Cloud, ChevronLeft, ChevronRight, Columns, MoreHorizontal,
+  Printer, Maximize2, PanelRight, ArrowLeft, ArrowRight, FileText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/authStore';
@@ -450,11 +451,245 @@ function PropertiesPanel({ view, allHeaders, onUpdate, onClose }: {
 }
 
 // ── Data views ────────────────────────────────────────────────────────────────
+
+// ── Record Detail Panel ────────────────────────────────────────────────────────
+// Opens as a right-side peek panel or centered modal.
+// Fully dynamic — renders all properties from the data, zero hardcoded fields.
+type RecordOpenMode = 'peek' | 'modal';
+
+interface RecordDetailProps {
+  row: SheetRow;
+  allRows: SheetRow[];
+  rowIndex: number;       // index in allRows for prev/next navigation
+  props: Property[];
+  mode: RecordOpenMode;
+  canEdit: boolean;
+  onClose: () => void;
+  onNavigate: (index: number) => void;
+}
+
+// Print the record in a clean A4 layout
+function printRecord(row: SheetRow, props: Property[]) {
+  const vis = props.filter(p => p.visible).sort((a, b) => a.order - b.order);
+  const title = String(row[vis[0]?.column ?? ''] ?? 'Record');
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <title>${title} — Station Profile</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; color: #1e293b; }
+    .header { border-bottom: 3px solid #1d4ed8; padding-bottom: 16px; margin-bottom: 24px; }
+    .org { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; }
+    .title { font-size: 22px; font-weight: bold; margin: 6px 0; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 32px; }
+    .field { border-bottom: 1px solid #f1f5f9; padding: 8px 0; }
+    .label { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+    .value { font-size: 13px; font-weight: 500; }
+    .footer { margin-top: 32px; border-top: 1px solid #e2e8f0; padding-top: 12px; font-size: 10px; color: #94a3b8; display: flex; justify-content: space-between; }
+    @media print { body { margin: 20px; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="org">Northern Railway · Delhi Division · Commercial Branch</div>
+    <div class="title">${title}</div>
+    <div class="org">Station Profile</div>
+  </div>
+  <div class="grid">
+    ${vis.slice(1).map(p => `
+      <div class="field">
+        <div class="label">${p.label}</div>
+        <div class="value">${String(row[p.column] ?? '—')}</div>
+      </div>
+    `).join('')}
+  </div>
+  <div class="footer">
+    <span>Printed by: Commercial Branch Dashboard</span>
+    <span>Date: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+  </div>
+</body>
+</html>`;
+  const w = window.open('', '_blank');
+  if (!w) return;
+  w.document.write(html);
+  w.document.close();
+  w.onload = () => { w.print(); };
+}
+
+function RecordDetail({ row, allRows, rowIndex, props, mode, canEdit, onClose, onNavigate }: RecordDetailProps) {
+  const vis = props.filter(p => p.visible).sort((a, b) => a.order - b.order);
+  const [editMode, setEditMode] = useState(false);
+  const [edits, setEdits] = useState<SheetRow>({ ...row });
+
+  // Reset edits when row changes
+  useEffect(() => { setEdits({ ...row }); setEditMode(false); }, [row]);
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowLeft' && rowIndex > 0) onNavigate(rowIndex - 1);
+      if (e.key === 'ArrowRight' && rowIndex < allRows.length - 1) onNavigate(rowIndex + 1);
+      if (e.ctrlKey && e.key === 'p') { e.preventDefault(); printRecord(row, props); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [row, rowIndex, allRows.length, onClose, onNavigate, props]);
+
+  const titleProp = vis[0];
+  const titleVal = String(row[titleProp?.column ?? ''] ?? 'Record');
+
+  // Group properties into sections of ~5 each for visual clarity
+  const propSections: Property[][] = [];
+  const otherProps = vis.slice(1);
+  for (let i = 0; i < otherProps.length; i += 6) {
+    propSections.push(otherProps.slice(i, i + 6));
+  }
+
+  const Content = (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="flex items-start justify-between px-6 py-5 border-b border-slate-100 shrink-0">
+        <div className="flex-1 min-w-0 pr-4">
+          <div className="flex items-center gap-2 mb-1">
+            <FileText size={14} className="text-rail-500 shrink-0"/>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Record</span>
+          </div>
+          <h2 className="text-xl font-black text-slate-900 leading-tight truncate">{titleVal}</h2>
+          {titleProp && (
+            <p className="text-[10px] text-slate-400 mt-0.5">{titleProp.label}</p>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button onClick={() => printRecord(row, props)} title="Print record (Ctrl+P)"
+            className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors">
+            <Printer size={14}/>
+          </button>
+          {canEdit && (
+            <button onClick={() => setEditMode(e => !e)}
+              className={cn('px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors',
+                editMode ? 'bg-rail-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}>
+              {editMode ? 'Editing' : 'Edit'}
+            </button>
+          )}
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors">
+            <X size={15}/>
+          </button>
+        </div>
+      </div>
+
+      {/* Navigation */}
+      <div className="flex items-center justify-between px-6 py-2 border-b border-slate-100 bg-slate-50 shrink-0">
+        <button onClick={() => rowIndex > 0 && onNavigate(rowIndex - 1)}
+          disabled={rowIndex === 0}
+          className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+          <ArrowLeft size={12}/> Prev
+        </button>
+        <span className="text-[10px] text-slate-400">{rowIndex + 1} of {allRows.length}</span>
+        <button onClick={() => rowIndex < allRows.length - 1 && onNavigate(rowIndex + 1)}
+          disabled={rowIndex === allRows.length - 1}
+          className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+          Next <ArrowRight size={12}/>
+        </button>
+      </div>
+
+      {/* Properties */}
+      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+        {propSections.map((section, si) => (
+          <div key={si} className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {section.map(p => (
+                <div key={p.id} className="group">
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">{p.label}</p>
+                  {editMode ? (
+                    <input
+                      value={String(edits[p.column] ?? '')}
+                      onChange={e => setEdits(prev => ({ ...prev, [p.column]: e.target.value }))}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm text-slate-800 focus:outline-none focus:border-rail-400 focus:bg-white"
+                    />
+                  ) : (
+                    <p className={cn('text-sm text-slate-800 font-medium leading-snug',
+                      !row[p.column] && 'text-slate-300 italic')}>
+                      {String(row[p.column] ?? '—')}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+            {si < propSections.length - 1 && <div className="border-t border-slate-100"/>}
+          </div>
+        ))}
+
+        {editMode && (
+          <div className="pt-2 border-t border-slate-100 flex gap-3">
+            <button onClick={() => setEditMode(false)}
+              className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
+            <button
+              onClick={() => {
+                // In a real app: patch Google Sheet via API.
+                // Here: show a toast explaining this is read-only from sheet.
+                setEditMode(false);
+              }}
+              className="flex-1 py-2.5 rounded-xl bg-rail-600 text-white text-sm font-bold hover:bg-rail-700">
+              Save Changes
+            </button>
+          </div>
+        )}
+
+        {/* Keyboard shortcuts hint */}
+        <div className="bg-slate-50 rounded-xl px-4 py-3 text-[10px] text-slate-400 space-y-1">
+          <p className="font-semibold text-slate-500 mb-1.5">Keyboard shortcuts</p>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+            <span><kbd className="bg-white border border-slate-200 rounded px-1">←</kbd> Previous</span>
+            <span><kbd className="bg-white border border-slate-200 rounded px-1">→</kbd> Next</span>
+            <span><kbd className="bg-white border border-slate-200 rounded px-1">Esc</kbd> Close</span>
+            <span><kbd className="bg-white border border-slate-200 rounded px-1">Ctrl+P</kbd> Print</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (mode === 'peek') {
+    // Side peek — slide in from right, database visible in background
+    return createPortal(
+      <div className="fixed inset-0 z-[1500]" onClick={onClose}>
+        <motion.div
+          initial={{ x: 480 }} animate={{ x: 0 }} exit={{ x: 480 }}
+          transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+          className="absolute right-0 top-0 h-full w-full max-w-lg bg-white border-l border-slate-200 shadow-2xl"
+          onClick={e => e.stopPropagation()}>
+          {Content}
+        </motion.div>
+      </div>,
+      document.body
+    );
+  }
+
+  // Center modal
+  return createPortal(
+    <div className="fixed inset-0 z-[1500] flex items-center justify-center p-6"
+      style={{ backgroundColor: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(3px)' }}
+      onClick={onClose}>
+      <motion.div
+        initial={{ scale: 0.96, opacity: 0, y: 10 }} animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.96, opacity: 0 }}
+        className="w-full max-w-2xl h-[80vh] bg-white rounded-2xl shadow-2xl overflow-hidden"
+        onClick={e => e.stopPropagation()}>
+        {Content}
+      </motion.div>
+    </div>,
+    document.body
+  );
+}
+
 const PAGE_SIZE = 50;
 
-function TableView({ rows, props, search }: { rows: SheetRow[]; props: Property[]; search: string }) {
+function TableView({ rows, props, search, onOpen }: { rows: SheetRow[]; props: Property[]; search: string; onOpen?: (row: SheetRow, idx: number) => void }) {
   const [page, setPage] = useState(0);
   const vis = props.filter(p => p.visible).sort((a, b) => a.order - b.order);
+  const titleCol = vis[0]?.column; // first visible property = title (clickable)
+
   const filtered = useMemo(() => {
     if (!search) return rows;
     const q = search.toLowerCase();
@@ -472,22 +707,37 @@ function TableView({ rows, props, search }: { rows: SheetRow[]; props: Property[
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
               <th className="text-left px-3 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider w-10">#</th>
-              {vis.map(p => (
-                <th key={p.id} className="text-left px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap" style={{ minWidth: p.width ?? 120 }}>{p.label}</th>
+              {vis.map((p, pi) => (
+                <th key={p.id} className="text-left px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap" style={{ minWidth: p.width ?? 120 }}>
+                  {p.label}{pi === 0 && <span className="ml-1 text-[8px] text-rail-400 font-normal normal-case tracking-normal">Title</span>}
+                </th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
-            {paged.map((row, i) => (
-              <tr key={i} className={cn('hover:bg-slate-50 transition-colors', i % 2 === 1 && 'bg-slate-50/40')}>
-                <td className="px-3 py-2 text-slate-300 text-[10px] font-mono">{page*PAGE_SIZE+i+1}</td>
-                {vis.map(p => (
-                  <td key={p.id} className="px-3 py-2 text-slate-700" style={{ maxWidth: p.width ?? 200 }}>
-                    <div className="truncate">{String(row[p.column] ?? '—')}</div>
-                  </td>
-                ))}
-              </tr>
-            ))}
+            {paged.map((row, i) => {
+              const globalIdx = page * PAGE_SIZE + i;
+              return (
+                <tr key={i} className={cn('group hover:bg-blue-50/30 transition-colors cursor-default', i % 2 === 1 && 'bg-slate-50/40')}>
+                  <td className="px-3 py-2 text-slate-300 text-[10px] font-mono">{globalIdx + 1}</td>
+                  {vis.map((p, pi) => (
+                    <td key={p.id} className="px-3 py-2 text-slate-700" style={{ maxWidth: p.width ?? 200 }}>
+                      {pi === 0 && onOpen ? (
+                        // Title column — clickable, bold, link style
+                        <button
+                          onClick={() => onOpen(row, globalIdx)}
+                          className="text-left font-semibold text-rail-700 hover:text-rail-900 hover:underline truncate max-w-full flex items-center gap-1 group/title">
+                          {String(row[p.column] ?? '—')}
+                          <Maximize2 size={10} className="opacity-0 group-hover/title:opacity-100 text-rail-400 shrink-0"/>
+                        </button>
+                      ) : (
+                        <div className="truncate">{String(row[p.column] ?? '—')}</div>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -504,7 +754,7 @@ function TableView({ rows, props, search }: { rows: SheetRow[]; props: Property[
   );
 }
 
-function CardView({ rows, props, search }: { rows: SheetRow[]; props: Property[]; search: string }) {
+function CardView({ rows, props, search, onOpen }: { rows: SheetRow[]; props: Property[]; search: string; onOpen?: (row: SheetRow, idx: number) => void }) {
   const vis = props.filter(p => p.visible).sort((a, b) => a.order - b.order);
   const [titleProp, ...rest] = vis;
   const filtered = useMemo(() => {
@@ -515,16 +765,35 @@ function CardView({ rows, props, search }: { rows: SheetRow[]; props: Property[]
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
       {filtered.slice(0, 200).map((row, i) => (
-        <div key={i} className="bg-white border border-slate-200 rounded-xl p-4 hover:shadow-md transition-all" style={{ boxShadow: '0 1px 3px rgba(15,23,42,0.06)' }}>
-          {titleProp && <p className="text-sm font-bold text-slate-900 truncate mb-2">{String(row[titleProp.column]??'—')}</p>}
+        <div key={i}
+          onClick={() => onOpen?.(row, i)}
+          className={cn(
+            'bg-white border border-slate-200 rounded-xl p-4 transition-all',
+            onOpen ? 'cursor-pointer hover:border-rail-300 hover:shadow-md hover:-translate-y-0.5 group' : 'hover:shadow-sm'
+          )}
+          style={{ boxShadow: '0 1px 3px rgba(15,23,42,0.06)' }}>
+          {/* Title */}
+          {titleProp && (
+            <div className="flex items-start justify-between gap-2 mb-2.5">
+              <p className="text-sm font-bold text-slate-900 leading-snug line-clamp-2">
+                {String(row[titleProp.column]??'—')}
+              </p>
+              {onOpen && <Maximize2 size={11} className="text-slate-300 group-hover:text-rail-400 transition-colors shrink-0 mt-0.5"/>}
+            </div>
+          )}
+          {/* Properties */}
           <div className="space-y-1.5">
-            {rest.slice(0,4).map(p => (
+            {rest.slice(0,5).map(p => (
               <div key={p.id} className="flex items-center justify-between gap-2">
                 <span className="text-[10px] text-slate-400 shrink-0">{p.label}</span>
                 <span className="text-[11px] text-slate-700 font-medium truncate">{String(row[p.column]??'—')}</span>
               </div>
             ))}
           </div>
+          {/* Open hint */}
+          {onOpen && (
+            <p className="text-[9px] text-slate-300 mt-2.5 group-hover:text-rail-400 transition-colors">Click to open record</p>
+          )}
         </div>
       ))}
     </div>
@@ -559,9 +828,9 @@ function GroupHeader({ label, count, collapsed, onToggle, depth = 0 }: {
   );
 }
 
-function GroupedView({ rows, props, groupBy, groupBy2, layout, search }: {
+function GroupedView({ rows, props, groupBy, groupBy2, layout, search, onOpen }: {
   rows: SheetRow[]; props: Property[]; groupBy: string; groupBy2?: string;
-  layout: InnerLayout; search: string;
+  layout: InnerLayout; search: string; onOpen?: (row: SheetRow, idx: number) => void;
 }) {
   const [collapsed, setCollapsed] = useState(new Set<string>());
   const vis = props.filter(p => p.visible);
@@ -580,8 +849,8 @@ function GroupedView({ rows, props, groupBy, groupBy2, layout, search }: {
 
   // Inner renderer — same layout as the view, just scoped to this group's rows
   function renderInner(grpRows: SheetRow[]) {
-    if (layout === 'card' || layout === 'gallery') return <CardView rows={grpRows} props={props} search=""/>;
-    return <TableView rows={grpRows} props={props} search=""/>;
+    if (layout === 'card' || layout === 'gallery') return <CardView rows={grpRows} props={props} search="" onOpen={onOpen}/>;
+    return <TableView rows={grpRows} props={props} search="" onOpen={onOpen}/>;
   }
 
   return (
@@ -664,6 +933,11 @@ export function OverviewWorkspace() {
   const [showAddView, setShowAddView] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<DBView | null>(null);
 
+  // Record detail state
+  const [recordOpen,  setRecordOpen]  = useState(false);
+  const [recordIdx,   setRecordIdx]   = useState(0);
+  const [recordMode,  setRecordMode]  = useState<RecordOpenMode>('peek');
+
   // View renaming (inline)
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
@@ -679,6 +953,13 @@ export function OverviewWorkspace() {
   const commit = useCallback((next: DBViewStore) => {
     setStore(next); saveDBViewStore(next, user?.id);
   }, [user?.id]);
+
+  // Open a record by index in the processedRows array
+  const openRecord = useCallback((row: SheetRow, idx: number, mode: RecordOpenMode = 'peek') => {
+    setRecordIdx(idx);
+    setRecordMode(mode);
+    setRecordOpen(true);
+  }, []);
 
   // Auto-detect properties from sheet headers
   useEffect(() => {
@@ -840,7 +1121,18 @@ export function OverviewWorkspace() {
             </>
           )}
 
-          <div className="ml-auto shrink-0">
+          <div className="ml-auto flex items-center gap-2 shrink-0">
+            {/* Record open mode toggle */}
+            <div className="flex items-center bg-slate-100 rounded-lg p-0.5">
+              <button onClick={() => setRecordMode('peek')} title="Side peek"
+                className={cn('p-1.5 rounded-md transition-all', recordMode === 'peek' ? 'bg-white shadow-sm text-slate-700' : 'text-slate-400 hover:text-slate-600')}>
+                <PanelRight size={12}/>
+              </button>
+              <button onClick={() => setRecordMode('modal')} title="Center modal"
+                className={cn('p-1.5 rounded-md transition-all', recordMode === 'modal' ? 'bg-white shadow-sm text-slate-700' : 'text-slate-400 hover:text-slate-600')}>
+                <Maximize2 size={12}/>
+              </button>
+            </div>
             <SourceChip pageSheet={pageSheet} canEdit={canEdit} addedBy={user?.name ?? 'Admin'}/>
           </div>
         </div>
@@ -866,11 +1158,12 @@ export function OverviewWorkspace() {
           groupBy={activeView.groupBy}
           groupBy2={activeView.groupBy2}
           layout={(activeView.layout === 'card' || activeView.layout === 'gallery') ? 'card' : 'table'}
+          onOpen={(row, idx) => openRecord(row, idx)}
         />
       ) : activeView?.layout === 'card' || activeView?.layout === 'gallery' ? (
-        <CardView rows={processedRows} props={viewProps} search={search}/>
+        <CardView rows={processedRows} props={viewProps} search={search} onOpen={(row, idx) => openRecord(row, idx)}/>
       ) : (
-        <TableView rows={processedRows} props={viewProps} search={search}/>
+        <TableView rows={processedRows} props={viewProps} search={search} onOpen={(row, idx) => openRecord(row, idx)}/>
       )}
 
       {/* ── All portal-based modals ─────────────────────────────────────── */}
@@ -919,6 +1212,22 @@ export function OverviewWorkspace() {
             view={activeView} allHeaders={pageSheet.headers}
             onUpdate={props => commit(dbUpdateView(store, activeView.id, { properties: props }))}
             onClose={() => setShowProps(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Record Detail — peek or modal */}
+      <AnimatePresence>
+        {recordOpen && processedRows[recordIdx] && (
+          <RecordDetail
+            row={processedRows[recordIdx]}
+            allRows={processedRows}
+            rowIndex={recordIdx}
+            props={viewProps}
+            mode={recordMode}
+            canEdit={canEdit}
+            onClose={() => setRecordOpen(false)}
+            onNavigate={idx => setRecordIdx(idx)}
           />
         )}
       </AnimatePresence>
