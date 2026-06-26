@@ -1,142 +1,161 @@
 'use client';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
-  Database, RefreshCw, Plus, ChevronDown, ChevronUp, Filter, ArrowUpDown,
-  X, Check, Edit3, Copy, Trash2, Star, Table2, LayoutGrid, List, Columns,
-  Settings2, Search, Eye, EyeOff, ChevronLeft, ChevronRight,
-  AlertCircle, CheckCircle2, Hash, Cloud, Monitor, ExternalLink,
-  BarChart3, TrendingUp, Layers, Globe, Users, Tag,
-  Link2, StickyNote,
+  Database, RefreshCw, Plus, ChevronDown, ChevronUp, Filter,
+  X, Check, Edit3, Copy, Trash2, Star, Table2, LayoutGrid, List,
+  Settings2, Search, CheckCircle2, AlertCircle, ExternalLink,
+  Link2, Cloud, ChevronLeft, ChevronRight, Columns,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/authStore';
 import { usePageSheet } from '@/lib/sheets/usePageSheet';
-import { PageSheetLinkBar } from '@/components/sheets/PageSheetLinkBar';
-import { LinkedSourcesPanel } from '@/components/sheets/LinkedSourcesPanel';
 import {
   getDBViewStore, saveDBViewStore, dbAddView, dbUpdateView, dbDeleteView,
   detectProperties, mergeProperties, applyDBFilters, applyDBSorts, groupRows,
-  computeKPIs, computeDistribution,
-  type DBViewStore, type DBView, type Property, type DBFilter, type DBSort, type ViewLayout,
+  type DBViewStore, type DBView, type Property, type DBFilter, type ViewLayout,
   OP_LABELS, LAYOUT_ICONS,
 } from '@/lib/overview/overviewEngine';
 import type { SheetRow } from '@/lib/sheets/googleSheets';
 
-// ── Icon map ──────────────────────────────────────────────────────────────────
-const ICONS: Record<string, React.ElementType> = {
-  Database, Hash, CheckCircle2, AlertCircle, Table2, LayoutGrid, List, Columns,
-  BarChart3, TrendingUp, Layers, Globe, Users, Tag, Cloud, Monitor,
-};
-function Ico({ name, size = 14, className = '' }: { name: string; size?: number; className?: string }) {
-  const I = ICONS[name] ?? Database;
-  return <I size={size} className={className}/>;
-}
+// ── Compact source status chip ────────────────────────────────────────────────
+function SourceChip({ pageSheet, canEdit, addedBy }: { pageSheet: ReturnType<typeof usePageSheet>; canEdit: boolean; addedBy: string }) {
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [linkInput, setLinkInput] = useState('');
 
-// ── KPI Cards ─────────────────────────────────────────────────────────────────
-const KPI_COLORS: Record<string, string> = {
-  blue:    'border-blue-200 bg-blue-50',
-  violet:  'border-violet-200 bg-violet-50',
-  emerald: 'border-emerald-200 bg-emerald-50',
-  amber:   'border-amber-200 bg-amber-50',
-  cyan:    'border-cyan-200 bg-cyan-50',
-  indigo:  'border-indigo-200 bg-indigo-50',
-  rose:    'border-rose-200 bg-rose-50',
-};
-const KPI_TEXT: Record<string, string> = {
-  blue: 'text-blue-700', violet: 'text-violet-700', emerald: 'text-emerald-700',
-  amber: 'text-amber-700', cyan: 'text-cyan-700', indigo: 'text-indigo-700', rose: 'text-rose-700',
-};
-const KPI_TOP: Record<string, string> = {
-  blue: 'bg-blue-500', violet: 'bg-violet-500', emerald: 'bg-emerald-500',
-  amber: 'bg-amber-500', cyan: 'bg-cyan-500', indigo: 'bg-indigo-500', rose: 'bg-rose-500',
-};
+  function timeAgo(iso: string | null) {
+    if (!iso) return 'Never';
+    const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 60) return 'just now';
+    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+    return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  }
 
-// ── Distribution bar ──────────────────────────────────────────────────────────
-function DistBar({ label, count, pct, max, color }: { label: string; count: number; pct: number; max: number; color: string }) {
-  return (
-    <div className="flex items-center gap-2.5 group py-1">
-      <div className="w-28 shrink-0 text-xs text-slate-600 font-medium truncate" title={label}>{label}</div>
-      <div className="flex-1 bg-slate-100 rounded-full h-2 overflow-hidden">
-        <motion.div initial={{ width: 0 }} animate={{ width: `${(count / max) * 100}%` }}
-          transition={{ duration: 0.5, delay: 0.1 }}
-          className={`h-full rounded-full ${color}`}/>
-      </div>
-      <div className="w-12 text-right text-[11px] text-slate-500 shrink-0">{count} <span className="text-slate-300">({pct}%)</span></div>
-    </div>
-  );
-}
-
-// ── Analytics Panel ───────────────────────────────────────────────────────────
-function AnalyticsPanel({ rows, headers }: { rows: SheetRow[]; headers: string[] }) {
-  const [col1, setCol1] = useState('');
-  const [col2, setCol2] = useState('');
-  const [show, setShow] = useState(false);
-
-  // Pick first two categorical columns as defaults
-  useEffect(() => {
-    const cats = headers.filter(h => {
-      const u = new Set(rows.map(r => r[h]).filter(Boolean)).size;
-      return u > 1 && u <= 50 && u < rows.length * 0.9;
-    });
-    if (cats[0] && !col1) setCol1(cats[0]);
-    if (cats[1] && !col2) setCol2(cats[1]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [headers.join(',')]);
-
-  const dist1 = useMemo(() => col1 ? computeDistribution(rows, col1).slice(0, 10) : [], [rows, col1]);
-  const dist2 = useMemo(() => col2 ? computeDistribution(rows, col2).slice(0, 10) : [], [rows, col2]);
-  const max1 = dist1[0]?.count ?? 1;
-  const max2 = dist2[0]?.count ?? 1;
-
-  if (!rows.length || !headers.length) return null;
-
-  const COLORS = ['bg-blue-400','bg-violet-400','bg-emerald-400','bg-amber-400','bg-cyan-400','bg-rose-400','bg-indigo-400'];
+  const connected = !!pageSheet.url;
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden" style={{ boxShadow: '0 1px 3px rgba(15,23,42,0.06)' }}>
-      <button onClick={() => setShow(s => !s)}
-        className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors">
-        <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-violet-50 border border-violet-100 flex items-center justify-center">
-            <BarChart3 size={13} className="text-violet-600"/>
-          </div>
-          <p className="text-sm font-bold text-slate-900">Analytics</p>
-          <span className="text-[10px] text-slate-400">Distribution charts · auto-computed from data</span>
-        </div>
-        {show ? <ChevronUp size={14} className="text-slate-400"/> : <ChevronDown size={14} className="text-slate-400"/>}
+    <>
+      {/* Compact chip */}
+      <button
+        onClick={() => setDrawerOpen(true)}
+        className={cn(
+          'flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all shrink-0',
+          connected
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+            : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+        )}
+      >
+        {connected
+          ? <CheckCircle2 size={12} className="text-emerald-500"/>
+          : <AlertCircle size={12} className="text-amber-500"/>
+        }
+        <span>{connected ? 'Google Sheet' : 'No source'}</span>
+        {connected && (
+          <>
+            <span className="text-emerald-400">·</span>
+            <span className="font-normal text-emerald-600">{timeAgo(pageSheet.fetchedAt)}</span>
+          </>
+        )}
+        {pageSheet.loading && <RefreshCw size={10} className="animate-spin text-emerald-500"/>}
       </button>
-      {show && (
-        <div className="border-t border-slate-100 p-5">
-          <div className="grid grid-cols-2 gap-6">
-            {[{ col: col1, setCol: setCol1, dist: dist1, max: max1 },
-              { col: col2, setCol: setCol2, dist: dist2, max: max2 }].map(({ col, setCol, dist, max }, pi) => (
-              <div key={pi}>
-                <div className="flex items-center justify-between mb-3">
-                  <select value={col} onChange={e => setCol(e.target.value)}
-                    className="text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-rail-400">
-                    <option value="">Select column…</option>
-                    {headers.map(h => <option key={h} value={h}>{h}</option>)}
-                  </select>
-                  <span className="text-[10px] text-slate-400">{dist.length} values</span>
-                </div>
-                <div className="space-y-0.5">
-                  {dist.map(({ label, count, pct }, i) => (
-                    <DistBar key={label} label={label} count={count} pct={pct} max={max}
-                      color={COLORS[i % COLORS.length]}/>
-                  ))}
+
+      {/* Drawer */}
+      {drawerOpen && (
+        <div className="fixed inset-0 z-[400] flex" onClick={() => setDrawerOpen(false)}>
+          <div className="flex-1"/>
+          <motion.div
+            initial={{ x: 360 }} animate={{ x: 0 }} exit={{ x: 360 }}
+            transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+            className="w-80 h-full bg-white border-l border-slate-200 shadow-2xl overflow-y-auto"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50">
+              <p className="text-sm font-bold text-slate-900">Data Source</p>
+              <button onClick={() => setDrawerOpen(false)} className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-400"><X size={14}/></button>
+            </div>
+            <div className="p-5 space-y-4">
+              {/* Status */}
+              <div className={cn('flex items-center gap-3 p-3 rounded-xl border',
+                connected ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200')}>
+                {connected
+                  ? <CheckCircle2 size={18} className="text-emerald-500 shrink-0"/>
+                  : <AlertCircle size={18} className="text-amber-500 shrink-0"/>
+                }
+                <div className="min-w-0">
+                  <p className={cn('text-xs font-bold', connected ? 'text-emerald-800' : 'text-amber-800')}>
+                    {connected ? 'Connected' : 'No data source'}
+                  </p>
+                  {connected && (
+                    <p className="text-[10px] text-emerald-600 truncate mt-0.5">{pageSheet.url}</p>
+                  )}
                 </div>
               </div>
-            ))}
-          </div>
+
+              {/* Stats */}
+              {connected && (
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: 'Records', value: pageSheet.rows.length.toLocaleString('en-IN') },
+                    { label: 'Last Sync', value: timeAgo(pageSheet.fetchedAt) },
+                    { label: 'Storage', value: pageSheet.kvAvailable ? 'Upstash' : 'Local' },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="bg-slate-50 rounded-lg p-2.5 text-center">
+                      <p className="text-[10px] text-slate-400 font-medium">{label}</p>
+                      <p className="text-xs font-bold text-slate-800 mt-0.5">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Actions */}
+              {connected && (
+                <div className="flex gap-2">
+                  <button onClick={() => { pageSheet.refetch(); }}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold">
+                    <RefreshCw size={12}/> Sync now
+                  </button>
+                  <a href={pageSheet.url} target="_blank" rel="noreferrer"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-medium">
+                    <ExternalLink size={12}/> Open
+                  </a>
+                </div>
+              )}
+
+              {/* Link / change input */}
+              {canEdit && (
+                <div className="space-y-2 pt-2 border-t border-slate-100">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    {connected ? 'Change source' : 'Connect Google Sheet'}
+                  </p>
+                  <p className="text-[10px] text-slate-400">Publish the sheet (File → Share → Publish to web → CSV) and paste the URL</p>
+                  <input value={linkInput} onChange={e => setLinkInput(e.target.value)}
+                    placeholder="https://docs.google.com/spreadsheets/d/…"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-emerald-400"/>
+                  <div className="flex gap-2">
+                    {connected && (
+                      <button onClick={() => { pageSheet.setUrl(''); setLinkInput(''); setDrawerOpen(false); }}
+                        className="flex-1 px-3 py-2 rounded-lg border border-red-200 text-red-600 text-xs font-medium hover:bg-red-50">
+                        Disconnect
+                      </button>
+                    )}
+                    <button onClick={() => { if (linkInput.trim()) { pageSheet.setUrl(linkInput.trim(), addedBy); setLinkInput(''); setDrawerOpen(false); } }}
+                      disabled={!linkInput.trim()}
+                      className="flex-1 px-3 py-2 rounded-lg bg-rail-600 text-white text-xs font-semibold hover:bg-rail-700 disabled:opacity-40">
+                      {connected ? 'Update' : 'Connect'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </motion.div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
-// ── Properties Panel (per-view field config) ──────────────────────────────────
+// ── Properties Panel ──────────────────────────────────────────────────────────
 function PropertiesPanel({ view, allHeaders, onUpdate, onClose }: {
   view: DBView; allHeaders: string[];
   onUpdate: (props: Property[]) => void; onClose: () => void;
@@ -147,24 +166,18 @@ function PropertiesPanel({ view, allHeaders, onUpdate, onClose }: {
   const [draftLabel, setDraftLabel] = useState('');
 
   const sorted = [...props].sort((a, b) => a.order - b.order);
-  const filtered = sorted.filter(p => !search || p.column.toLowerCase().includes(search.toLowerCase()) || p.label.toLowerCase().includes(search.toLowerCase()));
+  const filtered = sorted.filter(p =>
+    !search || p.column.toLowerCase().includes(search.toLowerCase()) || p.label.toLowerCase().includes(search.toLowerCase()));
 
-  const toggle = (id: string) => {
-    const next = props.map(p => p.id !== id ? p : { ...p, visible: !p.visible });
-    setProps(next); onUpdate(next);
-  };
-  const move = (id: string, dir: 'up'|'down') => {
-    const s = [...sorted];
-    const idx = s.findIndex(p => p.id === id);
-    const ni = dir === 'up' ? idx - 1 : idx + 1;
+  const toggle = (id: string) => { const n = props.map(p => p.id !== id ? p : { ...p, visible: !p.visible }); setProps(n); onUpdate(n); };
+  const move = (id: string, dir: 'up' | 'down') => {
+    const s = [...sorted]; const idx = s.findIndex(p => p.id === id); const ni = dir === 'up' ? idx - 1 : idx + 1;
     if (ni < 0 || ni >= s.length) return;
     [s[idx], s[ni]] = [s[ni], s[idx]];
-    const next = s.map((p, i) => ({ ...p, order: i }));
-    setProps(next); onUpdate(next);
+    const n = s.map((p, i) => ({ ...p, order: i })); setProps(n); onUpdate(n);
   };
   const rename = (id: string, label: string) => {
-    const next = props.map(p => p.id !== id ? p : { ...p, label });
-    setProps(next); onUpdate(next); setRenaming(null);
+    const n = props.map(p => p.id !== id ? p : { ...p, label }); setProps(n); onUpdate(n); setRenaming(null);
   };
 
   return (
@@ -211,7 +224,7 @@ function PropertiesPanel({ view, allHeaders, onUpdate, onClose }: {
         </div>
         <div className="px-4 py-3 border-t border-slate-100 bg-slate-50 flex justify-between text-[10px] text-slate-400">
           <span>{props.filter(p => p.visible).length} of {props.length} visible</span>
-          <button onClick={() => { const all = props.map(p => ({ ...p, visible: true })); setProps(all); onUpdate(all); }} className="hover:text-rail-600 transition-colors">Show all</button>
+          <button onClick={() => { const a = props.map(p => ({ ...p, visible: true })); setProps(a); onUpdate(a); }} className="hover:text-rail-600">Show all</button>
         </div>
       </motion.div>
     </div>
@@ -227,12 +240,10 @@ function FilterBuilder({ view, onUpdate }: { view: DBView; onUpdate: (f: DBFilte
   const add = () => {
     if (!headers.length) return;
     const f: DBFilter = { id: `f${Date.now()}`, field: headers[0], op: 'contains', value: '', logic: 'and' };
-    const next = [...filters, f]; setFilters(next); onUpdate(next);
+    const n = [...filters, f]; setFilters(n); onUpdate(n);
   };
-  const upd = (id: string, patch: Partial<DBFilter>) => {
-    const next = filters.map(f => f.id !== id ? f : { ...f, ...patch }); setFilters(next); onUpdate(next);
-  };
-  const del = (id: string) => { const next = filters.filter(f => f.id !== id); setFilters(next); onUpdate(next); };
+  const upd = (id: string, patch: Partial<DBFilter>) => { const n = filters.map(f => f.id !== id ? f : { ...f, ...patch }); setFilters(n); onUpdate(n); };
+  const del = (id: string) => { const n = filters.filter(f => f.id !== id); setFilters(n); onUpdate(n); };
 
   return (
     <div className="relative">
@@ -241,7 +252,7 @@ function FilterBuilder({ view, onUpdate }: { view: DBView; onUpdate: (f: DBFilte
           filters.length > 0 ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300')}>
         <Filter size={12}/>
         Filter
-        {filters.length > 0 && <span className="bg-amber-200 text-amber-800 text-[10px] font-bold rounded-full px-1.5 py-0.5">{filters.length}</span>}
+        {filters.length > 0 && <span className="bg-amber-200 text-amber-800 text-[10px] font-bold rounded-full px-1.5">{filters.length}</span>}
       </button>
       {open && (
         <div className="absolute top-full left-0 mt-1.5 z-50 w-96 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
@@ -254,7 +265,7 @@ function FilterBuilder({ view, onUpdate }: { view: DBView; onUpdate: (f: DBFilte
             {filters.map((f, i) => (
               <div key={f.id} className="flex items-center gap-1.5 bg-slate-50 rounded-lg p-2">
                 {i > 0 && (
-                  <select value={f.logic} onChange={e => upd(f.id, { logic: e.target.value as 'and'|'or' })}
+                  <select value={f.logic} onChange={e => upd(f.id, { logic: e.target.value as 'and' | 'or' })}
                     className="text-[10px] bg-white border border-slate-200 rounded px-1 py-0.5 text-slate-600 focus:outline-none w-12">
                     <option value="and">AND</option><option value="or">OR</option>
                   </select>
@@ -327,9 +338,7 @@ function TableView({ rows, props, search }: { rows: SheetRow[]; props: Property[
                 <td className="px-3 py-2 text-slate-300 text-[10px] font-mono">{page * PAGE_SIZE + i + 1}</td>
                 {visProps.map(p => (
                   <td key={p.id} className="px-3 py-2 text-slate-700" style={{ maxWidth: p.width ?? 200 }}>
-                    <div className={cn('truncate', p.wrap && 'whitespace-normal break-words')}>
-                      {String(row[p.column] ?? '—')}
-                    </div>
+                    <div className={cn('truncate', p.wrap && 'whitespace-normal break-words')}>{String(row[p.column] ?? '—')}</div>
                   </td>
                 ))}
               </tr>
@@ -337,7 +346,6 @@ function TableView({ rows, props, search }: { rows: SheetRow[]; props: Property[
           </tbody>
         </table>
       </div>
-      {/* Pagination */}
       <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100 bg-slate-50">
         <p className="text-[10px] text-slate-400">{total.toLocaleString('en-IN')} records · page {page + 1} of {totalPages || 1}</p>
         <div className="flex gap-1">
@@ -366,9 +374,7 @@ function CardView({ rows, props, search }: { rows: SheetRow[]; props: Property[]
       {filtered.slice(0, 200).map((row, i) => (
         <div key={i} className="bg-white border border-slate-200 rounded-xl p-4 hover:shadow-md hover:-translate-y-0.5 transition-all"
           style={{ boxShadow: '0 1px 3px rgba(15,23,42,0.06)' }}>
-          {titleProp && (
-            <p className="text-sm font-bold text-slate-900 truncate mb-2">{String(row[titleProp.column] ?? '—')}</p>
-          )}
+          {titleProp && <p className="text-sm font-bold text-slate-900 truncate mb-2">{String(row[titleProp.column] ?? '—')}</p>}
           <div className="space-y-1.5">
             {restProps.slice(0, 4).map(p => (
               <div key={p.id} className="flex items-center justify-between gap-2">
@@ -386,46 +392,55 @@ function CardView({ rows, props, search }: { rows: SheetRow[]; props: Property[]
 // ── Grouped View ──────────────────────────────────────────────────────────────
 function GroupedView({ rows, props, groupBy, search }: { rows: SheetRow[]; props: Property[]; groupBy: string; search: string }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const vis = props.filter(p => p.visible);
   const filtered = useMemo(() => {
     if (!search) return rows;
     const q = search.toLowerCase();
-    const vis = props.filter(p => p.visible);
     return rows.filter(r => vis.some(p => String(r[p.column] ?? '').toLowerCase().includes(q)));
-  }, [rows, search, props]);
+  }, [rows, search, vis]);
   const groups = useMemo(() => groupRows(filtered, groupBy), [filtered, groupBy]);
 
   return (
     <div className="space-y-3">
-      {Array.from(groups.entries()).map(([key, groupRows]) => (
+      {Array.from(groups.entries()).map(([key, grpRows]) => (
         <div key={key} className="bg-white border border-slate-200 rounded-xl overflow-hidden" style={{ boxShadow: '0 1px 3px rgba(15,23,42,0.06)' }}>
           <button onClick={() => setCollapsed(s => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n; })}
             className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors border-b border-slate-100">
             <div className="w-2 h-2 rounded-full bg-rail-500 shrink-0"/>
             <p className="font-semibold text-slate-800 text-sm flex-1 text-left">{key}</p>
-            <span className="text-[10px] text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">{groupRows.length} records</span>
+            <span className="text-[10px] text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">{grpRows.length} records</span>
             {collapsed.has(key) ? <ChevronDown size={14} className="text-slate-400"/> : <ChevronUp size={14} className="text-slate-400"/>}
           </button>
-          {!collapsed.has(key) && (
-            <TableView rows={groupRows} props={props} search=""/>
-          )}
+          {!collapsed.has(key) && <TableView rows={grpRows} props={props} search=""/>}
         </div>
       ))}
     </div>
   );
 }
 
-// ── View Tab Bar ──────────────────────────────────────────────────────────────
+// ── View Tab Bar + compact toolbar (all in one sticky bar) ────────────────────
 const LAYOUT_ICON_MAP: Record<string, React.ElementType> = { Table2, LayoutGrid, List, Columns };
 
-function ViewTabBar({ store, canEdit, userId, sheetRows, fetchedAt, loading, onRefetch,
-  onSetActive, onCreate, onRename, onDelete, onSyncChange, syncInterval }: {
+function WorkspaceBar({
+  store, canEdit, userId, sheetRows, fetchedAt, loading,
+  pageSheet, addedBy, search, onSearch, onRefetch, onSetActive, onCreate, onRename,
+  onDelete, onSyncChange, syncInterval, viewProps,
+  activeView, onOpenProps, onUpdateFilters, onUpdateGroupBy,
+}: {
   store: DBViewStore; canEdit: boolean; userId: string;
   sheetRows: number; fetchedAt: string | null; loading: boolean;
-  onRefetch: () => void; onSetActive: (id: string) => void;
+  pageSheet: ReturnType<typeof usePageSheet>;
+  addedBy: string;
+  search: string; onSearch: (v: string) => void; onRefetch: () => void;
+  onSetActive: (id: string) => void;
   onCreate: (label: string, layout: ViewLayout, tplId?: string) => void;
   onRename: (id: string, label: string) => void;
   onDelete: (id: string) => void;
   onSyncChange: (m: number) => void; syncInterval: number;
+  viewProps: Property[]; activeView: DBView | undefined;
+  onOpenProps: () => void;
+  onUpdateFilters: (f: DBFilter[]) => void;
+  onUpdateGroupBy: (col: string | undefined) => void;
 }) {
   const [menuView, setMenuView] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -445,7 +460,9 @@ function ViewTabBar({ store, canEdit, userId, sheetRows, fetchedAt, loading, onR
   }
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-visible" style={{ boxShadow: '0 1px 3px rgba(15,23,42,0.06)' }}>
+    <div className="bg-white border border-slate-200 rounded-xl overflow-visible sticky top-0 z-30"
+      style={{ boxShadow: '0 1px 6px rgba(15,23,42,0.08)' }}>
+      {/* Row 1: View tabs */}
       <div className="flex items-center overflow-x-auto scrollbar-none border-b border-slate-100 px-2">
         {store.views.map(view => {
           const Icon = LAYOUT_ICON_MAP[LAYOUT_ICONS[view.layout]] ?? Table2;
@@ -455,7 +472,7 @@ function ViewTabBar({ store, canEdit, userId, sheetRows, fetchedAt, loading, onR
               {renaming === view.id ? (
                 <div className="flex items-center gap-1.5 px-3 py-2.5">
                   <input value={draft} onChange={e => setDraft(e.target.value)} autoFocus
-                    className="text-xs font-semibold bg-white border border-rail-300 rounded px-1.5 py-0.5 w-28 focus:outline-none"
+                    className="text-xs font-semibold bg-white border border-rail-300 rounded px-1.5 py-0.5 w-24 focus:outline-none"
                     onBlur={() => { onRename(view.id, draft.trim() || view.label); setRenaming(null); }}
                     onKeyDown={e => { if (e.key === 'Enter') { onRename(view.id, draft.trim() || view.label); setRenaming(null); } if (e.key === 'Escape') setRenaming(null); }}/>
                 </div>
@@ -469,7 +486,7 @@ function ViewTabBar({ store, canEdit, userId, sheetRows, fetchedAt, loading, onR
                   {view.isDefault && <Star size={9} className="text-amber-400 fill-amber-400"/>}
                   {canEdit && isActive && (
                     <span onClick={e => { e.stopPropagation(); setMenuView(m => m === view.id ? null : view.id); }}
-                      className="p-0.5 rounded hover:bg-slate-100 text-slate-300 hover:text-slate-500">
+                      className="p-0.5 rounded hover:bg-slate-100 text-slate-300">
                       <ChevronDown size={10}/>
                     </span>
                   )}
@@ -493,18 +510,17 @@ function ViewTabBar({ store, canEdit, userId, sheetRows, fetchedAt, loading, onR
               <Plus size={12}/> Add view
             </button>
             {showNew && (
-              <div className="absolute top-full left-0 mt-1 z-50 w-56 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden p-4 space-y-3" onClick={e => e.stopPropagation()}>
+              <div className="absolute top-full left-0 mt-1 z-50 w-56 bg-white border border-slate-200 rounded-xl shadow-lg overflow-visible p-4 space-y-3" onClick={e => e.stopPropagation()}>
                 <input value={newLabel} onChange={e => setNewLabel(e.target.value)} autoFocus
-                  onKeyDown={e => { if (e.key === 'Enter' && newLabel.trim()) { onCreate(newLabel, newLayout, newTpl || undefined); setShowNew(false); setNewLabel('New View'); }}}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-rail-400"/>
                 <div className="grid grid-cols-3 gap-1.5">
-                  {(['table','card','list','board','gallery'] as ViewLayout[]).map(l => {
+                  {(['table', 'card', 'list', 'board', 'gallery'] as ViewLayout[]).map(l => {
                     const Icon = LAYOUT_ICON_MAP[LAYOUT_ICONS[l]] ?? Table2;
                     return (
                       <button key={l} onClick={() => setNewLayout(l)}
                         className={cn('flex flex-col items-center gap-1 p-2 rounded-lg border text-[10px] font-medium transition-all',
                           newLayout === l ? 'bg-rail-50 border-rail-300 text-rail-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50')}>
-                        <Icon size={13}/> {l}
+                        <Icon size={13}/>{l}
                       </button>
                     );
                   })}
@@ -523,22 +539,22 @@ function ViewTabBar({ store, canEdit, userId, sheetRows, fetchedAt, loading, onR
             )}
           </div>
         )}
-      </div>
-      <div className="flex items-center justify-between px-4 py-2">
-        <div className="flex items-center gap-2 text-[10px] text-slate-400">
-          <span className={cn('w-1.5 h-1.5 rounded-full', sheetRows > 0 ? 'bg-emerald-500' : 'bg-slate-300')}/>
-          {sheetRows > 0 ? `${sheetRows.toLocaleString('en-IN')} records · synced ${timeAgo(fetchedAt)}` : 'No data connected'}
-        </div>
-        <div className="flex items-center gap-1.5">
+
+        {/* Right side: sync status + source chip */}
+        <div className="ml-auto flex items-center gap-2 px-3 shrink-0">
+          <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', sheetRows > 0 ? 'bg-emerald-500' : 'bg-slate-300')}/>
+          <span className="text-[10px] text-slate-400 whitespace-nowrap hidden sm:block">
+            {sheetRows > 0 ? `${sheetRows.toLocaleString('en-IN')} records · ${timeAgo(fetchedAt)}` : 'No data'}
+          </span>
           <div className="relative">
-            <button onClick={() => setShowSync(s => !s)} className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-600 px-2 py-1 rounded-lg hover:bg-slate-100">
-              ⏱ Every {syncInterval}m
+            <button onClick={() => setShowSync(s => !s)} className="text-[10px] text-slate-400 hover:text-slate-600 px-1.5 py-1 rounded hover:bg-slate-100">
+              ⏱ {syncInterval}m
             </button>
             {showSync && (
-              <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-lg p-2 w-32">
-                {[5,15,30,60].map(m => (
+              <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-lg p-2 w-28">
+                {[5, 15, 30, 60].map(m => (
                   <button key={m} onClick={() => { onSyncChange(m); setShowSync(false); }}
-                    className={cn('flex items-center justify-between w-full px-2 py-1.5 text-xs rounded-lg transition-colors',
+                    className={cn('flex items-center justify-between w-full px-2 py-1.5 text-xs rounded-lg',
                       syncInterval === m ? 'bg-rail-50 text-rail-700 font-semibold' : 'text-slate-600 hover:bg-slate-50')}>
                     {m} min {syncInterval === m && <Check size={11}/>}
                   </button>
@@ -547,9 +563,46 @@ function ViewTabBar({ store, canEdit, userId, sheetRows, fetchedAt, loading, onR
             )}
           </div>
           <button onClick={onRefetch} disabled={loading}
-            className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-600 px-2 py-1 rounded-lg hover:bg-slate-100 disabled:opacity-40">
-            <RefreshCw size={11} className={loading ? 'animate-spin' : ''}/> Sync
+            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 disabled:opacity-40">
+            <RefreshCw size={12} className={loading ? 'animate-spin' : ''}/>
           </button>
+        </div>
+      </div>
+
+      {/* Row 2: Search + Properties + Filter + Group + Source chip */}
+      <div className="flex items-center gap-2 px-3 py-2 overflow-x-auto scrollbar-none">
+        {/* Search */}
+        <div className="relative min-w-40 flex-1 max-w-64">
+          <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"/>
+          <input value={search} onChange={e => onSearch(e.target.value)} placeholder="Search…"
+            className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-7 pr-3 py-1.5 text-xs text-slate-700 focus:outline-none focus:border-rail-400"/>
+        </div>
+
+        {/* Properties */}
+        <button onClick={onOpenProps}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-500 hover:border-rail-300 hover:text-rail-600 transition-all shrink-0">
+          <Settings2 size={11}/>
+          <span className="hidden sm:inline">Properties</span>
+          <span className="text-[10px] text-slate-300">{viewProps.filter(p => p.visible).length}/{viewProps.length}</span>
+        </button>
+
+        {/* Filters */}
+        {activeView && (
+          <FilterBuilder view={activeView} onUpdate={onUpdateFilters}/>
+        )}
+
+        {/* Group by */}
+        {activeView && (
+          <select value={activeView.groupBy ?? ''} onChange={e => onUpdateGroupBy(e.target.value || undefined)}
+            className="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-600 focus:outline-none focus:border-rail-400 shrink-0">
+            <option value="">No group</option>
+            {viewProps.map(p => <option key={p.column} value={p.column}>⊞ {p.label}</option>)}
+          </select>
+        )}
+
+        {/* Data source chip — far right */}
+        <div className="ml-auto shrink-0">
+          <SourceChip pageSheet={pageSheet} canEdit={canEdit} addedBy={addedBy}/>
         </div>
       </div>
     </div>
@@ -568,8 +621,6 @@ export function OverviewWorkspace() {
   const activeView = store.views.find(v => v.id === store.activeViewId) ?? store.views[0];
   const [search, setSearch] = useState('');
   const [showProps, setShowProps] = useState(false);
-  const [showSort, setShowSort] = useState(false);
-  const [sorts, setSorts] = useState<DBSort[]>(activeView?.sorts ?? []);
 
   const commit = useCallback((next: DBViewStore) => {
     setStore(next);
@@ -581,10 +632,7 @@ export function OverviewWorkspace() {
     if (!pageSheet.headers.length || !activeView) return;
     const merged = mergeProperties(activeView.properties, pageSheet.headers);
     if (merged.length > activeView.properties.length) {
-      // Only auto-set visible for the FIRST-EVER detection
-      const isFirst = activeView.properties.length === 0;
-      const withVisible = isFirst ? merged : merged;
-      commit(dbUpdateView(store, activeView.id, { properties: withVisible }));
+      commit(dbUpdateView(store, activeView.id, { properties: merged }));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageSheet.headers.join(','), activeView?.id]);
@@ -595,101 +643,43 @@ export function OverviewWorkspace() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.syncIntervalMinutes]);
 
-  // Derive processed rows for active view
   const processedRows = useMemo(() => {
     let rows = pageSheet.rows as SheetRow[];
     if (activeView?.filters?.length) rows = applyDBFilters(rows, activeView.filters);
-    const activeSorts = activeView?.sorts ?? [];
-    if (activeSorts.length) rows = applyDBSorts(rows, activeSorts);
+    if (activeView?.sorts?.length) rows = applyDBSorts(rows, activeView.sorts);
     return rows;
   }, [pageSheet.rows, activeView?.filters, activeView?.sorts]);
-
-  // KPIs
-  const kpis = useMemo(() => computeKPIs(pageSheet.rows, pageSheet.headers, pageSheet.fetchedAt, pageSheet.url), [pageSheet.rows, pageSheet.headers, pageSheet.fetchedAt, pageSheet.url]);
 
   const viewProps = activeView?.properties ?? [];
 
   return (
-    <div className="space-y-4 pb-10">
-      {/* Data source link bar */}
-      <PageSheetLinkBar sheet={pageSheet} canEdit={canEdit} pageLabel="NSG Category Wise"
-        expectedFields={viewProps.filter(p => p.visible).map(p => p.column)}/>
-
-      {/* KPI Cards — auto-computed from sheet data */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        {kpis.map(kpi => (
-          <motion.div key={kpi.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-            className={cn('rounded-xl border p-4 relative overflow-hidden', KPI_COLORS[kpi.color] ?? 'border-slate-200 bg-white')}
-            style={{ boxShadow: '0 1px 3px rgba(15,23,42,0.06)' }}>
-            <div className={cn('absolute top-0 left-0 right-0 h-1 rounded-t-xl', KPI_TOP[kpi.color])}/>
-            <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mt-1">{kpi.label}</p>
-            <p className={cn('text-2xl font-black mt-1 tracking-tight', KPI_TEXT[kpi.color])}>{kpi.value}</p>
-            {kpi.sub && <p className="text-[10px] text-slate-400 mt-0.5 truncate">{kpi.sub}</p>}
-          </motion.div>
-        ))}
-      </div>
-
-      {/* Analytics panel */}
-      {pageSheet.rows.length > 0 && (
-        <AnalyticsPanel rows={pageSheet.rows} headers={pageSheet.headers}/>
-      )}
-
-      {/* View Tab Bar */}
-      <ViewTabBar
+    <div className="space-y-3 pb-10">
+      {/* Sticky workspace bar: views + search + properties + filter + source */}
+      <WorkspaceBar
         store={store} canEdit={canEdit} userId={user?.id ?? ''}
         sheetRows={pageSheet.rows.length} fetchedAt={pageSheet.fetchedAt} loading={pageSheet.loading}
-        onRefetch={pageSheet.refetch}
+        pageSheet={pageSheet} addedBy={user?.name ?? 'Admin'} search={search} onSearch={setSearch} onRefetch={pageSheet.refetch}
         onSetActive={id => commit({ ...store, activeViewId: id })}
         onCreate={(label, layout, tplId) => commit(dbAddView(store, label, layout, user?.id ?? '', tplId))}
         onRename={(id, label) => commit(dbUpdateView(store, id, { label }))}
         onDelete={id => commit(dbDeleteView(store, id))}
         onSyncChange={m => commit({ ...store, syncIntervalMinutes: m })}
         syncInterval={store.syncIntervalMinutes}
+        viewProps={viewProps} activeView={activeView}
+        onOpenProps={() => setShowProps(true)}
+        onUpdateFilters={f => activeView && commit(dbUpdateView(store, activeView.id, { filters: f }))}
+        onUpdateGroupBy={col => activeView && commit(dbUpdateView(store, activeView.id, { groupBy: col }))}
       />
 
-      {/* Linked Sources Panel */}
-      <LinkedSourcesPanel
-        sources={[{ namespace: 'sheet_nsg_category_wise', label: 'NSG Category Wise Data',
-          url: pageSheet.url, rows: pageSheet.rows.length, fetchedAt: pageSheet.fetchedAt,
-          loading: pageSheet.loading, error: pageSheet.error, linkedAt: pageSheet.linkedAt, linkedBy: pageSheet.linkedBy }]}
-        kvAvailable={pageSheet.kvAvailable} onRefetch={pageSheet.refetch} onUnlink={() => pageSheet.setUrl('')}/>
-
-      {/* Toolbar: Search + Properties + Filters + Sort + Group */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="relative flex-1 min-w-48">
-          <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search records…"
-            className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-xs text-slate-700 focus:outline-none focus:border-rail-400 shadow-xs"/>
-        </div>
-        {/* Properties button */}
-        <button onClick={() => setShowProps(true)}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-500 hover:border-rail-300 hover:text-rail-600 transition-all">
-          <Settings2 size={12}/> Properties
-          <span className="text-[10px] text-slate-300">{viewProps.filter(p=>p.visible).length}/{viewProps.length}</span>
-        </button>
-        {/* Filters */}
-        {activeView && (
-          <FilterBuilder view={activeView} onUpdate={f => commit(dbUpdateView(store, activeView.id, { filters: f }))}/>
-        )}
-        {/* Group by */}
-        {activeView && pageSheet.headers.length > 0 && (
-          <select value={activeView.groupBy ?? ''} onChange={e => commit(dbUpdateView(store, activeView.id, { groupBy: e.target.value || undefined }))}
-            className="bg-white border border-slate-200 rounded-lg px-2.5 py-2 text-xs text-slate-600 focus:outline-none focus:border-rail-400">
-            <option value="">No grouping</option>
-            {pageSheet.headers.map(h => <option key={h} value={h}>Group: {h}</option>)}
-          </select>
-        )}
-      </div>
-
-      {/* Data view */}
+      {/* Data view — fills the rest of the screen */}
       {!sheetConnected ? (
-        <div className="bg-white border-2 border-dashed border-slate-200 rounded-xl py-16 flex flex-col items-center gap-4">
+        <div className="bg-white border-2 border-dashed border-slate-200 rounded-xl py-20 flex flex-col items-center gap-4">
           <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center">
             <Database size={26} className="text-slate-300"/>
           </div>
           <div className="text-center">
             <p className="text-sm font-bold text-slate-500">No data source connected</p>
-            <p className="text-xs text-slate-400 mt-1">Connect a Google Sheet above to display records here</p>
+            <p className="text-xs text-slate-400 mt-1">Click the status chip in the toolbar above to connect a Google Sheet</p>
           </div>
         </div>
       ) : processedRows.length === 0 ? (
@@ -704,12 +694,11 @@ export function OverviewWorkspace() {
         <TableView rows={processedRows} props={viewProps} search={search}/>
       )}
 
-      {/* Properties panel modal */}
+      {/* Properties modal */}
       <AnimatePresence>
         {showProps && activeView && (
           <PropertiesPanel
-            view={activeView}
-            allHeaders={pageSheet.headers}
+            view={activeView} allHeaders={pageSheet.headers}
             onUpdate={props => commit(dbUpdateView(store, activeView.id, { properties: props }))}
             onClose={() => setShowProps(false)}
           />
