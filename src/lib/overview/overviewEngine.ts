@@ -40,7 +40,8 @@ export interface DBView {
   properties: Property[];
   filters: DBFilter[];
   sorts: DBSort[];
-  groupBy?: string;
+  groupBy?: string;   // primary group-by column
+  groupBy2?: string;  // secondary (nested) group-by column
   isDefault: boolean;
   createdBy: string;
   createdAt: string;

@@ -531,25 +531,94 @@ function CardView({ rows, props, search }: { rows: SheetRow[]; props: Property[]
   );
 }
 
-function GroupedView({ rows, props, groupBy, search }: { rows: SheetRow[]; props: Property[]; groupBy: string; search: string }) {
+// ── Layout-aware Grouped View ─────────────────────────────────────────────────
+// Renders groups containing the CORRECT inner layout (cards, table, list, gallery)
+// groupBy2 adds a nested second-level grouping within each first-level group
+
+type InnerLayout = 'table' | 'card' | 'gallery' | 'list';
+
+function GroupHeader({ label, count, collapsed, onToggle, depth = 0 }: {
+  label: string; count: number; collapsed: boolean; onToggle: () => void; depth?: number;
+}) {
+  const DEPTH_STYLES = [
+    'bg-slate-50 border-b border-slate-200 px-4 py-2.5',         // depth 0
+    'bg-slate-100/60 border-b border-slate-200 px-5 py-2',       // depth 1
+  ];
+  const DOT_COLORS = ['bg-rail-500', 'bg-emerald-500'];
+  return (
+    <button onClick={onToggle}
+      className={cn("w-full flex items-center gap-2.5 hover:bg-slate-100/80 transition-colors", DEPTH_STYLES[depth] ?? DEPTH_STYLES[1])}>
+      {depth > 0 && <span className="w-3 h-px bg-slate-300 shrink-0"/>}
+      <span className={cn("w-2 h-2 rounded-full shrink-0", DOT_COLORS[depth] ?? 'bg-slate-400')}/>
+      <span className={cn("font-semibold text-slate-800 flex-1 text-left", depth === 0 ? "text-sm" : "text-xs")}>{label}</span>
+      <span className="text-[10px] text-slate-400 bg-white border border-slate-200 rounded-full px-2 py-0.5 shrink-0">{count}</span>
+      {collapsed
+        ? <ChevronDown size={13} className="text-slate-400 shrink-0"/>
+        : <ChevronUp size={13} className="text-slate-400 shrink-0"/>}
+    </button>
+  );
+}
+
+function GroupedView({ rows, props, groupBy, groupBy2, layout, search }: {
+  rows: SheetRow[]; props: Property[]; groupBy: string; groupBy2?: string;
+  layout: InnerLayout; search: string;
+}) {
   const [collapsed, setCollapsed] = useState(new Set<string>());
   const vis = props.filter(p => p.visible);
-  const filtered = useMemo(() => { if (!search) return rows; const q = search.toLowerCase(); return rows.filter(r => vis.some(p => String(r[p.column]??'').toLowerCase().includes(q))); }, [rows, search, vis]);
+
+  const filtered = useMemo(() => {
+    if (!search) return rows;
+    const q = search.toLowerCase();
+    return rows.filter(r => vis.some(p => String(r[p.column]??'').toLowerCase().includes(q)));
+  }, [rows, search, vis]);
+
   const groups = useMemo(() => groupRows(filtered, groupBy), [filtered, groupBy]);
+
+  const toggle = (key: string) => setCollapsed(s => {
+    const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n;
+  });
+
+  // Inner renderer — same layout as the view, just scoped to this group's rows
+  function renderInner(grpRows: SheetRow[]) {
+    if (layout === 'card' || layout === 'gallery') return <CardView rows={grpRows} props={props} search=""/>;
+    return <TableView rows={grpRows} props={props} search=""/>;
+  }
+
   return (
     <div className="space-y-3">
-      {Array.from(groups.entries()).map(([key, grpRows]) => (
-        <div key={key} className="bg-white border border-slate-200 rounded-xl overflow-hidden" style={{ boxShadow: '0 1px 3px rgba(15,23,42,0.06)' }}>
-          <button onClick={() => setCollapsed(s => { const n = new Set(s); n.has(key)?n.delete(key):n.add(key); return n; })}
-            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors border-b border-slate-100">
-            <div className="w-2 h-2 rounded-full bg-rail-500 shrink-0"/>
-            <p className="font-semibold text-slate-800 text-sm flex-1 text-left">{key}</p>
-            <span className="text-[10px] text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">{grpRows.length} records</span>
-            {collapsed.has(key) ? <ChevronDown size={14} className="text-slate-400"/> : <ChevronUp size={14} className="text-slate-400"/>}
-          </button>
-          {!collapsed.has(key) && <TableView rows={grpRows} props={props} search=""/>}
-        </div>
-      ))}
+      {Array.from(groups.entries()).map(([key, grpRows]) => {
+        const isCollapsed = collapsed.has(key);
+        return (
+          <div key={key} className="bg-white border border-slate-200 rounded-xl overflow-hidden"
+            style={{ boxShadow: "0 1px 3px rgba(15,23,42,0.06)" }}>
+            <GroupHeader label={key} count={grpRows.length} collapsed={isCollapsed} onToggle={() => toggle(key)} depth={0}/>
+
+            {!isCollapsed && (
+              <div className={cn(layout === 'table' || layout === 'list' ? "" : "p-4")}>
+                {/* Nested grouping */}
+                {groupBy2 ? (
+                  <div className="space-y-0">
+                    {Array.from(groupRows(grpRows, groupBy2).entries()).map(([key2, rows2]) => {
+                      const k2 = `${key}::${key2}`;
+                      const isCollapsed2 = collapsed.has(k2);
+                      return (
+                        <div key={key2}>
+                          <GroupHeader label={key2} count={rows2.length} collapsed={isCollapsed2} onToggle={() => toggle(k2)} depth={1}/>
+                          {!isCollapsed2 && (
+                            <div className={cn(layout === 'table' || layout === 'list' ? "" : "p-4 pt-3")}>
+                              {renderInner(rows2)}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : renderInner(grpRows)}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -745,11 +814,30 @@ export function OverviewWorkspace() {
           )}
 
           {activeView && viewProps.length > 0 && (
-            <select value={activeView.groupBy ?? ''} onChange={e => commit(dbUpdateView(store, activeView.id, { groupBy: e.target.value || undefined }))}
-              className="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-600 focus:outline-none focus:border-rail-400 shrink-0">
-              <option value="">No group</option>
-              {viewProps.map(p => <option key={p.column} value={p.column}>⊞ {p.label}</option>)}
-            </select>
+            <>
+              {/* Primary group-by */}
+              <select value={activeView.groupBy ?? ''}
+                onChange={e => commit(dbUpdateView(store, activeView.id, {
+                  groupBy: e.target.value || undefined,
+                  groupBy2: e.target.value ? activeView.groupBy2 : undefined, // clear nested if primary cleared
+                }))}
+                className="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-600 focus:outline-none focus:border-rail-400 shrink-0 whitespace-nowrap">
+                <option value="">No group</option>
+                {viewProps.map(p => <option key={p.column} value={p.column}>⊞ {p.label}</option>)}
+              </select>
+
+              {/* Secondary (nested) group-by — only shown when primary is set */}
+              {activeView.groupBy && (
+                <select value={activeView.groupBy2 ?? ''}
+                  onChange={e => commit(dbUpdateView(store, activeView.id, { groupBy2: e.target.value || undefined }))}
+                  className="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-600 focus:outline-none focus:border-rail-400 shrink-0 whitespace-nowrap">
+                  <option value="">No sub-group</option>
+                  {viewProps.filter(p => p.column !== activeView.groupBy).map(p => (
+                    <option key={p.column} value={p.column}>↳ {p.label}</option>
+                  ))}
+                </select>
+              )}
+            </>
           )}
 
           <div className="ml-auto shrink-0">
@@ -772,7 +860,13 @@ export function OverviewWorkspace() {
       ) : processedRows.length === 0 ? (
         <div className="bg-white border border-slate-200 rounded-xl py-12 text-center text-slate-400 text-sm">No records match your filters</div>
       ) : activeView?.groupBy ? (
-        <GroupedView rows={processedRows} props={viewProps} groupBy={activeView.groupBy} search={search}/>
+        // GroupedView preserves the view's layout type — cards stay cards, tables stay tables
+        <GroupedView
+          rows={processedRows} props={viewProps} search={search}
+          groupBy={activeView.groupBy}
+          groupBy2={activeView.groupBy2}
+          layout={(activeView.layout === 'card' || activeView.layout === 'gallery') ? 'card' : 'table'}
+        />
       ) : activeView?.layout === 'card' || activeView?.layout === 'gallery' ? (
         <CardView rows={processedRows} props={viewProps} search={search}/>
       ) : (
