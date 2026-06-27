@@ -366,6 +366,8 @@ export default function UsersPage() {
  const [sortDir, setSortDir] = useState<'asc'|'desc'>('asc');
  const [selected, setSelected] = useState<Set<string>>(new Set());
  const [showAdd, setShowAdd] = useState(false);
+  const [showBulk, setShowBulk] = useState(false);
+  const [bulkResult, setBulkResult] = useState<{created:number;updated:number;skipped:number;errors:number}|null>(null);
  const [editUser, setEditUser] = useState<DisplayUser | null>(null);
  const [detailUser, setDetailUser] = useState<DisplayUser | null>(null);
  const [confirmDelete, setConfirmDelete] = useState<DisplayUser | null>(null);
@@ -631,12 +633,14 @@ export default function UsersPage() {
  <button onClick={handleExport} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-100 text-xs transition-colors">
  <Download size={13}/> Export CSV
  </button>
- {isAdmin && (
- <button onClick={() => { setEditUser(null); setShowAdd(true); }}
- className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors shadow-elevation-sm">
- <Plus size={15}/> Add Staff
- </button>
- )}
+          {isAdmin && (
+            <>
+              <button onClick={() => setShowBulk(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-semibold hover:bg-emerald-100 transition-colors"><Upload size={13}/> Bulk Import</button>
+              <button onClick={() => { setEditUser(null); setShowAdd(true); }} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors shadow-elevation-sm">
+                <Plus size={15}/> Add Staff
+              </button>
+            </>
+          )}
  </div>
  </div>
 

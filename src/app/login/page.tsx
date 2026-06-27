@@ -7,6 +7,7 @@ import {
  Train, Eye, EyeOff, Shield, Lock, AlertCircle,
  Users, Settings, Mail, KeyRound, CheckCircle2,
  RefreshCw, ArrowLeft, Loader2,
+  UserPlus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -192,6 +193,14 @@ export default function LoginPage() {
  className="w-full py-3 rounded-xl font-semibold text-sm bg-gradient-to-r from-rail-600 to-rail-500 text-white shadow-lg hover:from-rail-500 hover:to-rail-400 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
  {(isLoading || otpSending) ? <><Loader2 size={15} className="animate-spin"/> Signing in…</> : <><Lock size={15}/> Sign In</>}
  </button>
+          <div className="flex items-center gap-3 py-1">
+            <div className="flex-1 h-px bg-white/10"/>
+            <span className="text-white/30 text-[11px]">or</span>
+            <div className="flex-1 h-px bg-white/10"/>
+          </div>
+          <a href="/signup" className="w-full border border-white/20 hover:border-white/40 hover:bg-white/5 text-white/70 hover:text-white font-semibold py-3 px-4 rounded-xl transition-all text-sm flex items-center justify-center gap-2">
+            <UserPlus size={15}/> Create Account / Sign Up
+          </a>
  </form>
 
  {/* Demo accounts */}
