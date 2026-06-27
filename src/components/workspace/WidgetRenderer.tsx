@@ -215,7 +215,7 @@ export function WidgetRenderer({
  workspaceHook, onUpdate,
 }: {
  widget: LayoutWidget;
- col: LayoutColumn;
+ col?: LayoutColumn;
  cell: string;
  canManage: boolean;
  userId?: string;
