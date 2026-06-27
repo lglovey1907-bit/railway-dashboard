@@ -8,14 +8,15 @@ import {
   Settings2, Search, CheckCircle2, AlertCircle, ExternalLink,
   Cloud, ChevronLeft, ChevronRight, Columns, MoreHorizontal,
   Printer, Maximize2, PanelRight, ArrowLeft, ArrowRight, FileText,
+  GripVertical, ArrowUpDown, Users, Lock, Globe, Building,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/authStore';
 import { usePageSheet } from '@/lib/sheets/usePageSheet';
 import {
   getDBViewStore, saveDBViewStore, dbAddView, dbUpdateView, dbDeleteView,
-  mergeProperties, applyDBFilters, applyDBSorts, groupRows,
-  type DBViewStore, type DBView, type Property, type DBFilter, type ViewLayout,
+  mergeProperties, applyDBFilters, applyDBSorts, groupRows, getVisibleViews,
+  type DBViewStore, type DBView, type Property, type DBFilter, type DBSort, type ViewLayout, type SortPreset, type SortDir,
   OP_LABELS, LAYOUT_ICONS,
 } from '@/lib/overview/overviewEngine';
 import type { SheetRow } from '@/lib/sheets/googleSheets';
@@ -273,29 +274,221 @@ function FilterBuilder({ view, onUpdate }: { view: DBView; onUpdate: (f: DBFilte
   );
 }
 
+
+// ── Sort Builder — portal-based, multi-level, drag-to-reorder ─────────────────
+const SORT_DIRS: { v: SortDir; label: string }[] = [
+  { v: 'asc',  label: 'A → Z / Ascending' },
+  { v: 'desc', label: 'Z → A / Descending' },
+];
+const NULLS_OPTS = [
+  { v: 'last',  label: 'Empty last' },
+  { v: 'first', label: 'Empty first' },
+];
+
+function SortBuilder({ view, allProps, onUpdate }: {
+  view: DBView; allProps: Property[]; onUpdate: (sorts: DBSort[]) => void;
+}) {
+  const [open, setOpen]       = useState(false);
+  const [sorts, setSorts]     = useState<DBSort[]>(view.sorts);
+  const [presets, setPresets] = useState<SortPreset[]>(view.sortPresets ?? []);
+  const [newPresetName, setNewPresetName] = useState('');
+  const [showSavePreset, setShowSavePreset] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null!);
+  const cols = allProps.map(p => ({ column: p.column, label: p.label }));
+
+  useEffect(() => { setSorts(view.sorts); setPresets(view.sortPresets ?? []); }, [view.id]);
+
+  const apply = (next: DBSort[]) => { setSorts(next); onUpdate(next); };
+
+  const addRule = () => {
+    const col = cols.find(c => !sorts.some(s => s.field === c.column)) ?? cols[0];
+    if (!col) return;
+    apply([...sorts, { id: `s${Date.now()}`, field: col.column, dir: 'asc', nulls: 'last' }]);
+  };
+
+  const updRule = (id: string, patch: Partial<DBSort>) => {
+    apply(sorts.map(s => s.id !== id ? s : { ...s, ...patch }));
+  };
+
+  const delRule = (id: string) => apply(sorts.filter(s => s.id !== id));
+
+  const moveRule = (id: string, dir: 'up' | 'down') => {
+    const arr = [...sorts]; const idx = arr.findIndex(s => s.id === id);
+    const ni = dir === 'up' ? idx - 1 : idx + 1;
+    if (ni < 0 || ni >= arr.length) return;
+    [arr[idx], arr[ni]] = [arr[ni], arr[idx]];
+    apply(arr);
+  };
+
+  const savePreset = () => {
+    if (!newPresetName.trim()) return;
+    const p: SortPreset = { id: `sp${Date.now()}`, name: newPresetName.trim(), sorts: JSON.parse(JSON.stringify(sorts)) };
+    const next = [...presets, p]; setPresets(next);
+    setNewPresetName(''); setShowSavePreset(false);
+    // Persisted via the view update that called onUpdate above
+  };
+
+  const applyPreset = (preset: SortPreset) => {
+    apply(JSON.parse(JSON.stringify(preset.sorts)));
+  };
+
+  return (
+    <>
+      <button ref={btnRef} onClick={() => setOpen(o => !o)}
+        className={cn(
+          'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all whitespace-nowrap',
+          sorts.length > 0
+            ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+            : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+        )}>
+        <ArrowUpDown size={11}/>
+        Sort
+        {sorts.length > 0 && <span className="bg-indigo-200 text-indigo-800 text-[10px] font-bold rounded-full px-1.5">{sorts.length}</span>}
+      </button>
+
+      <PortalPopup triggerRef={btnRef} open={open} onClose={() => setOpen(false)} minWidth={460}>
+        <div className="bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
+            <div className="flex items-center gap-2">
+              <ArrowUpDown size={13} className="text-indigo-500"/>
+              <p className="text-xs font-bold text-slate-700">Sort Rules</p>
+              {sorts.length > 0 && (
+                <span className="text-[10px] bg-indigo-100 text-indigo-700 rounded-full px-1.5 font-semibold">{sorts.length} active</span>
+              )}
+            </div>
+            <button onClick={() => setOpen(false)} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200"><X size={12}/></button>
+          </div>
+
+          {/* Sort rules */}
+          <div className="p-3 space-y-2 max-h-64 overflow-y-auto">
+            {sorts.length === 0 && (
+              <p className="text-xs text-slate-400 text-center py-4">No sort rules — click + Add rule below</p>
+            )}
+            {sorts.map((s, i) => (
+              <div key={s.id} className="flex items-center gap-2 bg-slate-50 rounded-xl p-2.5 group">
+                {/* Drag handle + move */}
+                <div className="flex flex-col gap-0.5">
+                  <button onClick={() => moveRule(s.id, 'up')} disabled={i === 0}
+                    className="p-0.5 rounded text-slate-300 hover:text-slate-600 disabled:opacity-20"><ChevronUp size={10}/></button>
+                  <GripVertical size={12} className="text-slate-300 mx-auto"/>
+                  <button onClick={() => moveRule(s.id, 'down')} disabled={i === sorts.length - 1}
+                    className="p-0.5 rounded text-slate-300 hover:text-slate-600 disabled:opacity-20"><ChevronDown size={10}/></button>
+                </div>
+
+                {/* Priority badge */}
+                <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold flex items-center justify-center shrink-0">{i+1}</span>
+
+                {/* Field */}
+                <select value={s.field} onChange={e => updRule(s.id, { field: e.target.value })}
+                  className="flex-1 bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[11px] text-slate-700 focus:outline-none focus:border-indigo-400 min-w-0">
+                  {cols.map(c => <option key={c.column} value={c.column}>{c.label}</option>)}
+                </select>
+
+                {/* Direction */}
+                <select value={s.dir} onChange={e => updRule(s.id, { dir: e.target.value as SortDir })}
+                  className="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[11px] text-slate-700 focus:outline-none focus:border-indigo-400">
+                  {SORT_DIRS.map(d => <option key={d.v} value={d.v}>{d.label}</option>)}
+                </select>
+
+                {/* Nulls */}
+                <select value={s.nulls ?? 'last'} onChange={e => updRule(s.id, { nulls: e.target.value as 'first'|'last' })}
+                  className="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[11px] text-slate-600 focus:outline-none focus:border-indigo-400">
+                  {NULLS_OPTS.map(n => <option key={n.v} value={n.v}>{n.label}</option>)}
+                </select>
+
+                <button onClick={() => delRule(s.id)} className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all shrink-0">
+                  <Trash2 size={11}/>
+                </button>
+              </div>
+            ))}
+
+            <button onClick={addRule} disabled={cols.length === 0 || sorts.length >= cols.length}
+              className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 font-semibold disabled:opacity-40 mt-1">
+              <Plus size={11}/> Add sort rule
+            </button>
+          </div>
+
+          {/* Presets */}
+          {(presets.length > 0 || sorts.length > 0) && (
+            <div className="border-t border-slate-100 px-4 py-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Saved Presets</p>
+                {sorts.length > 0 && (
+                  <button onClick={() => setShowSavePreset(s => !s)}
+                    className="text-[10px] text-indigo-600 font-semibold hover:text-indigo-800">
+                    + Save current
+                  </button>
+                )}
+              </div>
+              {showSavePreset && (
+                <div className="flex gap-2">
+                  <input value={newPresetName} onChange={e => setNewPresetName(e.target.value)} autoFocus
+                    placeholder="Preset name…" onKeyDown={e => e.key === 'Enter' && savePreset()}
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-[11px] focus:outline-none focus:border-indigo-400"/>
+                  <button onClick={savePreset} disabled={!newPresetName.trim()}
+                    className="px-3 py-1.5 text-[11px] bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 font-semibold">Save</button>
+                </div>
+              )}
+              {presets.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {presets.map(p => (
+                    <button key={p.id} onClick={() => applyPreset(p)}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-[10px] text-indigo-700 font-semibold transition-all">
+                      {p.name}
+                      <span className="text-indigo-400 font-normal">({p.sorts.length})</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Footer */}
+          {sorts.length > 0 && (
+            <div className="border-t border-slate-100 px-4 py-2.5 bg-slate-50 flex justify-between">
+              <button onClick={() => apply([])} className="text-xs text-red-500 hover:text-red-700 font-medium">Clear all</button>
+              <button onClick={() => setOpen(false)} className="text-xs text-indigo-600 font-semibold hover:text-indigo-800">Done</button>
+            </div>
+          )}
+        </div>
+      </PortalPopup>
+    </>
+  );
+}
+
 // ── Add View Modal — full centered modal ──────────────────────────────────────
+type VisibilityOption = DBView['visibility'];
+const VISIBILITY_OPTIONS: { id: VisibilityOption; label: string; icon: React.ElementType; desc: string }[] = [
+  { id: 'personal', label: 'Only Me',       icon: Lock,     desc: 'Private to your account' },
+  { id: 'cell',     label: 'Cell Members',  icon: Building, desc: 'All members of this Cell' },
+  { id: 'role',     label: 'By Role',       icon: Users,    desc: 'Admin, Incharge, etc.' },
+  { id: 'admin',    label: 'Admin Only',    icon: Lock,     desc: 'Maintenance & Admin only' },
+  { id: 'public',   label: 'System Wide',   icon: Globe,    desc: 'Visible to everyone' },
+];
+
 function AddViewModal({ open, onClose, onAdd, existingViews }: {
   open: boolean; onClose: () => void;
-  onAdd: (label: string, layout: ViewLayout, tplId?: string) => void;
+  onAdd: (label: string, layout: ViewLayout, tplId?: string, visibility?: VisibilityOption, roles?: string[]) => void;
   existingViews: DBView[];
 }) {
-  const [label, setLabel]     = useState('New View');
-  const [layout, setLayout]   = useState<ViewLayout>('table');
-  const [tplId, setTplId]     = useState('');
+  const [label,      setLabel]      = useState('New View');
+  const [layout,     setLayout]     = useState<ViewLayout>('table');
+  const [tplId,      setTplId]      = useState('');
+  const [visibility, setVisibility] = useState<VisibilityOption>('cell');
+  const [selRoles,   setSelRoles]   = useState<string[]>([]);
 
-  const LAYOUTS: { id: ViewLayout; label: string; desc: string }[] = [
-    { id: 'table',   label: 'Table',   desc: 'Rows and columns' },
-    { id: 'card',    label: 'Card',    desc: 'Card grid layout' },
-    { id: 'list',    label: 'List',    desc: 'Compact list' },
-    { id: 'board',   label: 'Board',   desc: 'Kanban columns' },
-    { id: 'gallery', label: 'Gallery', desc: 'Visual gallery' },
+  const LAYOUTS: { id: ViewLayout; label: string }[] = [
+    { id: 'table', label: 'Table' }, { id: 'card', label: 'Card' }, { id: 'list', label: 'List' },
+    { id: 'board', label: 'Board' }, { id: 'gallery', label: 'Gallery' },
   ];
   const LAYOUT_ICON_MAP: Record<string, React.ElementType> = { Table2, LayoutGrid, List, Columns };
+  const ALL_ROLES = ['admin','maintenance','incharge','user'];
 
   const handleCreate = () => {
     if (!label.trim()) return;
-    onAdd(label.trim(), layout, tplId || undefined);
-    setLabel('New View'); setLayout('table'); setTplId(''); onClose();
+    onAdd(label.trim(), layout, tplId || undefined, visibility, selRoles.length ? selRoles : undefined);
+    setLabel('New View'); setLayout('table'); setTplId(''); setVisibility('cell'); setSelRoles([]); onClose();
   };
 
   return (
@@ -304,7 +497,7 @@ function AddViewModal({ open, onClose, onAdd, existingViews }: {
         <p className="text-sm font-bold text-slate-900">Create New View</p>
         <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><X size={15}/></button>
       </div>
-      <div className="p-5 space-y-5">
+      <div className="p-5 space-y-5 max-h-[70vh] overflow-y-auto">
         {/* Name */}
         <div>
           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">View Name</label>
@@ -312,8 +505,7 @@ function AddViewModal({ open, onClose, onAdd, existingViews }: {
             onKeyDown={e => e.key === 'Enter' && handleCreate()}
             className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-rail-400 focus:bg-white"/>
         </div>
-
-        {/* Layout picker */}
+        {/* Layout */}
         <div>
           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-2">Layout Type</label>
           <div className="grid grid-cols-5 gap-2">
@@ -322,7 +514,7 @@ function AddViewModal({ open, onClose, onAdd, existingViews }: {
               return (
                 <button key={l.id} onClick={() => setLayout(l.id)}
                   className={cn('flex flex-col items-center gap-1.5 p-3 rounded-xl border text-center transition-all',
-                    layout === l.id ? 'bg-rail-50 border-rail-400 text-rail-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300')}>
+                    layout === l.id ? 'bg-rail-50 border-rail-400 text-rail-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50')}>
                   <Icon size={18} className={layout === l.id ? 'text-rail-600' : 'text-slate-400'}/>
                   <span className="text-[10px] font-semibold">{l.label}</span>
                 </button>
@@ -330,7 +522,45 @@ function AddViewModal({ open, onClose, onAdd, existingViews }: {
             })}
           </div>
         </div>
-
+        {/* Visibility */}
+        <div>
+          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-2">Visibility</label>
+          <div className="space-y-1.5">
+            {VISIBILITY_OPTIONS.map(opt => {
+              const Icon = opt.icon;
+              return (
+                <button key={opt.id} onClick={() => setVisibility(opt.id)}
+                  className={cn('flex items-center gap-3 w-full px-3 py-2.5 rounded-xl border text-left transition-all',
+                    visibility === opt.id ? 'bg-rail-50 border-rail-400' : 'border-slate-200 hover:bg-slate-50')}>
+                  <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center shrink-0',
+                    visibility === opt.id ? 'bg-rail-100' : 'bg-slate-100')}>
+                    <Icon size={13} className={visibility === opt.id ? 'text-rail-600' : 'text-slate-400'}/>
+                  </div>
+                  <div>
+                    <p className={cn('text-xs font-semibold', visibility === opt.id ? 'text-rail-800' : 'text-slate-700')}>{opt.label}</p>
+                    <p className="text-[10px] text-slate-400">{opt.desc}</p>
+                  </div>
+                  {visibility === opt.id && <Check size={14} className="text-rail-600 ml-auto shrink-0"/>}
+                </button>
+              );
+            })}
+          </div>
+          {/* Role selector */}
+          {visibility === 'role' && (
+            <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+              <p className="text-[10px] font-bold text-slate-500 mb-2">Select Roles</p>
+              <div className="flex flex-wrap gap-2">
+                {ALL_ROLES.map(role => (
+                  <button key={role} onClick={() => setSelRoles(r => r.includes(role) ? r.filter(x => x !== role) : [...r, role])}
+                    className={cn('px-2.5 py-1.5 rounded-lg text-xs font-semibold border capitalize transition-all',
+                      selRoles.includes(role) ? 'bg-rail-600 border-rail-600 text-white' : 'border-slate-200 text-slate-600 hover:bg-slate-100')}>
+                    {role}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
         {/* Template */}
         <div>
           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Start from</label>
@@ -342,9 +572,9 @@ function AddViewModal({ open, onClose, onAdd, existingViews }: {
         </div>
       </div>
       <div className="flex gap-3 px-5 py-4 border-t border-slate-100 bg-slate-50">
-        <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-500 hover:bg-white transition-colors">Cancel</button>
+        <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-500 hover:bg-white">Cancel</button>
         <button onClick={handleCreate} disabled={!label.trim()}
-          className="flex-1 py-2.5 rounded-xl bg-rail-600 hover:bg-rail-700 text-white text-sm font-bold disabled:opacity-40 transition-colors">
+          className="flex-1 py-2.5 rounded-xl bg-rail-600 hover:bg-rail-700 text-white text-sm font-bold disabled:opacity-40">
           Create View
         </button>
       </div>
@@ -1002,7 +1232,7 @@ export function OverviewWorkspace() {
 
         {/* Row 1: View tabs */}
         <div className="flex items-center border-b border-slate-100 px-2" style={{ overflowX: 'auto', overflowY: 'visible' }}>
-          {store.views.map(view => {
+          {getVisibleViews(store.views, user?.id ?? '', user?.role ?? 'user').map(view => {
             const Icon = LAYOUT_ICON_MAP[LAYOUT_ICONS[view.layout]] ?? Table2;
             const isActive = view.id === store.activeViewId;
             return (
@@ -1091,6 +1321,15 @@ export function OverviewWorkspace() {
             <FilterBuilder
               view={activeView}
               onUpdate={f => commit(dbUpdateView(store, activeView.id, { filters: f }))}
+            />
+          )}
+
+          {/* Sort Builder */}
+          {activeView && viewProps.length > 0 && (
+            <SortBuilder
+              view={activeView}
+              allProps={viewProps}
+              onUpdate={sorts => commit(dbUpdateView(store, activeView.id, { sorts }))}
             />
           )}
 
@@ -1187,7 +1426,7 @@ export function OverviewWorkspace() {
           <AddViewModal
             open={showAddView}
             onClose={() => setShowAddView(false)}
-            onAdd={(label, layout, tplId) => commit(dbAddView(store, label, layout, user?.id ?? '', tplId))}
+            onAdd={(label, layout, tplId, vis, roles) => commit(dbAddView(store, label, layout, user?.id ?? '', user?.name ?? 'Admin', tplId, vis, roles))}
             existingViews={store.views}
           />
         )}

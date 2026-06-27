@@ -29,7 +29,21 @@ export interface DBFilter {
   logic: 'and'|'or';
 }
 
-export interface DBSort { field: string; dir: 'asc'|'desc'; }
+export type SortDir = 'asc' | 'desc';
+export type NullsPos = 'first' | 'last';
+
+export interface DBSort {
+  id: string;
+  field: string;
+  dir: SortDir;
+  nulls?: NullsPos;
+}
+
+export interface SortPreset {
+  id: string;
+  name: string;
+  sorts: DBSort[];
+}
 
 export type ViewLayout = 'table'|'card'|'list'|'board'|'gallery';
 
@@ -40,9 +54,17 @@ export interface DBView {
   properties: Property[];
   filters: DBFilter[];
   sorts: DBSort[];
-  groupBy?: string;   // primary group-by column
-  groupBy2?: string;  // secondary (nested) group-by column
+  groupBy?: string;
+  groupBy2?: string;
   isDefault: boolean;
+  // Visibility & ownership (Part 1)
+  ownerId?: string;          // userId who created the view
+  ownerName?: string;
+  visibility: 'personal' | 'cell' | 'role' | 'users' | 'admin' | 'public';
+  visibleToRoles?: string[];  // UserRole[]
+  visibleToUsers?: string[];  // userId[]
+  visibleToCells?: string[];  // cell names
+  sortPresets?: SortPreset[];
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -96,7 +118,7 @@ export function getDBViewStore(sourceKey: string): DBViewStore {
 
 function makeView(id: string, label: string, layout: ViewLayout, isDefault: boolean): DBView {
   const now = new Date().toISOString();
-  return { id, label, layout, properties: [], filters: [], sorts: [], isDefault, createdBy: 'system', createdAt: now, updatedAt: now };
+  return { id, label, layout, properties: [], filters: [], sorts: [], isDefault, createdBy: 'system', createdAt: now, updatedAt: now, visibility: 'public' as const };
 }
 
 function makeDefault(sourceKey: string): DBViewStore {
@@ -125,7 +147,12 @@ export function saveDBViewStore(store: DBViewStore, userId?: string): void {
   }
 }
 
-export function dbAddView(store: DBViewStore, label: string, layout: ViewLayout, userId: string, tplId?: string): DBViewStore {
+export function dbAddView(
+  store: DBViewStore, label: string, layout: ViewLayout, userId: string, userName: string,
+  tplId?: string,
+  visibility: DBView['visibility'] = 'cell',
+  visibleToRoles?: string[], visibleToUsers?: string[],
+): DBViewStore {
   const tpl = tplId ? store.views.find(v => v.id === tplId) : null;
   const now = new Date().toISOString();
   const v: DBView = {
@@ -133,7 +160,11 @@ export function dbAddView(store: DBViewStore, label: string, layout: ViewLayout,
     properties: tpl ? JSON.parse(JSON.stringify(tpl.properties)) : [],
     filters:    tpl ? JSON.parse(JSON.stringify(tpl.filters))    : [],
     sorts:      tpl ? JSON.parse(JSON.stringify(tpl.sorts))      : [],
-    groupBy: tpl?.groupBy, isDefault: false, createdBy: userId, createdAt: now, updatedAt: now,
+    groupBy: tpl?.groupBy, groupBy2: tpl?.groupBy2,
+    isDefault: false,
+    ownerId: userId, ownerName: userName,
+    visibility, visibleToRoles, visibleToUsers,
+    createdBy: userId, createdAt: now, updatedAt: now,
   };
   return { ...store, views: [...store.views, v], activeViewId: v.id };
 }
@@ -178,12 +209,33 @@ export function applyDBSorts(rows: SheetRow[], sorts: DBSort[]): SheetRow[] {
   if (!sorts.length) return rows;
   return [...rows].sort((a, b) => {
     for (const s of sorts) {
-      const av = String(a[s.field] ?? ''), bv = String(b[s.field] ?? '');
+      const av = String(a[s.field] ?? '').trim();
+      const bv = String(b[s.field] ?? '').trim();
+      // Nulls handling
+      const aEmpty = av === '' || av === '—' || av === 'undefined' || av === 'null';
+      const bEmpty = bv === '' || bv === '—' || bv === 'undefined' || bv === 'null';
+      if (aEmpty && bEmpty) continue;
+      if (aEmpty) return s.nulls === 'first' ? -1 : 1;
+      if (bEmpty) return s.nulls === 'first' ? 1 : -1;
+      // Numeric or string compare
       const an = parseFloat(av), bn = parseFloat(bv);
-      let cmp = (!isNaN(an) && !isNaN(bn)) ? an - bn : av.localeCompare(bv);
+      let cmp = (!isNaN(an) && !isNaN(bn)) ? an - bn : av.localeCompare(bv, 'en', { sensitivity: 'base' });
       if (cmp !== 0) return s.dir === 'asc' ? cmp : -cmp;
     }
     return 0;
+  });
+}
+
+/** Filter views visible to the current user */
+export function getVisibleViews(views: DBView[], userId: string, userRole: string, cellName?: string): DBView[] {
+  return views.filter(v => {
+    if (v.visibility === 'public') return true;
+    if (v.visibility === 'personal') return v.ownerId === userId;
+    if (v.visibility === 'admin') return userRole === 'admin' || userRole === 'maintenance';
+    if (v.visibility === 'role') return (v.visibleToRoles ?? []).includes(userRole);
+    if (v.visibility === 'users') return (v.visibleToUsers ?? []).includes(userId);
+    if (v.visibility === 'cell') return true; // all cell members
+    return true;
   });
 }
 
