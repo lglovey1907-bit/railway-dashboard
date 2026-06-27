@@ -77,29 +77,39 @@ export async function authenticateUser(
  if (!user) {
  try {
  const staffDB: any[] = JSON.parse(localStorage.getItem('rly_staff_master') ?? '[]');
- const dbUser = staffDB.find((s: any) =>
- s.email?.toLowerCase() === emailInput || s.hrmsId?.toLowerCase() === emailInput
- );
- if (dbUser) {
- // Map staffDB record to User shape
- const statusOverrides = JSON.parse(localStorage.getItem('rly_user_status_overrides') ?? '{}');
- const status = statusOverrides[dbUser.id] ?? dbUser.status ?? 'pending';
- if (status === 'rejected' || status === 'inactive') {
- throw new Error('Account has been deactivated. Contact the Administrator.');
- }
- if (status === 'pending') {
- throw new Error('Account pending approval. Contact your Cell Head or Administrator.');
- }
- user = {
- id: dbUser.id, name: dbUser.name, email: dbUser.email,
- role: dbUser.role ?? 'user', cell: dbUser.cell ?? 'Unassigned',
- designation: dbUser.designation, division: dbUser.division ?? 'Delhi',
- approved: true, createdAt: dbUser.registeredAt ?? new Date().toISOString(),
- hrmsId: dbUser.hrmsId, workingAs: dbUser.workingAs,
- mobile: dbUser.mobile, mobileNumber: dbUser.mobile,
- mustChangePassword: mustChangePassword(dbUser.email),
- } as User;
- }
+        const dbUser = staffDB.find((s: any) =>
+          s.email?.toLowerCase() === emailInput || s.hrmsId?.toLowerCase() === emailInput
+        );
+        if (dbUser) {
+          const statusOverrides = JSON.parse(localStorage.getItem('rly_user_status_overrides') ?? '{}');
+          const effectiveStatus = statusOverrides[dbUser.id] ?? dbUser.status ?? 'pending';
+          if (effectiveStatus === 'rejected' || effectiveStatus === 'inactive') {
+            throw new Error('Account has been deactivated. Contact the Administrator.');
+          }
+          // FIXED: removed 'pending' block — self-registered users are now set to 'active'
+          // after email OTP verification. Admins can deactivate if needed.
+
+          // FIXED: read cell from CellMembership table (StaffMember has no cell field)
+          const allMemberships: any[] = JSON.parse(localStorage.getItem('rly_cell_memberships') ?? '[]');
+          const approvedMemberships = allMemberships.filter(
+            (m: any) => m.employeeId === dbUser.id && m.approvalStatus === 'approved'
+          );
+          const primaryCell = dbUser.cell ?? (approvedMemberships[0]?.cellName) ?? 'Unassigned';
+          const approvedCells: string[] = approvedMemberships.map((m: any) => m.cellName);
+
+          user = {
+            id: dbUser.id, name: dbUser.name, email: dbUser.email,
+            role: dbUser.role ?? 'user',
+            cell: primaryCell,
+            cells: approvedCells,
+            designation: dbUser.designation, division: dbUser.division ?? 'Delhi',
+            approved: effectiveStatus !== 'pending',
+            createdAt: dbUser.registeredAt ?? new Date().toISOString(),
+            hrmsId: dbUser.hrmsId, workingAs: dbUser.workingAs,
+            mobile: dbUser.mobile, mobileNumber: dbUser.mobile,
+            mustChangePassword: mustChangePassword(dbUser.email),
+          } as User;
+        }
  } catch (e: any) {
  if (e.message) throw e;
  }

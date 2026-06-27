@@ -3,7 +3,7 @@ export type CellRole = 'head' | 'delegate' | 'editor' | 'viewer';
 
 export interface StaffMember {
  id: string; hrmsId?: string; name: string; email: string; mobile?: string;
- designation: string; division: string; role: 'maintenance' | 'admin' | 'user';
+ designation: string; division: string; cell?: string; role: 'maintenance' | 'admin' | 'user';
  workingAs?: string; fatherHusbandName?: string; photoUrl?: string;
  status: ApprovalStatus; registeredAt: string; lastUpdatedAt: string; lastLogin?: string;
 }

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { getAllCells, type CellRecord, BUILTIN_CELLS } from '@/lib/cells/cellRegistry';
 import { useActiveCells } from '@/lib/cells/useCellList';
+import { getAllMemberships } from '@/lib/staff/staffDB';
 
 const ICON_MAP: Record<string, React.ElementType> = {
  ClipboardList, Users2, ShieldCheck, Scale, Megaphone, Ticket, BarChart3,
@@ -121,7 +122,20 @@ export function Sidebar() {
  const href = `/dashboard/cell/${c.slug}`;
  const Icon = ICON_MAP[c.iconKey] ?? Folder;
  const active = pathname === href;
- if ((isUser || isIncharge) && user?.cell !== c.name) return null;
+            if (isUser || isIncharge) {
+              // Show cells from user.cells[] (all approved memberships) OR user.cell
+              const userCells: string[] = (user as any)?.cells ?? (user?.cell ? [user.cell] : []);
+              if (userCells.length > 0 && !userCells.includes(c.name)) return null;
+              else if (userCells.length === 0) {
+                // Fallback: live lookup from localStorage
+                try {
+                  const mems: any[] = JSON.parse(localStorage.getItem('rly_cell_memberships') ?? '[]');
+                  const approved = mems.filter((m: any) => m.employeeId === user?.id && m.approvalStatus === 'approved').map((m: any) => m.cellName);
+                  if (approved.length > 0 && !approved.includes(c.name)) return null;
+                  else if (approved.length === 0 && user?.cell !== c.name) return null;
+                } catch { if (user?.cell !== c.name) return null; }
+              }
+            }
  return <NavBtn key={c.id} href={href} label={c.name} icon={Icon} active={active}/>;
  })
  }
