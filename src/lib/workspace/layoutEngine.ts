@@ -6,6 +6,10 @@ import { syncedSave, syncedLoad, newerWins, NS } from '@/lib/config/SyncManager'
 
 export type WidgetType =
  | 'table' | 'kpi' | 'text' | 'chart' | 'staff' | 'activity'
+ | 'heading' | 'divider' | 'callout' | 'toggle' | 'checklist'
+ | 'google_sheet' | 'google_links' | 'powerbi' | 'embed'
+ | 'announcements' | 'quick_links' | 'approval_queue' | 'staff_requests'
+ | 'shared_table' | 'pdf' | 'image' | 'staff_directory'
  | 'shared_table' | 'approval_queue' | 'staff_requests' | 'announcements'
  | 'quick_links' | 'embed' | 'google_sheet';
 
@@ -324,20 +328,27 @@ export function loadNamedLayout(
  return { ...current, columns: deepCloneColumns(v.columns), columnCount: v.columns.length };
 }
 
-export const AVAILABLE_WIDGETS: { type: WidgetType; label: string; description: string; icon: string }[] = [
- { type: 'table', label: 'Table', description: 'Create or embed a database table', icon: 'Table2' },
- { type: 'kpi', label: 'KPI Card', description: 'Show a key metric at a glance', icon: 'BarChart3' },
- { type: 'text', label: 'Notes / Text', description: 'Rich text notes and documentation', icon: 'FileText' },
- { type: 'staff', label: 'Staff List', description: 'Cell staff roster', icon: 'Users2' },
- { type: 'activity', label: 'Activity Feed', description: 'Recent changes and actions', icon: 'Activity' },
- { type: 'approval_queue', label: 'Approval Queue', description: 'Pending staff approvals', icon: 'UserCheck' },
- { type: 'staff_requests', label: 'Staff Requests', description: 'Submit add/remove/transfer requests', icon: 'ClipboardList' },
- { type: 'shared_table', label: 'Shared Tables', description: 'Tables shared from other cells', icon: 'Share2' },
- { type: 'announcements', label: 'Announcements', description: 'Notices and circulars', icon: 'Megaphone' },
- { type: 'quick_links', label: 'Quick Links', description: 'Useful links and shortcuts', icon: 'Link2' },
- { type: 'google_sheet', label: 'Google Sheet View', description: 'Live embedded Google Sheet', icon: 'FileSpreadsheet' },
- { type: 'embed', label: 'Embed', description: 'Embed any URL (Power BI, reports, etc.)', icon: 'Globe' },
- { type: 'chart', label: 'Chart', description: 'Revenue / statistics chart', icon: 'TrendingUp' },
+export const AVAILABLE_WIDGETS: { type: WidgetType; label: string; description: string; icon: string; group: string }[] = [
+  { type: 'table',          label: 'Table / Database', description: 'Embed a database with views, filters, sorting', icon: 'Table2',         group: 'Database' },
+  { type: 'shared_table',   label: 'Linked Database',  description: 'Reference a shared database from another cell', icon: 'Share2',         group: 'Database' },
+  { type: 'google_sheet',   label: 'Google Sheet',     description: 'Live-synced Google Sheet data',              icon: 'FileSpreadsheet',  group: 'Database' },
+  { type: 'text',           label: 'Text / Notes',     description: 'Rich text notes and documentation',            icon: 'FileText',        group: 'Content' },
+  { type: 'heading',        label: 'Heading',          description: 'H1, H2 or H3 heading',                        icon: 'Heading',         group: 'Content' },
+  { type: 'callout',        label: 'Callout',          description: 'Highlighted note or alert box',               icon: 'AlertCircle',     group: 'Content' },
+  { type: 'divider',        label: 'Divider',          description: 'Horizontal separator line',                   icon: 'Minus',           group: 'Content' },
+  { type: 'toggle',         label: 'Toggle',           description: 'Collapsible expandable section',              icon: 'ChevronRight',    group: 'Content' },
+  { type: 'checklist',      label: 'Checklist',        description: 'Action items and compliance checks',          icon: 'CheckSquare',     group: 'Content' },
+  { type: 'announcements',  label: 'Announcements',    description: 'Notices, circulars and updates',              icon: 'Bell',            group: 'Content' },
+  { type: 'kpi',            label: 'KPI Card',         description: 'Key metric with label and value',             icon: 'BarChart3',       group: 'Data' },
+  { type: 'chart',          label: 'Chart',            description: 'Bar, line or pie chart',                      icon: 'TrendingUp',      group: 'Data' },
+  { type: 'activity',       label: 'Activity Feed',    description: 'Recent workspace changes and actions',        icon: 'Activity',        group: 'Data' },
+  { type: 'staff',          label: 'Staff Cards',      description: 'Cell staff roster as cards',                  icon: 'Users2',          group: 'People' },
+  { type: 'approval_queue', label: 'Approval Queue',   description: 'Pending staff approvals for this cell',      icon: 'UserCheck',       group: 'People' },
+  { type: 'staff_requests', label: 'Staff Requests',   description: 'Transfer and assignment requests',             icon: 'ClipboardList',   group: 'People' },
+  { type: 'google_links',   label: 'Links Repository', description: 'Google Docs, Drive, Forms and portal links', icon: 'Link2',           group: 'Embed' },
+  { type: 'powerbi',        label: 'Power BI',         description: 'Embedded Power BI report',                   icon: 'PieChart',        group: 'Embed' },
+  { type: 'embed',          label: 'Embed / iFrame',   description: 'Embed any URL as an iframe',                 icon: 'Globe',           group: 'Embed' },
+  { type: 'quick_links',    label: 'Quick Links',      description: 'Configurable shortcut links',                 icon: 'ExternalLink',    group: 'Embed' },
 ];
 
 // ── Row-based layout extension (req 76–78) ────────────────────────────────────

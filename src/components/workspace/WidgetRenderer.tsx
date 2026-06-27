@@ -1,9 +1,9 @@
 'use client';
-import { useState } from 'react';
+import React, { useState } from 'react';
 import {
- Table2, BarChart3, FileText, Users2, Activity, UserCheck,
- ClipboardList, Share2, Megaphone, Link2, FileSpreadsheet,
- Globe, TrendingUp, ExternalLink, Edit3, Check, X,
+  Table2, BarChart3, FileText, Users2, Activity, UserCheck,
+  ClipboardList, Share2, Megaphone, Link2, FileSpreadsheet,
+  Globe, TrendingUp, ExternalLink, Edit3, Check, X, ChevronRight,
 } from 'lucide-react';
 import type { LayoutWidget, LayoutColumn } from '@/lib/workspace/layoutEngine';
 import type { useWorkspace } from '@/lib/cellData/useWorkspace';
@@ -313,6 +313,126 @@ export function WidgetRenderer({
  <span className="text-xs">Connect a data source to show charts</span>
  </div>
  );
+
+    case 'heading': {
+      const level = (widget as any).headingLevel ?? 2;
+      const sizes: Record<number, string> = { 1: 'text-2xl font-black', 2: 'text-xl font-bold', 3: 'text-lg font-semibold' };
+      return (
+        <div onClick={() => canManage && undefined} className="py-1">
+          {level === 1 && <h1 className="text-2xl font-black text-slate-900">{(widget as any).richText ?? widget.title}</h1>}
+          {level === 2 && <h2 className="text-xl font-bold text-slate-900">{(widget as any).richText ?? widget.title}</h2>}
+          {level === 3 && <h3 className="text-lg font-semibold text-slate-900">{(widget as any).richText ?? widget.title}</h3>}
+        </div>
+      );
+    }
+
+    case 'divider':
+      return <div className="border-t border-slate-200 my-2"/>;
+
+    case 'callout': {
+      const col = (widget as any).calloutColor ?? 'amber';
+      const colors: Record<string, string> = {
+        blue: 'bg-blue-50 border-blue-200', amber: 'bg-amber-50 border-amber-200',
+        emerald: 'bg-emerald-50 border-emerald-200', red: 'bg-red-50 border-red-200',
+      };
+      return (
+        <div className={`flex gap-3 p-3.5 rounded-xl border \${colors[col] ?? colors.amber}`}>
+          <span className="text-xl shrink-0">{(widget as any).calloutIcon ?? '💡'}</span>
+          <p className="text-sm text-slate-700 leading-relaxed flex-1">{(widget as any).richText ?? widget.title}</p>
+        </div>
+      );
+    }
+
+    case 'toggle': {
+      const ToggleW = () => {
+        const [open, setOpen] = React.useState<boolean>((widget as any).toggleOpen ?? true);
+        return (
+          <div>
+            <button onClick={() => setOpen(o => !o)} className="flex items-center gap-2 text-sm font-semibold text-slate-800 w-full text-left hover:bg-slate-50 rounded-lg px-2 py-1.5 -mx-2">
+              <ChevronRight size={14} className={`text-slate-400 transition-transform \${open ? 'rotate-90' : ''}`}/>
+              {widget.title}
+            </button>
+            {open && <div className="pl-5 mt-1.5 text-sm text-slate-600 leading-relaxed">{(widget as any).richText || <span className="text-slate-300 italic">Click ⚙ Edit to add content</span>}</div>}
+          </div>
+        );
+      };
+      return <ToggleW/>;
+    }
+
+    case 'checklist': {
+      const CLW = () => {
+        const [items, setItems] = React.useState<Array<{id:string;text:string;done:boolean}>>((widget as any).checklistItems ?? []);
+        const [newText, setNewText] = React.useState('');
+        const save = (next: typeof items) => { setItems(next); if (onUpdate) onUpdate({ checklistItems: next } as any); };
+        return (
+          <div className="space-y-2">
+            {items.map(item => (
+              <div key={item.id} className="flex items-center gap-2 group">
+                <button onClick={() => save(items.map(i => i.id !== item.id ? i : { ...i, done: !i.done }))}
+                  className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors \${item.done ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300 hover:border-rail-400'}`}>
+                  {item.done && <Check size={10} className="text-white"/>}
+                </button>
+                <span className={`flex-1 text-sm \${item.done ? 'line-through text-slate-400' : 'text-slate-700'}`}>{item.text}</span>
+                {canManage && <button onClick={() => save(items.filter(i => i.id !== item.id))} className="opacity-0 group-hover:opacity-100 p-1 text-slate-300 hover:text-red-500">✕</button>}
+              </div>
+            ))}
+            {canManage && (
+              <div className="flex gap-2 mt-2">
+                <input value={newText} onChange={e => setNewText(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && newText.trim()) { save([...items, { id: `c\${Date.now()}`, text: newText.trim(), done: false }]); setNewText(''); }}}
+                  placeholder="Add item…" className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-rail-400"/>
+                <button onClick={() => { if (newText.trim()) { save([...items, { id: `c\${Date.now()}`, text: newText.trim(), done: false }]); setNewText(''); }}} disabled={!newText.trim()} className="px-3 py-1.5 text-xs bg-rail-600 text-white rounded-lg disabled:opacity-40">Add</button>
+              </div>
+            )}
+          </div>
+        );
+      };
+      return <CLW/>;
+    }
+
+    case 'google_links': {
+      const { GoogleLinksRepo } = require('@/components/cell/GoogleLinksRepo');
+      return <GoogleLinksRepo cell={widget.tableId ?? cell ?? 'default'}/>;
+    }
+
+    case 'powerbi': {
+      const PBIW = () => {
+        const [url, setUrl] = React.useState<string>((widget as any).embedUrl ?? '');
+        const [editing, setEditing] = React.useState<boolean>(!(widget as any).embedUrl);
+        if (editing) return (
+          <div className="space-y-2">
+            <input value={url} onChange={e => setUrl(e.target.value)} placeholder="Power BI embed URL"
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-amber-400"/>
+            <button onClick={() => { if (onUpdate) onUpdate({ embedUrl: url } as any); setEditing(false); }} disabled={!url.trim()}
+              className="px-3 py-1.5 text-xs bg-amber-600 text-white rounded-lg disabled:opacity-40">Connect</button>
+          </div>
+        );
+        return (
+          <div className="space-y-2">
+            <iframe src={url} className="w-full rounded-lg border" style={{ height: 320 }} allowFullScreen sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-presentation"/>
+            {canManage && <button onClick={() => setEditing(true)} className="text-[10px] text-slate-400 hover:text-amber-600">Change URL</button>}
+          </div>
+        );
+      };
+      return <PBIW/>;
+    }
+
+    case 'embed': {
+      const EBW = () => {
+        const [url, setUrl] = React.useState<string>((widget as any).embedUrl ?? '');
+        const [live, setLive] = React.useState<boolean>(!!(widget as any).embedUrl);
+        if (!live) return (
+          <div className="space-y-2">
+            <input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://..."
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-rail-400"/>
+            <button onClick={() => { if (onUpdate) onUpdate({ embedUrl: url } as any); setLive(true); }} disabled={!url.trim()}
+              className="px-3 py-1.5 text-xs bg-rail-600 text-white rounded-lg disabled:opacity-40">Embed</button>
+          </div>
+        );
+        return <iframe src={url} className="w-full rounded-lg border" style={{ height: 400 }} allowFullScreen/>;
+      };
+      return <EBW/>;
+    }
 
  default:
  return <p className="text-xs text-slate-300 italic">Unknown widget type: {widget.type}</p>;

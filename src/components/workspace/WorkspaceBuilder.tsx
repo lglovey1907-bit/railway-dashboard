@@ -371,7 +371,11 @@ function WorkspaceRow({
 }
 
 // ── Main WorkspaceBuilder ─────────────────────────────────────────────────────
-export function WorkspaceBuilder({ cell }: { cell: string }) {
+export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed }: {
+  cell: string;
+  pendingWidget?: { type: import('@/lib/workspace/layoutEngine').WidgetType; title: string } | null;
+  onPendingConsumed?: () => void;
+}) {
   const { user } = useAuthStore();
   const canManage = canManageCellStructure(user, cell);
   const workspaceHook = useWorkspace(cell, user ? { id: user.id, name: user.name } : undefined);
