@@ -317,6 +317,7 @@ function WorkspaceRow({
                         <WidgetRenderer
                           widget={widget} cell={cell} canManage={canManage}
                           workspaceHook={workspaceHook}
+                          userId={userId} userName={userName}
                           onUpdate={patch => onUpdateWidget(col.id, widget.id, patch)}
                         />
                       </div>

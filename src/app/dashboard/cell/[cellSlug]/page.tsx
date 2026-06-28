@@ -16,8 +16,10 @@ import {
   UserCheck, ClipboardList, Share2, Bell, Link2,
   FileSpreadsheet, AlertCircle, Minus, ChevronRight,
   CheckSquare, PieChart, Globe, ExternalLink,
-  Heading, Hash,
+  Heading, Hash, Database, Bot, BookOpen,
 } from 'lucide-react';
+import { SearchTrigger } from '@/components/search/UniversalSearch';
+import { useWorkspace } from '@/lib/cellData/useWorkspace';
 import { cn } from '@/lib/utils';
 
 // ── Icon map for widget picker ────────────────────────────────────────────────
@@ -25,7 +27,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Table2, FileText, BarChart3, TrendingUp, Activity, Users2,
   UserCheck, ClipboardList, Share2, Bell, Link2, FileSpreadsheet,
   AlertCircle, Minus, ChevronRight, CheckSquare, PieChart, Globe,
-  ExternalLink, Heading, Hash, Folder, Plus,
+  ExternalLink, Heading, Hash, Folder, Plus, Database, Bot, BookOpen,
 };
 function Ico({ name, size = 14, className = '' }: { name: string; size?: number; className?: string }) {
   const I = ICON_MAP[name] ?? Plus;
@@ -60,7 +62,7 @@ function SlashCommandPicker({
     return () => window.removeEventListener('keydown', handler);
   }, [open, onClose]);
 
-  const GROUPS = ['Database', 'Content', 'Data', 'People', 'Embed'];
+  const GROUPS = ['Enterprise', 'Database', 'Content', 'Data', 'People', 'Embed'];
   const filtered = AVAILABLE_WIDGETS.filter(w =>
     !search || w.label.toLowerCase().includes(search.toLowerCase()) ||
     w.description.toLowerCase().includes(search.toLowerCase())
@@ -208,6 +210,8 @@ function CellHeader({ cell, canManage, onAddBlock }: {
 }) {
   const [showPicker, setShowPicker] = useState(false);
   const addBtnRef = useRef<HTMLButtonElement>(null!);
+  const workspaceHook = useWorkspace(cell.name);
+  const tables = workspaceHook.ws.tables ?? [];
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl px-5 py-3.5 flex items-center justify-between gap-4"
@@ -217,8 +221,11 @@ function CellHeader({ cell, canManage, onAddBlock }: {
         <p className="text-[10px] text-slate-400 mt-0.5">Delhi Division · Commercial Branch · {cell.description || 'Cell Workspace'}</p>
       </div>
 
-      {canManage && (
-        <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2">
+        {/* Universal search */}
+        <SearchTrigger cell={cell.name} tables={tables}/>
+
+        {canManage && (
           <div className="relative">
             <button ref={addBtnRef} onClick={() => setShowPicker(o => !o)}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-rail-600 hover:bg-rail-700 text-white text-xs font-semibold shadow-sm transition-all">
@@ -231,8 +238,8 @@ function CellHeader({ cell, canManage, onAddBlock }: {
               onSelect={(type, title) => { onAddBlock(type, title); setShowPicker(false); }}
             />
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

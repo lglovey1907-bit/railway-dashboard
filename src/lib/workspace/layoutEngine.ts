@@ -10,8 +10,8 @@ export type WidgetType =
  | 'google_sheet' | 'google_links' | 'powerbi' | 'embed'
  | 'announcements' | 'quick_links' | 'approval_queue' | 'staff_requests'
  | 'shared_table' | 'pdf' | 'image' | 'staff_directory'
- | 'shared_table' | 'approval_queue' | 'staff_requests' | 'announcements'
- | 'quick_links' | 'embed' | 'google_sheet';
+ // Enterprise new types
+ | 'database' | 'ai_assistant' | 'knowledge_base' | 'task_manager';
 
 export interface LayoutWidget {
  id: string;
@@ -349,6 +349,11 @@ export const AVAILABLE_WIDGETS: { type: WidgetType; label: string; description: 
   { type: 'powerbi',        label: 'Power BI',         description: 'Embedded Power BI report',                   icon: 'PieChart',        group: 'Embed' },
   { type: 'embed',          label: 'Embed / iFrame',   description: 'Embed any URL as an iframe',                 icon: 'Globe',           group: 'Embed' },
   { type: 'quick_links',    label: 'Quick Links',      description: 'Configurable shortcut links',                 icon: 'ExternalLink',    group: 'Embed' },
+  // Enterprise blocks
+  { type: 'database',       label: 'Database',         description: 'Full database with Table, Board, Calendar, Gallery, Chart views', icon: 'Database',      group: 'Enterprise' },
+  { type: 'ai_assistant',   label: 'AI Assistant',     description: 'AI chat that searches your workspace data',   icon: 'Bot',             group: 'Enterprise' },
+  { type: 'knowledge_base', label: 'Knowledge Base',   description: 'Policies, circulars, SOPs and documents',     icon: 'BookOpen',        group: 'Enterprise' },
+  { type: 'task_manager',   label: 'Task Manager',     description: 'Kanban task management with assignments',      icon: 'CheckSquare',     group: 'Enterprise' },
 ];
 
 // ── Row-based layout extension (req 76–78) ────────────────────────────────────

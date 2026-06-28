@@ -4,7 +4,13 @@ import {
   Table2, BarChart3, FileText, Users2, Activity, UserCheck,
   ClipboardList, Share2, Megaphone, Link2, FileSpreadsheet,
   Globe, TrendingUp, ExternalLink, Edit3, Check, X, ChevronRight,
+  Database, Bot, BookOpen, CheckSquare,
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
+const DatabaseBlock = dynamic(() => import('@/components/database/DatabaseBlock').then(m => ({ default: m.DatabaseBlock })), { ssr: false });
+const AIAssistantBlock = dynamic(() => import('@/components/ai/AIAssistantBlock').then(m => ({ default: m.AIAssistantBlock })), { ssr: false });
+const KnowledgeBaseBlock = dynamic(() => import('@/components/knowledge/KnowledgeBaseBlock').then(m => ({ default: m.KnowledgeBaseBlock })), { ssr: false });
+const TaskManagerBlock = dynamic(() => import('@/components/tasks/TaskManagerBlock').then(m => ({ default: m.TaskManagerBlock })), { ssr: false });
 import type { LayoutWidget, LayoutColumn } from '@/lib/workspace/layoutEngine';
 import type { useWorkspace } from '@/lib/cellData/useWorkspace';
 import { TableEngine } from '@/components/cell/TableEngine';
@@ -433,6 +439,46 @@ export function WidgetRenderer({
       };
       return <EBW/>;
     }
+
+    // ── Enterprise Blocks ─────────────────────────────────────────────────────
+    case 'database': {
+      if (!workspaceHook) return <p className="text-xs text-slate-400">Workspace not loaded</p>;
+      return (
+        <DatabaseBlock
+          tableId={widget.tableId}
+          hook={workspaceHook}
+          cell={cell}
+          userId={userId}
+          userName={userName}
+          canManage={canManage}
+        />
+      );
+    }
+
+    case 'ai_assistant': {
+      const tables = workspaceHook?.ws?.tables ?? [];
+      return <AIAssistantBlock cell={cell} tables={tables}/>;
+    }
+
+    case 'knowledge_base':
+      return (
+        <KnowledgeBaseBlock
+          cell={cell}
+          canManage={canManage}
+          userId={userId ?? 'user'}
+          userName={userName ?? 'User'}
+        />
+      );
+
+    case 'task_manager':
+      return (
+        <TaskManagerBlock
+          cell={cell}
+          canManage={canManage}
+          userId={userId ?? 'user'}
+          userName={userName ?? 'User'}
+        />
+      );
 
  default:
  return <p className="text-xs text-slate-300 italic">Unknown widget type: {widget.type}</p>;
