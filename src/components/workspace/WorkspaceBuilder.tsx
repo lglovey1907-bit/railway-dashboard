@@ -27,6 +27,8 @@ import {
   type CellWindowStore, type CellWindow, type WindowVisibility,
   WINDOW_ICONS, WINDOW_COLORS,
 } from '@/lib/workspace/windowsEngine';
+import { getStaffForCell, STAFF_CHANGED_EVENT, type MasterStaffRecord } from '@/lib/staff/masterStaff';
+import { SearchTrigger } from '@/components/search/UniversalSearch';
 
 // ── Portal modal helper ───────────────────────────────────────────────────────
 function Modal({ open, onClose, children, maxWidth = 'max-w-sm' }: {
@@ -387,10 +389,11 @@ function WorkspaceRow({
 }
 
 // ── Main WorkspaceBuilder ─────────────────────────────────────────────────────
-export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed }: {
+export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enterprise }: {
   cell: string;
   pendingWidget?: { type: WidgetType; title: string } | null;
   onPendingConsumed?: () => void;
+  enterprise?: boolean;
 }) {
   const { user } = useAuthStore();
   const canManage = canManageCellStructure(user, cell);
@@ -409,6 +412,16 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed }: {
   const [isEditing, setIsEditing] = useState(false);
   const [showDataManager, setShowDataManager] = useState(false);
   const dragRef = useRef<{ fromRowId: string; fromColId: string; fromWidgetId: string } | null>(null);
+
+  // Staff for enterprise sidebar
+  const [staff, setStaff] = useState<MasterStaffRecord[]>([]);
+  useEffect(() => {
+    if (!enterprise) return;
+    const reload = () => setStaff(getStaffForCell(cell));
+    reload();
+    window.addEventListener(STAFF_CHANGED_EVENT, reload);
+    return () => window.removeEventListener(STAFF_CHANGED_EVENT, reload);
+  }, [cell, enterprise]);
 
   // Load window store
   useEffect(() => {
@@ -470,6 +483,317 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed }: {
   const visibleWindows = getVisibleWindows(winStore, user?.id ?? '', user?.role ?? 'user');
   const activeWin = winStore.windows.find(w => w.id === winStore.activeWindowId);
 
+  // ── Role gradient colours (sidebar avatars) ───────────────────────────────
+  const SIDE_ROLE_COLORS: Record<string, string> = {
+    CMI:     'from-indigo-500 to-indigo-700',
+    COS:     'from-violet-500 to-violet-700',
+    OS:      'from-teal-500 to-teal-700',
+    Dealer:  'from-amber-500 to-amber-700',
+    Incharge:'from-emerald-500 to-emerald-700',
+    default: 'from-slate-500 to-slate-700',
+  };
+
+  // ── Shared: rows canvas section ───────────────────────────────────────────
+  const rowsCanvas = (
+    <div className="space-y-3">
+      {isEditing && canManage && (
+        <div className="flex items-center gap-2 bg-rail-50 border border-rail-200 rounded-xl px-4 py-2.5">
+          <LayoutGrid size={13} className="text-rail-600 shrink-0"/>
+          <p className="text-xs text-rail-700 flex-1">Edit mode — drag widgets between columns, use the column buttons to change layout</p>
+        </div>
+      )}
+      {layout.rows.map((row, rowIdx) => (
+        <WorkspaceRow
+          key={row.id} row={row} rowIdx={rowIdx} totalRows={layout.rows.length}
+          cell={cell} canManage={canManage} isEditing={isEditing} layout={layout}
+          userId={user?.id} userName={user?.name} workspaceHook={workspaceHook}
+          onUpdate={patch => commitLayout(updateRow(layout, row.id, patch))}
+          onRemove={() => commitLayout(removeRow(layout, row.id))}
+          onMoveUp={() => commitLayout(moveRow(layout, row.id, 'up'))}
+          onMoveDown={() => commitLayout(moveRow(layout, row.id, 'down'))}
+          onAddWidget={(colId, w) => commitLayout(addWidgetToRow(layout, row.id, colId, w))}
+          onRemoveWidget={(colId, wid) => commitLayout(removeWidgetFromRow(layout, row.id, colId, wid))}
+          onUpdateWidget={(colId, wid, patch) => commitLayout(updateWidgetInRow(layout, row.id, colId, wid, patch))}
+          onToggleWidget={(colId, wid, prop) => {
+            const rr = layout.rows.find(r => r.id === row.id);
+            const cc = rr?.columns.find(c => c.id === colId);
+            const ww = cc?.widgets.find(w => w.id === wid);
+            if (!ww) return;
+            commitLayout(updateWidgetInRow(layout, row.id, colId, wid, { [prop]: !(ww as any)[prop] }));
+          }}
+          onDragStart={(colId, widgetId) => { dragRef.current = { fromRowId: row.id, fromColId: colId, fromWidgetId: widgetId }; }}
+          onDrop={handleDrop}
+          onResizeCol={(colId, pct) => commitLayout(resizeRowColumn(layout, row.id, colId, pct))}
+        />
+      ))}
+      {canManage && (
+        <button onClick={() => commitLayout(addRow(layout))}
+          className={cn('w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-dashed transition-all text-sm font-medium',
+            isEditing
+              ? 'border-rail-300 text-rail-500 hover:bg-rail-50 bg-rail-50/30'
+              : 'border-slate-200 text-slate-300 hover:border-slate-300 hover:text-slate-400 hover:bg-slate-50')}>
+          <Plus size={14}/> Add Row
+        </button>
+      )}
+      {showDataManager && (
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden" style={{ boxShadow: '0 1px 3px rgba(15,23,42,0.06)' }}>
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
+            <p className="text-sm font-bold text-slate-900 flex items-center gap-2"><Table2 size={14} className="text-rail-600"/> Tables & Data</p>
+            <button onClick={() => setShowDataManager(false)} className="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1"><X size={12}/> Hide</button>
+          </div>
+          <div className="p-4"><CellDataManager cell={cell}/></div>
+        </div>
+      )}
+    </div>
+  );
+
+  // ── Shared: all modals ────────────────────────────────────────────────────
+  const sharedModals = (
+    <AnimatePresence>
+      {showCreateWin && (
+        <WindowFormModal
+          open={showCreateWin} onClose={() => setShowCreateWin(false)}
+          existingWindows={winStore.windows}
+          onSave={(label, icon, vis, roles, cloneFrom) => {
+            const next = createWindow(winStore, label, icon, vis, user?.id ?? '', user?.name ?? 'User', roles, undefined, cloneFrom || undefined);
+            commitStore(next);
+          }}
+        />
+      )}
+      {editingWin && (
+        <WindowFormModal
+          open={!!editingWin} onClose={() => setEditingWin(null)}
+          initial={editingWin} existingWindows={winStore.windows}
+          onSave={(label, icon, vis, roles) => {
+            commitStore(updateWindow(winStore, editingWin.id, { label, icon, visibility: vis, visibleToRoles: roles }));
+          }}
+        />
+      )}
+      {deleteTargetWin && (
+        <Modal open={!!deleteTargetWin} onClose={() => setDeleteTargetWin(null)} maxWidth="max-w-sm">
+          <div className="p-6 text-center space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center mx-auto">
+              <Trash2 size={20} className="text-red-500"/>
+            </div>
+            <div>
+              <p className="text-sm font-bold text-slate-900">Delete Window</p>
+              <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                Delete <strong>&ldquo;{deleteTargetWin.label}&rdquo;</strong>? The window layout will be removed. Underlying databases are not affected.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteTargetWin(null)} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
+              <button onClick={() => { commitStore(deleteWindow(winStore, deleteTargetWin.id)); setDeleteTargetWin(null); }}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-bold">Delete</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </AnimatePresence>
+  );
+
+  // ── Enterprise sidebar + canvas layout ────────────────────────────────────
+  if (enterprise) {
+    return (
+      <div className="flex h-full overflow-hidden">
+
+        {/* ── LEFT SIDEBAR ──────────────────────────────────────────────── */}
+        <div className="w-[220px] bg-slate-900 flex flex-col shrink-0 border-r border-slate-800">
+
+          {/* Cell identity */}
+          <div className="px-4 py-4 border-b border-slate-800">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-rail-700/60 border border-rail-600/50 flex items-center justify-center text-lg shrink-0">
+                🏢
+              </div>
+              <div className="min-w-0">
+                <p className="text-[13px] font-bold text-white truncate leading-tight">{cell}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">Delhi Division · NR</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Windows navigation (scrollable) */}
+          <div className="flex-1 overflow-y-auto py-3 custom-scroll">
+            <p className="text-[9px] font-bold text-slate-600 uppercase tracking-widest px-4 mb-2">Workspaces</p>
+
+            {visibleWindows.map(win => {
+              const isActive = win.id === winStore.activeWindowId;
+              return (
+                <div key={win.id} className="relative px-2 mb-0.5">
+                  <div className={cn(
+                    'flex items-center gap-2 px-3 py-2 rounded-lg transition-all cursor-pointer group/win',
+                    isActive ? 'bg-rail-700 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                  )}>
+                    <button
+                      onClick={() => commitStore({ ...winStore, activeWindowId: win.id })}
+                      className="flex items-center gap-2 flex-1 min-w-0 text-left">
+                      <span className="text-sm shrink-0">{win.icon ?? '📋'}</span>
+                      <span className="text-[11px] font-medium truncate">{win.label}</span>
+                      {win.isDefault && <Star size={9} className="text-amber-400 fill-amber-400 shrink-0"/>}
+                      {win.isPinned && <Pin size={9} className={cn('shrink-0', isActive ? 'text-rail-300' : 'text-slate-600')}/>}
+                      {win.visibility === 'personal' && <Lock size={9} className={cn('shrink-0', isActive ? 'text-rail-300' : 'text-slate-600')}/>}
+                    </button>
+                    {canManage && (
+                      <button
+                        ref={el => { if (el) menuBtnRefs.current[win.id] = el; }}
+                        onClick={e => { e.stopPropagation(); setOpenMenu(m => m === win.id ? null : win.id); }}
+                        className={cn(
+                          'p-0.5 rounded opacity-0 group-hover/win:opacity-100 transition-opacity shrink-0',
+                          isActive ? 'text-rail-300 hover:text-white' : 'text-slate-500 hover:text-slate-300'
+                        )}>
+                        <MoreHorizontal size={12}/>
+                      </button>
+                    )}
+                  </div>
+                  <WindowMenu
+                    win={win}
+                    btnRef={{ current: menuBtnRefs.current[win.id] }}
+                    open={openMenu === win.id} onClose={() => setOpenMenu(null)}
+                    onRename={() => setEditingWin(win)}
+                    onDuplicate={() => {
+                      const next = createWindow(winStore, win.label + ' (copy)', win.icon ?? '📋', win.visibility, user?.id ?? '', user?.name ?? 'User', win.visibleToRoles, win.visibleToUsers, win.id);
+                      commitStore(next);
+                    }}
+                    onDelete={() => setDeleteTargetWin(win)}
+                    onPin={() => commitStore(updateWindow(winStore, win.id, { isPinned: !win.isPinned }))}
+                    onSetDefault={() => {
+                      const next = { ...winStore, windows: winStore.windows.map(w => ({ ...w, isDefault: w.id === win.id })) };
+                      commitStore(next);
+                    }}
+                  />
+                </div>
+              );
+            })}
+
+            {canManage && (
+              <button onClick={() => setShowCreateWin(true)}
+                className="w-full flex items-center gap-2 px-5 py-2 mt-1 text-slate-600 hover:text-slate-300 text-[11px] font-medium transition-colors">
+                <Plus size={12}/> New window
+              </button>
+            )}
+          </div>
+
+          {/* Staff mini-roster */}
+          <div className="px-4 py-3 border-t border-slate-800">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[9px] font-bold text-slate-600 uppercase tracking-widest">Staff</p>
+              <span className="text-[10px] text-slate-600 font-medium">{staff.length}</span>
+            </div>
+            {staff.length > 0 ? (
+              <div className="flex -space-x-1.5">
+                {staff.slice(0, 8).map(s => {
+                  const initials = s.name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
+                  const grad = SIDE_ROLE_COLORS[s.workingAs ?? ''] ?? SIDE_ROLE_COLORS.default;
+                  return (
+                    <div key={s.id} title={`${s.name} · ${s.workingAs ?? s.designation}`}
+                      className={cn('w-6 h-6 rounded-full bg-gradient-to-br border-2 border-slate-900 flex items-center justify-center text-[8px] font-bold text-white shrink-0 cursor-default', grad)}>
+                      {initials}
+                    </div>
+                  );
+                })}
+                {staff.length > 8 && (
+                  <div className="w-6 h-6 rounded-full bg-slate-700 border-2 border-slate-900 flex items-center justify-center text-[8px] font-bold text-slate-300">
+                    +{staff.length - 8}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-[10px] text-slate-700">No staff assigned</p>
+            )}
+          </div>
+
+          {/* Search */}
+          <div className="px-3 pb-4">
+            <SearchTrigger cell={cell} tables={workspaceHook.ws.tables ?? []}/>
+          </div>
+        </div>
+
+        {/* ── RIGHT CONTENT ──────────────────────────────────────────────── */}
+        <div className="flex-1 flex flex-col overflow-hidden bg-slate-50">
+
+          {/* Window header bar */}
+          <div className="flex items-center gap-3 px-5 py-3 bg-white border-b border-slate-200 shrink-0" style={{ boxShadow: '0 1px 3px rgba(15,23,42,0.04)' }}>
+            <span className="text-xl">{activeWin?.icon ?? '📋'}</span>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-sm font-bold text-slate-900 truncate">{activeWin?.label ?? 'Workspace'}</h1>
+              <p className="text-[10px] text-slate-400">{cell} · Delhi Division</p>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button onClick={() => setShowDataManager(d => !d)}
+                className={cn('flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all',
+                  showDataManager ? 'bg-rail-50 border-rail-200 text-rail-700' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300')}>
+                <Table2 size={11}/> Data
+              </button>
+              {canManage && (
+                <button onClick={() => setIsEditing(e => !e)}
+                  className={cn('flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all',
+                    isEditing ? 'bg-rail-600 border-rail-600 text-white' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300')}>
+                  {isEditing ? <><Check size={11}/> Done</> : <><Settings2 size={11}/> Edit</>}
+                </button>
+              )}
+              {canManage && (
+                <button onClick={() => commitLayout(addRow(layout))}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-rail-600 hover:bg-rail-700 text-white text-xs font-bold rounded-lg transition-all shadow-sm">
+                  <Plus size={12}/> Add block
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Canvas */}
+          <div className="flex-1 overflow-y-auto p-4 custom-scroll">
+            {layout.rows.length === 0 ? (
+              /* ── Empty state ── */
+              <div className="flex flex-col items-center justify-center min-h-[400px] gap-5">
+                <div className="w-20 h-20 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-4xl shadow-sm">
+                  {activeWin?.icon ?? '🏠'}
+                </div>
+                <div className="text-center">
+                  <p className="text-base font-bold text-slate-800">{activeWin?.label ?? 'Workspace'}</p>
+                  <p className="text-xs text-slate-400 mt-1.5">This window is empty. Choose a block to get started.</p>
+                </div>
+                {canManage && (
+                  <div className="grid grid-cols-3 gap-2.5 w-[420px]">
+                    {([
+                      { type: 'database'     as WidgetType, emoji: '📊', label: 'Database',     desc: 'Structured table view' },
+                      { type: 'task_manager' as WidgetType, emoji: '✅', label: 'Tasks',        desc: 'Track action items' },
+                      { type: 'ai_assistant' as WidgetType, emoji: '🤖', label: 'AI Assistant', desc: 'Chat with AI' },
+                      { type: 'knowledge_base' as WidgetType, emoji: '📚', label: 'Knowledge',  desc: 'Docs & SOPs' },
+                      { type: 'kpi'          as WidgetType, emoji: '📈', label: 'KPI Cards',    desc: 'Key metrics' },
+                      { type: 'text'         as WidgetType, emoji: '📝', label: 'Text Block',   desc: 'Rich content' },
+                    ] as { type: WidgetType; emoji: string; label: string; desc: string }[]).map(item => (
+                      <button key={item.type}
+                        onClick={() => {
+                          const next0 = addRow(layout);
+                          const col = next0.rows[0].columns[0];
+                          const next1 = addWidgetToRow(next0, next0.rows[0].id, col.id, { type: item.type, title: item.label });
+                          commitLayout(next1);
+                        }}
+                        className="flex flex-col items-start gap-1.5 px-3.5 py-3.5 bg-white hover:bg-rail-50 border border-slate-200 hover:border-rail-300 rounded-xl text-left transition-all group shadow-sm hover:shadow-md">
+                        <span className="text-xl">{item.emoji}</span>
+                        <div>
+                          <p className="text-xs font-bold text-slate-800 group-hover:text-rail-700">{item.label}</p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">{item.desc}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              rowsCanvas
+            )}
+          </div>
+        </div>
+
+        {/* Shared modals */}
+        {sharedModals}
+      </div>
+    );
+  }
+
+  // ── Legacy tab-bar layout (non-enterprise) ────────────────────────────────
   return (
     <div className="space-y-3">
 
