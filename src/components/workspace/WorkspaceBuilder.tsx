@@ -68,10 +68,11 @@ function WindowFormModal({ open, onClose, onSave, initial, existingWindows }: {
   onSave: (label: string, icon: string, vis: WindowVisibility, roles: string[], cloneFrom: string) => void;
   initial?: Partial<CellWindow>; existingWindows: CellWindow[];
 }) {
-  const [label, setLabel]   = useState(initial?.label ?? 'New Window');
-  const [icon, setIcon]     = useState(initial?.icon ?? '📋');
-  const [vis, setVis]       = useState<WindowVisibility>(initial?.visibility ?? 'cell');
-  const [roles, setRoles]   = useState<string[]>(initial?.visibleToRoles ?? []);
+  const [label, setLabel]       = useState(initial?.label ?? 'New Window');
+  const [icon, setIcon]         = useState(initial?.icon ?? '📋');
+  const [showIconPicker, setShowIconPicker] = useState(false);
+  const [vis, setVis]           = useState<WindowVisibility>(initial?.visibility ?? 'cell');
+  const [roles, setRoles]       = useState<string[]>(initial?.visibleToRoles ?? []);
   const [cloneFrom, setCloneFrom] = useState('');
   const ALL_ROLES = ['admin', 'maintenance', 'incharge', 'user'];
 
@@ -89,18 +90,29 @@ function WindowFormModal({ open, onClose, onSave, initial, existingWindows }: {
           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-2">Window Name</label>
           <div className="flex gap-2">
             <div className="relative">
-              <button className="w-12 h-10 rounded-xl border border-slate-200 text-xl flex items-center justify-center hover:bg-slate-50"
-                onClick={e => e.stopPropagation()}>
+              <button
+                type="button"
+                className="w-12 h-10 rounded-xl border border-slate-200 text-xl flex items-center justify-center hover:bg-slate-50 transition-colors"
+                onClick={e => { e.stopPropagation(); setShowIconPicker(v => !v); }}>
                 {icon}
               </button>
-              <div className="absolute top-full left-0 mt-1 z-10 bg-white border border-slate-200 rounded-xl shadow-lg p-2 grid grid-cols-5 gap-1 w-36">
-                {WINDOW_ICONS.map(em => (
-                  <button key={em} onClick={() => setIcon(em)}
-                    className={cn('text-lg p-1 rounded-lg hover:bg-slate-100', icon === em && 'bg-rail-50 ring-1 ring-rail-400')}>
-                    {em}
-                  </button>
-                ))}
-              </div>
+              {showIconPicker && (
+                <>
+                  {/* Click-outside overlay */}
+                  <div className="fixed inset-0 z-[9]" onClick={() => setShowIconPicker(false)}/>
+                  <div className="absolute top-full left-0 mt-1 z-10 bg-white border border-slate-200 rounded-xl shadow-lg p-2 grid grid-cols-5 gap-1 w-36">
+                    {WINDOW_ICONS.map(em => (
+                      <button
+                        key={em}
+                        type="button"
+                        onClick={() => { setIcon(em); setShowIconPicker(false); }}
+                        className={cn('text-lg p-1 rounded-lg hover:bg-slate-100 transition-colors', icon === em && 'bg-rail-50 ring-1 ring-rail-400')}>
+                        {em}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
             <input value={label} onChange={e => setLabel(e.target.value)} autoFocus
               onKeyDown={e => e.key === 'Enter' && handleSave()}
