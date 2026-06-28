@@ -3,29 +3,53 @@ import { useEffect, useState } from 'react';
 import { useAppSync } from '@/lib/config/useAppSync';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
+import { useSidebarStore } from '@/store/sidebarStore';
 import { Sidebar, NAV_ITEMS } from '@/components/layout/Sidebar';
 import { TopBar } from '@/components/layout/TopBar';
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav';
 import { ChangePasswordGate } from '@/components/auth/ChangePasswordGate';
 import { getCellBySlug } from '@/lib/cells/cellRegistry';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, isInitialized, initialize } = useAuthStore();
-  const router = useRouter();
+  const router   = useRouter();
   const pathname = usePathname();
   const [gatePassed, setGatePassed] = useState(false);
 
-  useEffect(() => {
-    initialize();
-  }, [initialize]);
+  const { collapse, expand, toggle, autoCollapseOnCell, wasAutoCollapsed } = useSidebarStore();
 
-  // ── Cross-device sync: bulk-load all workspace data from Upstash on login ──
+  // ── Initialise auth ─────────────────────────────────────────────────────────
+  useEffect(() => { initialize(); }, [initialize]);
+
+  // ── Cross-device sync ────────────────────────────────────────────────────────
   const syncStatus = useAppSync(user?.id);
 
   useEffect(() => {
-    if (isInitialized && !user) {
-      router.replace('/login');
-    }
+    if (isInitialized && !user) router.replace('/login');
   }, [user, isInitialized, router]);
+
+  // ── Auto-collapse sidebar when entering a Cell page ──────────────────────────
+  useEffect(() => {
+    const onCell = pathname.startsWith('/dashboard/cell/');
+    if (onCell && autoCollapseOnCell) {
+      collapse(true); // mark as auto-collapsed
+    } else if (!onCell && wasAutoCollapsed) {
+      expand();        // restore when leaving cell
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
+
+  // ── Keyboard shortcut: Ctrl/Cmd+B → toggle sidebar ───────────────────────────
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+        e.preventDefault();
+        toggle();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [toggle]);
 
   if (!isInitialized || !user) {
     return (
@@ -38,24 +62,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     );
   }
 
-  // ── Page title resolution ──────────────────────────────────────────────────
+  // ── Page title resolution ────────────────────────────────────────────────────
   const TITLE_OVERRIDES: Record<string, { title: string; subtitle: string }> = {
-    '/dashboard':                  { title: 'Commercial Overview',    subtitle: 'Delhi Division · Northern Railway' },
-    '/dashboard/users':            { title: 'User Management',        subtitle: 'Team members & access control' },
-    '/dashboard/userrequests':     { title: 'User Requests',          subtitle: 'Pending additions, removals, and transfers' },
-    '/dashboard/staff':            { title: 'DRM Office Staff',       subtitle: 'Master Employee Database' },
-    '/dashboard/cellmanager':      { title: 'Cell Management',        subtitle: 'Create, edit, and manage department cells' },
-    '/dashboard/datasources':      { title: 'Data Sources',           subtitle: 'Configure data connections' },
-    '/dashboard/settings':         { title: 'System Settings',        subtitle: 'Dashboard configuration' },
-    '/dashboard/confidential':     { title: 'Confidential Reports',   subtitle: 'Access-controlled report sharing' },
-    '/dashboard/profile':          { title: 'My Profile',             subtitle: 'Employee profile & settings' },
-    '/dashboard/reports':          { title: 'Reports',                subtitle: 'Generate & manage reports' },
-    '/dashboard/debug':            { title: 'Debug Inspector',        subtitle: 'Developer tools' },
+    '/dashboard':              { title: 'Commercial Overview',    subtitle: 'Delhi Division · Northern Railway' },
+    '/dashboard/users':        { title: 'User Management',        subtitle: 'Team members & access control' },
+    '/dashboard/userrequests': { title: 'User Requests',          subtitle: 'Pending additions, removals, and transfers' },
+    '/dashboard/staff':        { title: 'DRM Office Staff',       subtitle: 'Master Employee Database' },
+    '/dashboard/cellmanager':  { title: 'Cell Management',        subtitle: 'Create, edit, and manage department cells' },
+    '/dashboard/datasources':  { title: 'Data Sources',           subtitle: 'Configure data connections' },
+    '/dashboard/settings':     { title: 'System Settings',        subtitle: 'Dashboard configuration' },
+    '/dashboard/confidential': { title: 'Confidential Reports',   subtitle: 'Access-controlled report sharing' },
+    '/dashboard/profile':      { title: 'My Profile',             subtitle: 'Employee profile & settings' },
+    '/dashboard/reports':      { title: 'Reports',                subtitle: 'Generate & manage reports' },
+    '/dashboard/debug':        { title: 'Debug Inspector',        subtitle: 'Developer tools' },
   };
 
   let info: { title: string; subtitle: string };
   if (pathname.startsWith('/dashboard/cell/')) {
-    const slug = pathname.replace('/dashboard/cell/', '');
+    const slug    = pathname.replace('/dashboard/cell/', '');
     const cellRec = getCellBySlug(slug);
     info = cellRec
       ? { title: cellRec.name, subtitle: `${cellRec.name} · Delhi Division Commercial Branch` }
@@ -76,11 +100,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <Sidebar/>
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           <TopBar title={info.title} subtitle={info.subtitle}/>
-          <main className="flex-1 overflow-y-auto p-6 custom-scroll">
+          {/* pb-16 on mobile clears the fixed bottom nav */}
+          <main className="flex-1 overflow-y-auto p-6 custom-scroll pb-20 md:pb-6">
             {children}
           </main>
         </div>
       </div>
+      {/* Mobile-only bottom navigation + FAB */}
+      <MobileBottomNav/>
     </>
   );
 }
