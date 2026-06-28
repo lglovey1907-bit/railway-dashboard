@@ -1,11 +1,15 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Table2, BarChart3, FileText, Users2, Activity, UserCheck,
   ClipboardList, Share2, Megaphone, Link2, FileSpreadsheet,
   Globe, TrendingUp, ExternalLink, Edit3, Check, X, ChevronRight,
-  Database, Bot, BookOpen, CheckSquare,
+  Database, Bot, BookOpen, CheckSquare, Plus, Trash2, Settings2,
+  ChevronDown, TrendingDown, Target, Layers, Filter,
 } from 'lucide-react';
+import type { KpiSource, KpiAggregation, KpiCombineMode } from '@/lib/workspace/layoutEngine';
+import type { TableDef } from '@/lib/cellData/types';
 import dynamic from 'next/dynamic';
 const DatabaseBlock = dynamic(() => import('@/components/database/DatabaseBlock').then(m => ({ default: m.DatabaseBlock })), { ssr: false });
 const AIAssistantBlock = dynamic(() => import('@/components/ai/AIAssistantBlock').then(m => ({ default: m.AIAssistantBlock })), { ssr: false });
@@ -27,51 +31,433 @@ const ICON_MAP: Record<string, React.ElementType> = {
  Globe, TrendingUp,
 };
 
-function EditableKPI({ widget, onUpdate, canManage }: {
- widget: LayoutWidget;
- onUpdate: (patch: Partial<LayoutWidget>) => void;
- canManage: boolean;
-}) {
- const [editing, setEditing] = useState(false);
- const [label, setLabel] = useState(widget.kpiLabel ?? widget.title);
- const [value, setVal] = useState(widget.kpiValue ?? '0');
- const [suffix, setSuffix] = useState(widget.kpiSuffix ?? '');
+// ── Aggregation engine ────────────────────────────────────────────────────────
+function computeAgg(table: TableDef, source: KpiSource): number {
+  const activeRows = table.rows.filter((r: any) => !r.deletedAt);
+  const filtered = source.filters && Object.keys(source.filters).length > 0
+    ? activeRows.filter((r: any) => Object.entries(source.filters!).every(([fid, fval]) =>
+        (table.values[`${r.id}:${fid}`] ?? '') === fval))
+    : activeRows;
 
- if (editing && canManage) {
- return (
- <div className="space-y-2 p-1">
- <input value={label} onChange={e => setLabel(e.target.value)} placeholder="Label"
- className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-blue-400"/>
- <div className="flex gap-2">
- <input value={value} onChange={e => setVal(e.target.value)} placeholder="Value"
- className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-blue-400"/>
- <input value={suffix} onChange={e => setSuffix(e.target.value)} placeholder="Unit"
- className="w-16 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-blue-400"/>
- </div>
- <div className="flex gap-1.5 justify-end">
- <button onClick={() => setEditing(false)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><X size={12}/></button>
- <button onClick={() => { onUpdate({ kpiLabel: label, kpiValue: value, kpiSuffix: suffix, title: label }); setEditing(false); }}
- className="p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700"><Check size={12}/></button>
- </div>
- </div>
- );
- }
- return (
- <div className="flex items-center justify-between">
- <div>
- <p className="text-2xl font-bold text-slate-900">
- {widget.kpiValue ?? '—'}
- {widget.kpiSuffix && <span className="text-sm ml-1 text-slate-400">{widget.kpiSuffix}</span>}
- </p>
- <p className="text-xs text-slate-400 mt-0.5">{widget.kpiLabel ?? widget.title}</p>
- </div>
- {canManage && (
- <button onClick={() => setEditing(true)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-300 hover:text-slate-600">
- <Edit3 size={12}/>
- </button>
- )}
- </div>
- );
+  if (source.aggregation === 'count') return filtered.length;
+  if (source.aggregation === 'unique') {
+    if (!source.field) return new Set(filtered.map((r: any) => r.id)).size;
+    const vals = new Set(filtered.map((r: any) => table.values[`${r.id}:${source.field}`] ?? '').filter(Boolean));
+    return vals.size;
+  }
+  if (!source.field) return filtered.length;
+  const nums = filtered.map((r: any) => parseFloat(table.values[`${r.id}:${source.field}`] ?? '0')).filter(n => !isNaN(n));
+  switch (source.aggregation) {
+    case 'sum': return nums.reduce((a, b) => a + b, 0);
+    case 'avg': return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0;
+    case 'min': return nums.length ? Math.min(...nums) : 0;
+    case 'max': return nums.length ? Math.max(...nums) : 0;
+    default: return 0;
+  }
+}
+
+function formatKpiValue(n: number, fmt?: string): string {
+  if (fmt === 'currency') return `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+  if (fmt === 'percent') return `${n.toFixed(1)}%`;
+  return n % 1 === 0 ? n.toLocaleString('en-IN') : n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+}
+
+const KPI_COLORS: Record<string, { text: string; bg: string; border: string; accent: string }> = {
+  blue:   { text: 'text-blue-700',   bg: 'bg-blue-50',   border: 'border-blue-100',  accent: 'bg-blue-500'   },
+  green:  { text: 'text-emerald-700',bg: 'bg-emerald-50',border: 'border-emerald-100',accent: 'bg-emerald-500'},
+  red:    { text: 'text-red-700',    bg: 'bg-red-50',    border: 'border-red-100',   accent: 'bg-red-500'    },
+  amber:  { text: 'text-amber-700',  bg: 'bg-amber-50',  border: 'border-amber-100', accent: 'bg-amber-500'  },
+  violet: { text: 'text-violet-700', bg: 'bg-violet-50', border: 'border-violet-100',accent: 'bg-violet-500' },
+  slate:  { text: 'text-slate-700',  bg: 'bg-slate-50',  border: 'border-slate-100', accent: 'bg-slate-500'  },
+};
+
+const AGG_OPTS: { id: KpiAggregation; label: string }[] = [
+  { id: 'count',  label: 'Count rows'  },
+  { id: 'sum',    label: 'Sum'         },
+  { id: 'avg',    label: 'Average'     },
+  { id: 'min',    label: 'Minimum'     },
+  { id: 'max',    label: 'Maximum'     },
+  { id: 'unique', label: 'Unique vals' },
+];
+
+// ── Drill-down modal ──────────────────────────────────────────────────────────
+function DrillDownModal({ table, source, onClose }: {
+  table: TableDef; source: KpiSource; onClose: () => void;
+}) {
+  const rows = table.rows.filter((r: any) => !r.deletedAt);
+  const filtered = source.filters && Object.keys(source.filters).length > 0
+    ? rows.filter((r: any) => Object.entries(source.filters!).every(([fid, fval]) =>
+        (table.values[`${r.id}:${fid}`] ?? '') === fval))
+    : rows;
+  const fields = table.fields.slice(0, 6);
+
+  if (typeof window === 'undefined') return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[2100] flex items-center justify-center p-4"
+      style={{ backgroundColor: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(3px)' }}
+      onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col overflow-hidden"
+        style={{ maxHeight: '80vh' }}
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 bg-slate-50">
+          <Filter size={13} className="text-rail-600"/>
+          <p className="text-sm font-bold text-slate-900 flex-1">
+            {table.name} · {filtered.length} records
+          </p>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-400"><X size={14}/></button>
+        </div>
+        <div className="overflow-auto flex-1">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th className="text-left px-3 py-2 font-semibold text-slate-600 w-8">#</th>
+                <th className="text-left px-3 py-2 font-semibold text-slate-600">{table.firstColLabel}</th>
+                {fields.map(f => (
+                  <th key={f.id} className="text-left px-3 py-2 font-semibold text-slate-600">{f.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filtered.map((row: any, i: number) => (
+                <tr key={row.id} className="hover:bg-slate-50">
+                  <td className="px-3 py-2 text-slate-400">{i + 1}</td>
+                  <td className="px-3 py-2 font-medium text-slate-800 max-w-[160px] truncate">
+                    {table.values[`${row.id}:__label__`] ?? `Row ${i + 1}`}
+                  </td>
+                  {fields.map(f => (
+                    <td key={f.id} className="px-3 py-2 text-slate-600 max-w-[120px] truncate">
+                      {table.values[`${row.id}:${f.id}`] ?? '—'}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {filtered.length === 0 && (
+            <div className="text-center py-10 text-slate-400 text-xs">No records match the filter</div>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ── KPI static value editor (extracted to avoid conditional hooks) ────────────
+function KpiStaticEdit({ widget, onUpdate, onCancel }: {
+  widget: LayoutWidget;
+  onUpdate: (patch: Partial<LayoutWidget>) => void;
+  onCancel: () => void;
+}) {
+  const [label, setLabel] = useState(widget.kpiLabel ?? widget.title);
+  const [val, setVal]     = useState(widget.kpiValue ?? '');
+  const [suf, setSuf]     = useState(widget.kpiSuffix ?? '');
+  return (
+    <div className="space-y-2 p-1">
+      <input value={label} onChange={e => setLabel(e.target.value)} placeholder="Label"
+        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-rail-400"/>
+      <div className="flex gap-2">
+        <input value={val} onChange={e => setVal(e.target.value)} placeholder="Value"
+          className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-rail-400"/>
+        <input value={suf} onChange={e => setSuf(e.target.value)} placeholder="Unit"
+          className="w-16 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-rail-400"/>
+      </div>
+      <div className="flex gap-1.5 justify-end">
+        <button onClick={onCancel} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><X size={12}/></button>
+        <button
+          onClick={() => { onUpdate({ kpiLabel: label, kpiValue: val, kpiSuffix: suf, title: label }); onCancel(); }}
+          className="p-1.5 rounded-lg bg-rail-600 text-white hover:bg-rail-700">
+          <Check size={12}/>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── KPI config builder (extracted to avoid conditional hooks) ─────────────────
+function KpiConfigBuilder({ widget, tables, onUpdate, onCancel }: {
+  widget: LayoutWidget;
+  tables: TableDef[];
+  onUpdate: (patch: Partial<LayoutWidget>) => void;
+  onCancel: () => void;
+}) {
+  const [sources, setSources] = useState<KpiSource[]>(widget.kpiSources ?? []);
+  const [label, setLabel]     = useState(widget.kpiLabel ?? widget.title);
+  const [suffix, setSuffix]   = useState(widget.kpiSuffix ?? '');
+  const [target, setTarget]   = useState(widget.kpiTarget ?? '');
+  const [combine, setCombine] = useState<KpiCombineMode>(widget.kpiCombine ?? 'first');
+  const [fmt, setFmt]         = useState<'number' | 'currency' | 'percent'>(widget.kpiFormat ?? 'number');
+  const [color, setColor]     = useState<'blue'|'green'|'red'|'amber'|'violet'|'slate'>(widget.kpiColor ?? 'blue');
+
+  const addSource = () => {
+    if (!tables.length) return;
+    setSources(s => [...s, { id: `ks${Date.now()}`, tableId: tables[0].id, aggregation: 'count' }]);
+  };
+  const removeSource = (id: string) => setSources(s => s.filter(x => x.id !== id));
+  const updateSource = (id: string, patch: Partial<KpiSource>) =>
+    setSources(s => s.map(x => x.id === id ? { ...x, ...patch } : x));
+
+  const save = () => {
+    onUpdate({
+      kpiSources: sources.length > 0 ? sources : undefined,
+      kpiLabel: label, kpiSuffix: suffix, title: label,
+      kpiTarget: target || undefined, kpiCombine: combine,
+      kpiFormat: fmt, kpiColor: color,
+    });
+    onCancel();
+  };
+
+  return (
+    <div className="space-y-3 text-xs">
+      {/* Label + suffix */}
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="block text-[10px] font-semibold text-slate-500 mb-1">Label</label>
+          <input value={label} onChange={e => setLabel(e.target.value)}
+            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-rail-400"/>
+        </div>
+        <div>
+          <label className="block text-[10px] font-semibold text-slate-500 mb-1">Unit / Suffix</label>
+          <input value={suffix} onChange={e => setSuffix(e.target.value)} placeholder="e.g. Cr, %, km"
+            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-rail-400"/>
+        </div>
+      </div>
+
+      {/* Format + color + target */}
+      <div className="grid grid-cols-3 gap-2">
+        <div>
+          <label className="block text-[10px] font-semibold text-slate-500 mb-1">Format</label>
+          <select value={fmt} onChange={e => setFmt(e.target.value as typeof fmt)}
+            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-rail-400">
+            <option value="number">Number</option>
+            <option value="currency">Currency (₹)</option>
+            <option value="percent">Percent (%)</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-[10px] font-semibold text-slate-500 mb-1">Color</label>
+          <select value={color} onChange={e => setColor(e.target.value as typeof color)}
+            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-rail-400">
+            {Object.keys(KPI_COLORS).map(c => (
+              <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-[10px] font-semibold text-slate-500 mb-1">Target</label>
+          <input value={target} onChange={e => setTarget(e.target.value)} type="number" placeholder="optional"
+            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-rail-400"/>
+        </div>
+      </div>
+
+      {/* Data sources */}
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="text-[10px] font-semibold text-slate-500">Data Sources</label>
+          {sources.length > 1 && (
+            <select value={combine} onChange={e => setCombine(e.target.value as KpiCombineMode)}
+              className="text-[10px] bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 focus:outline-none">
+              <option value="first">Use First</option>
+              <option value="sum">Sum All</option>
+              <option value="difference">Difference (A−B)</option>
+              <option value="ratio">Ratio (A÷B)</option>
+            </select>
+          )}
+        </div>
+        <div className="space-y-2">
+          {sources.map((src, i) => {
+            const tbl = tables.find(t => t.id === src.tableId);
+            const numFields = (tbl?.fields ?? []).filter((f: any) =>
+              ['number', 'currency', 'formula'].includes(f.type));
+            return (
+              <div key={src.id} className="flex items-center gap-1.5 bg-slate-50 rounded-lg p-2 border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-400 w-4 shrink-0">
+                  {String.fromCharCode(65 + i)}
+                </span>
+                <select value={src.tableId}
+                  onChange={e => updateSource(src.id, { tableId: e.target.value, field: undefined })}
+                  className="flex-1 min-w-0 bg-white border border-slate-200 rounded px-1.5 py-1 text-[10px] focus:outline-none">
+                  {tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+                <select value={src.aggregation}
+                  onChange={e => updateSource(src.id, { aggregation: e.target.value as KpiAggregation })}
+                  className="bg-white border border-slate-200 rounded px-1.5 py-1 text-[10px] focus:outline-none">
+                  {AGG_OPTS.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
+                </select>
+                {src.aggregation !== 'count' && (
+                  <select value={src.field ?? ''}
+                    onChange={e => updateSource(src.id, { field: e.target.value || undefined })}
+                    className="bg-white border border-slate-200 rounded px-1.5 py-1 text-[10px] focus:outline-none">
+                    <option value="">— field —</option>
+                    {numFields.map((f: any) => <option key={f.id} value={f.id}>{f.label}</option>)}
+                  </select>
+                )}
+                <button onClick={() => removeSource(src.id)}
+                  className="p-1 rounded hover:bg-red-50 text-slate-300 hover:text-red-500 shrink-0">
+                  <Trash2 size={10}/>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        {tables.length > 0 ? (
+          <button onClick={addSource}
+            className="mt-1.5 flex items-center gap-1 text-[10px] text-rail-600 hover:text-rail-700 font-medium">
+            <Plus size={10}/> Add source
+          </button>
+        ) : (
+          <p className="text-[10px] text-slate-400 italic mt-1">
+            No tables in this workspace yet. Add a Database block first.
+          </p>
+        )}
+      </div>
+
+      <div className="flex gap-1.5 justify-end pt-1 border-t border-slate-100">
+        <button onClick={onCancel}
+          className="px-2.5 py-1.5 text-[10px] text-slate-500 hover:bg-slate-100 rounded-lg">
+          Cancel
+        </button>
+        <button onClick={save}
+          className="px-3 py-1.5 text-[10px] bg-rail-600 text-white rounded-lg hover:bg-rail-700">
+          Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Smart KPI card ────────────────────────────────────────────────────────────
+function SmartKPI({ widget, onUpdate, canManage, workspaceHook }: {
+  widget: LayoutWidget;
+  onUpdate: (patch: Partial<LayoutWidget>) => void;
+  canManage: boolean;
+  workspaceHook?: ReturnType<typeof useWorkspace>;
+}) {
+  const [mode, setMode] = useState<'view' | 'config' | 'static_edit'>('view');
+  const [drillSource, setDrillSource] = useState<KpiSource | null>(null);
+
+  const tables: TableDef[] = workspaceHook?.ws?.tables ?? [];
+  const hasLiveSources = (widget.kpiSources?.length ?? 0) > 0;
+
+  // ── Compute value from live sources ─────────────────────────────────────────
+  const computedValue = useMemo(() => {
+    if (!hasLiveSources || !tables.length) return null;
+    const vals = (widget.kpiSources ?? []).map(src => {
+      const tbl = tables.find(t => t.id === src.tableId);
+      return tbl ? computeAgg(tbl, src) : 0;
+    });
+    if (!vals.length) return null;
+    switch (widget.kpiCombine) {
+      case 'sum':        return vals.reduce((a, b) => a + b, 0);
+      case 'difference': return vals.length >= 2 ? vals[0] - vals[1] : vals[0];
+      case 'ratio':      return vals.length >= 2 && vals[1] !== 0 ? vals[0] / vals[1] : 0;
+      default:           return vals[0];
+    }
+  }, [widget.kpiSources, widget.kpiCombine, tables, hasLiveSources]);
+
+  const displayValue = computedValue !== null
+    ? formatKpiValue(computedValue, widget.kpiFormat)
+    : (widget.kpiValue ?? '—');
+
+  const targetNum = widget.kpiTarget ? parseFloat(widget.kpiTarget) : null;
+  const progress = targetNum && computedValue !== null
+    ? Math.min(100, Math.round((computedValue / targetNum) * 100))
+    : null;
+
+  const col = KPI_COLORS[widget.kpiColor ?? 'blue'] ?? KPI_COLORS.blue;
+
+  // ── Static edit mode ────────────────────────────────────────────────────────
+  if (mode === 'static_edit' && canManage) {
+    return (
+      <KpiStaticEdit
+        widget={widget}
+        onUpdate={onUpdate}
+        onCancel={() => setMode('view')}
+      />
+    );
+  }
+
+  // ── Config builder mode ─────────────────────────────────────────────────────
+  if (mode === 'config' && canManage) {
+    return (
+      <KpiConfigBuilder
+        widget={widget}
+        tables={tables}
+        onUpdate={onUpdate}
+        onCancel={() => setMode('view')}
+      />
+    );
+  }
+
+  // ── View mode (default) ───────────────────────────────────────────────────────
+  const primarySrc = (widget.kpiSources ?? [])[0];
+  const primaryTable = primarySrc ? tables.find((t: TableDef) => t.id === primarySrc.tableId) : null;
+
+  return (
+    <div className={cn('rounded-xl border p-3 flex flex-col gap-2', col.bg, col.border)}>
+      {/* Top row: label + actions */}
+      <div className="flex items-start justify-between gap-1">
+        <p className="text-[11px] font-semibold text-slate-500 leading-tight">{widget.kpiLabel ?? widget.title}</p>
+        <div className="flex items-center gap-0.5 shrink-0">
+          {hasLiveSources && primaryTable && (
+            <button
+              onClick={() => setDrillSource(primarySrc)}
+              title="View records"
+              className={cn('p-1 rounded hover:bg-white/70 transition-colors', col.text, 'opacity-50 hover:opacity-100')}>
+              <Layers size={11}/>
+            </button>
+          )}
+          {canManage && (
+            <button
+              onClick={() => setMode('config')}
+              title="Configure KPI"
+              className="p-1 rounded hover:bg-white/70 text-slate-400 hover:text-slate-600 transition-colors">
+              <Settings2 size={11}/>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Main value */}
+      <div
+        className={cn('cursor-default select-none', hasLiveSources && primaryTable && 'cursor-pointer')}
+        onClick={() => hasLiveSources && primaryTable && setDrillSource(primarySrc)}>
+        <p className={cn('text-2xl font-bold leading-none', col.text)}>
+          {displayValue}
+          {widget.kpiSuffix && !['currency','percent'].includes(widget.kpiFormat ?? '') && (
+            <span className="text-sm ml-1 font-normal text-slate-400">{widget.kpiSuffix}</span>
+          )}
+        </p>
+        {hasLiveSources && (
+          <p className="text-[9px] text-slate-400 mt-0.5">
+            {(widget.kpiSources ?? []).map(s => {
+              const t = tables.find((x: TableDef) => x.id === s.tableId);
+              return t ? `${s.aggregation.toUpperCase()} · ${t.name}` : '';
+            }).filter(Boolean).join(' + ')}
+          </p>
+        )}
+        {!hasLiveSources && <p className="text-[9px] text-slate-400 mt-0.5">Manual value · click ⚙ to connect data</p>}
+      </div>
+
+      {/* Progress bar toward target */}
+      {progress !== null && (
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[9px] text-slate-400">Target: {widget.kpiTarget}</span>
+            <span className={cn('text-[9px] font-bold', col.text)}>{progress}%</span>
+          </div>
+          <div className="h-1.5 bg-white/60 rounded-full overflow-hidden">
+            <div className={cn('h-full rounded-full transition-all', col.accent)} style={{ width: `${progress}%` }}/>
+          </div>
+        </div>
+      )}
+
+      {/* Drill-down modal */}
+      {drillSource && primaryTable && (
+        <DrillDownModal table={primaryTable} source={drillSource} onClose={() => setDrillSource(null)}/>
+      )}
+    </div>
+  );
 }
 
 function EditableText({ widget, onUpdate, canManage }: {
@@ -231,7 +617,7 @@ export function WidgetRenderer({
 }) {
  switch (widget.type) {
  case 'kpi':
- return <EditableKPI widget={widget} onUpdate={onUpdate} canManage={canManage}/>;
+ return <SmartKPI widget={widget} onUpdate={onUpdate} canManage={canManage} workspaceHook={workspaceHook}/>;
 
  case 'text':
  return <EditableText widget={widget} onUpdate={onUpdate} canManage={canManage}/>;

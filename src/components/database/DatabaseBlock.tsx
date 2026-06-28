@@ -1,9 +1,9 @@
 'use client';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Table2, Columns, Calendar, LayoutGrid, BarChart2,
   Plus, Filter, SortAsc, Settings2, RefreshCcw, Download,
-  ChevronDown, Search, X,
+  ChevronDown, Search, X, Sigma,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { TableDef, RowDef, FieldDef } from '@/lib/cellData/types';
@@ -81,6 +81,92 @@ function TableSelector({
   );
 }
 
+// ── Totals footer types + logic ───────────────────────────────────────────────
+type TotalsAgg = 'none' | 'sum' | 'avg' | 'min' | 'max' | 'count' | 'unique';
+
+const TOTALS_AGG_OPTS: { id: TotalsAgg; label: string }[] = [
+  { id: 'none',   label: 'None'    },
+  { id: 'count',  label: 'Count'   },
+  { id: 'sum',    label: 'Sum'     },
+  { id: 'avg',    label: 'Avg'     },
+  { id: 'min',    label: 'Min'     },
+  { id: 'max',    label: 'Max'     },
+  { id: 'unique', label: 'Unique'  },
+];
+
+function computeTotal(table: TableDef, fieldId: string, agg: TotalsAgg): string {
+  const rows = table.rows.filter(r => !r.deletedAt);
+  if (agg === 'none') return '';
+  if (agg === 'count') return String(rows.length);
+  if (agg === 'unique') {
+    const vals = new Set(rows.map(r => table.values[`${r.id}:${fieldId}`] ?? '').filter(Boolean));
+    return String(vals.size);
+  }
+  const nums = rows.map(r => parseFloat(table.values[`${r.id}:${fieldId}`] ?? '')).filter(n => !isNaN(n));
+  if (!nums.length) return '—';
+  switch (agg) {
+    case 'sum': return nums.reduce((a, b) => a + b, 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+    case 'avg': return (nums.reduce((a, b) => a + b, 0) / nums.length).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+    case 'min': return Math.min(...nums).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+    case 'max': return Math.max(...nums).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+    default: return '';
+  }
+}
+
+function TotalsFooter({ table, config, onConfigChange }: {
+  table: TableDef;
+  config: Record<string, TotalsAgg>;
+  onConfigChange: (fieldId: string, agg: TotalsAgg) => void;
+}) {
+  const [openPicker, setOpenPicker] = useState<string | null>(null);
+  const cols = table.fields.filter(f => !f.hidden);
+
+  return (
+    <div className="flex items-center border-t border-slate-200 bg-slate-50/80 text-[10px] overflow-x-auto shrink-0">
+      {/* Label column */}
+      <div className="px-3 py-2 shrink-0 font-bold text-slate-500 min-w-[120px] w-[120px]">
+        <span className="flex items-center gap-1"><Sigma size={10}/> Totals</span>
+      </div>
+      {/* Field columns */}
+      {cols.map(field => {
+        const agg = config[field.id] ?? 'none';
+        const val = agg !== 'none' ? computeTotal(table, field.id, agg) : '';
+        const isNumField = ['number', 'currency', 'formula'].includes(field.type);
+        return (
+          <div key={field.id} className="relative shrink-0 px-3 py-2 min-w-[100px]" style={{ width: field.width ?? 120 }}>
+            <button
+              onClick={() => setOpenPicker(p => p === field.id ? null : field.id)}
+              className="flex items-center gap-1 hover:bg-slate-200 rounded px-1 py-0.5 transition-colors w-full text-left group">
+              <span className="font-semibold text-slate-700 truncate flex-1">{val || <span className="text-slate-300 group-hover:text-slate-400">{isNumField ? 'Sum' : 'Count'}</span>}</span>
+              {agg !== 'none' && <span className="text-slate-400 shrink-0">{agg.toUpperCase()}</span>}
+            </button>
+            {openPicker === field.id && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setOpenPicker(null)}/>
+                <div className="absolute bottom-full mb-1 left-0 z-50 bg-white rounded-xl border border-slate-200 shadow-xl overflow-hidden min-w-[100px]">
+                  {TOTALS_AGG_OPTS
+                    .filter(o => o.id === 'none' || o.id === 'count' || o.id === 'unique' || isNumField)
+                    .map(opt => (
+                    <button
+                      key={opt.id}
+                      onClick={() => { onConfigChange(field.id, opt.id); setOpenPicker(null); }}
+                      className={cn(
+                        'flex items-center gap-2 w-full px-3 py-2 text-[10px] transition-colors',
+                        agg === opt.id ? 'bg-rail-50 text-rail-700 font-semibold' : 'text-slate-600 hover:bg-slate-50',
+                      )}>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function DatabaseBlock({
   tableId, hook, cell, userId, userName, canManage,
 }: {
@@ -94,6 +180,9 @@ export function DatabaseBlock({
   const [activeView, setActiveView] = useState<ViewType>('table');
   const [search, setSearch] = useState('');
   const [selectedTableId, setSelectedTableId] = useState<string | undefined>(tableId);
+  // Totals footer: keyed by viewId → fieldId → aggregation
+  const [showTotals, setShowTotals] = useState(false);
+  const [totalsCfg, setTotalsCfg] = useState<Record<string, Record<string, TotalsAgg>>>({});
 
   const tables = hook.ws.tables ?? [];
   const table = tables.find((t: TableDef) => t.id === selectedTableId);
@@ -170,6 +259,20 @@ export function DatabaseBlock({
         {/* Right actions */}
         <div className="flex items-center gap-1.5">
           <SearchBar value={search} onChange={setSearch} onClear={() => setSearch('')}/>
+          {/* Totals footer toggle (table view only) */}
+          {activeView === 'table' && (
+            <button
+              onClick={() => setShowTotals(v => !v)}
+              title={showTotals ? 'Hide totals' : 'Show totals'}
+              className={cn(
+                'flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-semibold border transition-all',
+                showTotals
+                  ? 'bg-rail-50 border-rail-200 text-rail-700'
+                  : 'bg-white border-slate-200 text-slate-400 hover:border-slate-300 hover:text-slate-600',
+              )}>
+              <Sigma size={11}/> <span className="hidden sm:inline">Totals</span>
+            </button>
+          )}
           {canManage && (
             <button
               onClick={() => hook.addRow(table.id, 'New Record')}
@@ -235,6 +338,20 @@ export function DatabaseBlock({
           <ChartView table={filteredTable}/>
         )}
       </div>
+
+      {/* Optional totals footer — table view only */}
+      {showTotals && activeView === 'table' && (
+        <TotalsFooter
+          table={table}
+          config={totalsCfg[activeView] ?? {}}
+          onConfigChange={(fieldId, agg) =>
+            setTotalsCfg(prev => ({
+              ...prev,
+              [activeView]: { ...(prev[activeView] ?? {}), [fieldId]: agg },
+            }))
+          }
+        />
+      )}
     </div>
   );
 }

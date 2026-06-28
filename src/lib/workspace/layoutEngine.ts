@@ -13,6 +13,21 @@ export type WidgetType =
  // Enterprise new types
  | 'database' | 'ai_assistant' | 'knowledge_base' | 'task_manager';
 
+/** A single data source for an advanced KPI card */
+export type KpiAggregation = 'count' | 'sum' | 'avg' | 'min' | 'max' | 'unique';
+
+export interface KpiSource {
+  id: string;
+  tableId: string;           // which table to read from
+  field?: string;            // field id to aggregate (undefined → COUNT rows)
+  aggregation: KpiAggregation;
+  filters?: Record<string, string>; // fieldId → value filter
+  label?: string;            // custom label for this source
+}
+
+/** How multiple KpiSources are combined into a single display value */
+export type KpiCombineMode = 'first' | 'sum' | 'difference' | 'ratio';
+
 export interface LayoutWidget {
  id: string;
  type: WidgetType;
@@ -20,9 +35,18 @@ export interface LayoutWidget {
  // type-specific data
  tableId?: string; // for 'table' widgets
  sharedTableId?: string; // for 'shared_table' widgets
+ // ── KPI ─────────────────────────────────────────────────────
  kpiLabel?: string;
- kpiValue?: string;
+ kpiValue?: string;           // static/manual override value
  kpiSuffix?: string;
+ // ── Advanced KPI (multi-source) ──────────────────────────────
+ kpiSources?: KpiSource[];    // if set, compute value from table data
+ kpiCombine?: KpiCombineMode; // how sources are merged (default: 'first')
+ kpiFormat?: 'number' | 'currency' | 'percent'; // display format
+ kpiColor?: 'blue' | 'green' | 'red' | 'amber' | 'violet' | 'slate';
+ kpiTarget?: string;          // target value (shows progress bar)
+ kpiShowDrillDown?: boolean;  // clicking card opens filtered records
+ // ────────────────────────────────────────────────────────────
  content?: string; // text/announcements/embed URL
  links?: { label: string; url: string }[];
  collapsed?: boolean;

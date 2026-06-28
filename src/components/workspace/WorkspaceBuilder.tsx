@@ -6,8 +6,9 @@ import {
   LayoutGrid, Table2, Plus, Settings2, Check, X, GripVertical,
   ChevronDown, ChevronUp, Maximize2, Pin, Copy, Trash2,
   Palette, MoreHorizontal, Lock, Globe, Users, Building,
-  Edit3, Star, Archive, RefreshCw,
+  Edit3, Star, Archive, RefreshCw, Database, ScanSearch, PanelRight,
 } from 'lucide-react';
+import { DatabasePeekModal, DatabaseFullPage, type DbPeekMode } from '@/components/database/DatabasePeekModal';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/authStore';
 import { canManageCellStructure } from '@/lib/cellData/useCellDataStructure';
@@ -521,7 +522,8 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
   // Current window's layout
   const [layout, setLayout]     = useState<RowBasedLayout | null>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [showDataManager, setShowDataManager] = useState(false);
+  const [dbPeekMode, setDbPeekMode] = useState<DbPeekMode | null>(null);
+  const [showDbMenu, setShowDbMenu] = useState(false);
   const dragRef = useRef<{ fromRowId: string; fromColId: string; fromWidgetId: string } | null>(null);
 
   // Staff for enterprise sidebar
@@ -645,15 +647,6 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
               : 'border-slate-200 text-slate-300 hover:border-slate-300 hover:text-slate-400 hover:bg-slate-50')}>
           <Plus size={14}/> Add Row
         </button>
-      )}
-      {showDataManager && (
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden" style={{ boxShadow: '0 1px 3px rgba(15,23,42,0.06)' }}>
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
-            <p className="text-sm font-bold text-slate-900 flex items-center gap-2"><Table2 size={14} className="text-rail-600"/> Tables & Data</p>
-            <button onClick={() => setShowDataManager(false)} className="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1"><X size={12}/> Hide</button>
-          </div>
-          <div className="p-4"><CellDataManager cell={cell}/></div>
-        </div>
       )}
     </div>
   );
@@ -831,11 +824,45 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
               <p className="text-[10px] text-slate-400">{cell} · Delhi Division</p>
             </div>
             <div className="flex items-center gap-1.5">
-              <button onClick={() => setShowDataManager(d => !d)}
-                className={cn('flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all',
-                  showDataManager ? 'bg-rail-50 border-rail-200 text-rail-700' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300')}>
-                <Table2 size={11}/> Data
-              </button>
+              {/* Database button with 3-mode dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowDbMenu(v => !v)}
+                  className={cn('flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all',
+                    dbPeekMode ? 'bg-rail-50 border-rail-200 text-rail-700' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300')}>
+                  <Database size={11}/> Database <ChevronDown size={9} className={cn('transition-transform', showDbMenu && 'rotate-180')}/>
+                </button>
+                {showDbMenu && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowDbMenu(false)}/>
+                    <div className="absolute left-0 top-full mt-1 w-44 bg-white rounded-xl border border-slate-200 shadow-xl z-50 overflow-hidden">
+                      {([
+                        { id: 'center'   as DbPeekMode, Icon: ScanSearch, label: 'Center Peek'   },
+                        { id: 'side'     as DbPeekMode, Icon: PanelRight,  label: 'Side Peek'    },
+                        { id: 'fullpage' as DbPeekMode, Icon: Maximize2,   label: 'Full Page'    },
+                      ]).map(({ id, Icon, label }) => (
+                        <button
+                          key={id}
+                          onClick={() => { setDbPeekMode(id); setShowDbMenu(false); }}
+                          className={cn(
+                            'flex items-center gap-2.5 w-full px-3.5 py-2.5 text-xs transition-colors border-b border-slate-100 last:border-0',
+                            dbPeekMode === id ? 'bg-rail-50 text-rail-700 font-semibold' : 'text-slate-600 hover:bg-slate-50',
+                          )}>
+                          <Icon size={12} className={dbPeekMode === id ? 'text-rail-600' : 'text-slate-400'}/>
+                          {label}
+                        </button>
+                      ))}
+                      {dbPeekMode && (
+                        <button
+                          onClick={() => { setDbPeekMode(null); setShowDbMenu(false); }}
+                          className="flex items-center gap-2.5 w-full px-3.5 py-2.5 text-xs text-slate-400 hover:bg-slate-50 transition-colors">
+                          <X size={12}/> Close Database
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
               {canManage && (
                 <button onClick={() => setIsEditing(e => !e)}
                   className={cn('flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all',
@@ -852,8 +879,19 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
             </div>
           </div>
 
-          {/* Canvas */}
-          <div className="flex-1 overflow-y-auto p-4 custom-scroll">
+          {/* Canvas — full-page database mode */}
+          {dbPeekMode === 'fullpage' && (
+            <div className="flex-1 overflow-hidden p-4">
+              <DatabaseFullPage
+                cell={cell}
+                onClose={() => setDbPeekMode(null)}
+                onChangeMode={setDbPeekMode}
+              />
+            </div>
+          )}
+
+          {/* Canvas — normal workspace content */}
+          <div className={cn('flex-1 overflow-y-auto p-4 custom-scroll', dbPeekMode === 'fullpage' && 'hidden')}>
             {layout.rows.length === 0 ? (
               /* ── Empty state ── */
               <div className="flex flex-col items-center justify-center min-h-[400px] gap-5">
@@ -900,6 +938,16 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
 
         {/* Shared modals */}
         {sharedModals}
+
+        {/* Database peek (center / side) */}
+        {dbPeekMode && dbPeekMode !== 'fullpage' && (
+          <DatabasePeekModal
+            cell={cell}
+            mode={dbPeekMode}
+            onClose={() => setDbPeekMode(null)}
+            onChangeMode={setDbPeekMode}
+          />
+        )}
       </div>
     );
   }
@@ -971,11 +1019,44 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
 
           {/* Right: toolbar actions */}
           <div className="ml-auto flex items-center gap-1.5 px-3 shrink-0">
-            <button onClick={() => setShowDataManager(d => !d)}
-              className={cn('flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all',
-                showDataManager ? 'bg-rail-50 border-rail-200 text-rail-700' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300')}>
-              <Table2 size={11}/> <span className="hidden sm:inline">Data</span>
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setShowDbMenu(v => !v)}
+                className={cn('flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all',
+                  dbPeekMode ? 'bg-rail-50 border-rail-200 text-rail-700' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300')}>
+                <Database size={11}/> <span className="hidden sm:inline">Database</span> <ChevronDown size={9}/>
+              </button>
+              {showDbMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowDbMenu(false)}/>
+                  <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl border border-slate-200 shadow-xl z-50 overflow-hidden">
+                    {([
+                      { id: 'center'   as DbPeekMode, Icon: ScanSearch, label: 'Center Peek' },
+                      { id: 'side'     as DbPeekMode, Icon: PanelRight,  label: 'Side Peek'  },
+                      { id: 'fullpage' as DbPeekMode, Icon: Maximize2,   label: 'Full Page'  },
+                    ]).map(({ id, Icon, label }) => (
+                      <button
+                        key={id}
+                        onClick={() => { setDbPeekMode(id); setShowDbMenu(false); }}
+                        className={cn(
+                          'flex items-center gap-2.5 w-full px-3.5 py-2.5 text-xs transition-colors border-b border-slate-100 last:border-0',
+                          dbPeekMode === id ? 'bg-rail-50 text-rail-700 font-semibold' : 'text-slate-600 hover:bg-slate-50',
+                        )}>
+                        <Icon size={12} className={dbPeekMode === id ? 'text-rail-600' : 'text-slate-400'}/>
+                        {label}
+                      </button>
+                    ))}
+                    {dbPeekMode && (
+                      <button
+                        onClick={() => { setDbPeekMode(null); setShowDbMenu(false); }}
+                        className="flex items-center gap-2.5 w-full px-3.5 py-2.5 text-xs text-slate-400 hover:bg-slate-50 transition-colors">
+                        <X size={12}/> Close Database
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
             {canManage && (
               <button onClick={() => setIsEditing(e => !e)}
                 className={cn('flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all',
@@ -1036,15 +1117,21 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
         </button>
       )}
 
-      {/* ── Data manager ─────────────────────────────────────────────────── */}
-      {showDataManager && (
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden" style={{ boxShadow: '0 1px 3px rgba(15,23,42,0.06)' }}>
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
-            <p className="text-sm font-bold text-slate-900 flex items-center gap-2"><Table2 size={14} className="text-rail-600"/> Tables & Data</p>
-            <button onClick={() => setShowDataManager(false)} className="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1"><X size={12}/> Hide</button>
-          </div>
-          <div className="p-4"><CellDataManager cell={cell}/></div>
-        </div>
+      {/* ── Database peek (legacy layout) ─────────────────────────────── */}
+      {dbPeekMode === 'fullpage' && (
+        <DatabaseFullPage
+          cell={cell}
+          onClose={() => setDbPeekMode(null)}
+          onChangeMode={setDbPeekMode}
+        />
+      )}
+      {dbPeekMode && dbPeekMode !== 'fullpage' && (
+        <DatabasePeekModal
+          cell={cell}
+          mode={dbPeekMode}
+          onClose={() => setDbPeekMode(null)}
+          onChangeMode={setDbPeekMode}
+        />
       )}
 
       {/* ── Modals ───────────────────────────────────────────────────────── */}
