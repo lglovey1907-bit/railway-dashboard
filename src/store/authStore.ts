@@ -14,7 +14,7 @@ interface AuthStore {
  isInitialized: boolean;
 
  initialize: () => void;
- login: (email: string, password: string) => Promise<boolean>;
+ login: (email: string, password: string) => Promise<User | null>;
  logout: () => void;
  clearError: () => void;
  hasPermission: (permission: Permission) => boolean;
@@ -43,15 +43,15 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
  try {
  const result = await authenticateUser({ email, password });
  if (!result) {
- set({ error: 'Invalid email or password. Please try again.', isLoading: false });
- return false;
+ set({ error: 'Invalid credentials. Please try again.', isLoading: false });
+ return null;
  }
  storeAuth(result.user, result.token);
  set({ user: result.user, token: result.token, isLoading: false, error: null });
- return true;
+ return result.user;
  } catch (err) {
  set({ error: err instanceof Error ? err.message : 'Login failed', isLoading: false });
- return false;
+ return null;
  }
  },
 

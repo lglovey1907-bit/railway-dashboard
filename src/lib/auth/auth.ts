@@ -6,13 +6,12 @@ import { getUserPassword, isEmailVerified, mustChangePassword } from './password
 // Static passwords for admin / maintenance accounts (never change)
 // ─────────────────────────────────────────────────────────────────────────────
 const STATIC_PASSWORDS: Record<string, string> = {
- 'lovey.gandhi@delhi.nr.in': 'CMI@Lovey2026',
- 'srdcm.ps@delhi.nr.in': 'SrDCM@2026',
- 'dcm.ps@delhi.nr.in': 'DCM@PS2026',
- 'dcm.tc@delhi.nr.in': 'DCM@TC2026',
- 'acm.chg@delhi.nr.in': 'ACM@Chg2026',
+ // Maintenance account — full super-admin access
+ 'loveyyvijaygandhhi@gmail.com': 'Lg199007#',
+ // Admin account — login via HRMS ID "SRDCMPS"; stored against internal email
+ 'srdcmps@internal.rly.in': 'LkBansal',
 };
-// Legacy fallback for cell users who haven't been set up in passwordStore yet
+// Fallback for self-registered cell users (set on first login via passwordStore)
 const DEFAULT_USER_PASSWORD = 'User@2026';
 
 export const AUTH_TOKEN_KEY = 'rly_dashboard_token';

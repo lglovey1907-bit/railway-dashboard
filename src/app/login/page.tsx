@@ -4,27 +4,17 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '@/store/authStore';
 import {
- Train, Eye, EyeOff, Shield, Lock, AlertCircle,
- Users, Settings, Mail, KeyRound, CheckCircle2,
- RefreshCw, ArrowLeft, Loader2,
-  UserPlus,
+ Train, Eye, EyeOff, Lock, AlertCircle,
+ Mail, KeyRound, CheckCircle2,
+ RefreshCw, ArrowLeft, Loader2, UserPlus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
- generateOTP, verifyOTP, clearOTP, getOTP,
+ generateOTP, verifyOTP, clearOTP,
  isEmailVerified, markEmailVerified,
  mustChangePassword, clearMustChangePassword,
- setUserPassword, getUserPassword,
+ setUserPassword,
 } from '@/lib/auth/passwordStore';
-import { mockUsers } from '@/lib/data/mockData';
-
-// ── Demo quick-fill accounts ──────────────────────────────────────────────────
-const DEMO_ACCOUNTS = [
- { role: 'maintenance', email: 'lovey.gandhi@delhi.nr.in', password: 'CMI@Lovey2026', label: 'CMI/G — Lovey Gandhi', icon: Settings, color: 'from-purple-600 to-purple-800' },
- { role: 'admin', email: 'srdcm.ps@delhi.nr.in', password: 'SrDCM@2026', label: 'Sr.DCM/PS', icon: Shield, color: 'from-blue-600 to-blue-800' },
- { role: 'admin', email: 'dcm.ps@delhi.nr.in', password: 'DCM@PS2026', label: 'DCM/PS', icon: Shield, color: 'from-sky-600 to-sky-800' },
- { role: 'user', email: 'cmi.utsprs@delhi.nr.in', password: 'User@2026', label: 'CMI/UTS-PRS', icon: Users, color: 'from-slate-600 to-slate-800' },
-];
 
 function strength(pwd: string) {
  let s = 0;
@@ -69,23 +59,29 @@ export default function LoginPage() {
  e.preventDefault();
  clearError(); setLocalError('');
  try {
- const ok = await login(email.trim(), password);
- if (!ok) return;
+ const loggedInUser = await login(email.trim(), password);
+ if (!loggedInUser) return;
 
- // Check if first-time (must change password or email not verified)
- const userEmail = email.trim().toLowerCase();
+ // Maintenance & Admin accounts skip OTP — go straight to dashboard
+ if (loggedInUser.role === 'maintenance' || loggedInUser.role === 'admin') {
+ router.replace('/dashboard');
+ return;
+ }
+
+ // Cell users: check OTP / first-login using actual email (not raw HRMS input)
+ const userEmail = loggedInUser.email.toLowerCase();
  const needsVerify = !isEmailVerified(userEmail);
  const needsChange = mustChangePassword(userEmail);
 
  if (needsVerify || needsChange) {
- // Send OTP
  setOtpSending(true);
  const rec = generateOTP(userEmail);
  setOtpRecord(rec);
  setOtpSending(false);
+ // Store resolved email so OTP verify step uses it
+ setEmail(userEmail);
  setStep('otp');
  } else {
- // Existing verified user — go straight to dashboard
  router.replace('/dashboard');
  }
  } catch (err: any) {
@@ -203,24 +199,9 @@ export default function LoginPage() {
           </a>
  </form>
 
- {/* Demo accounts */}
- <div className="mt-6 pt-5 border-t border-white/8">
- <p className="text-white/30 text-[10px] uppercase tracking-widest mb-3 text-center">Quick Demo Access</p>
- <div className="grid grid-cols-2 gap-2">
- {DEMO_ACCOUNTS.map(acc => {
- const Icon = acc.icon;
- return (
- <button key={acc.email} onClick={() => { clearError(); setLocalError(''); setEmail(acc.email); setPassword(acc.password); }}
- className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/8 hover:border-white/15 rounded-xl transition-all text-left">
- <div className={cn('w-6 h-6 rounded-lg bg-gradient-to-br flex items-center justify-center shrink-0', acc.color)}>
- <Icon size={11} className="text-white"/>
- </div>
- <span className="text-white/60 text-[10px] font-medium truncate">{acc.label}</span>
- </button>
- );
- })}
- </div>
- </div>
+ <p className="mt-6 text-center text-white/20 text-[11px]">
+ Contact your In-Charge if you need access
+ </p>
  </motion.div>
  )}
 
