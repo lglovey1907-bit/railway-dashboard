@@ -15,6 +15,7 @@ const DatabaseBlock = dynamic(() => import('@/components/database/DatabaseBlock'
 const AIAssistantBlock = dynamic(() => import('@/components/ai/AIAssistantBlock').then(m => ({ default: m.AIAssistantBlock })), { ssr: false });
 const KnowledgeBaseBlock = dynamic(() => import('@/components/knowledge/KnowledgeBaseBlock').then(m => ({ default: m.KnowledgeBaseBlock })), { ssr: false });
 const TaskManagerBlock = dynamic(() => import('@/components/tasks/TaskManagerBlock').then(m => ({ default: m.TaskManagerBlock })), { ssr: false });
+const FinancialDashboard = dynamic(() => import('@/components/financial/FinancialDashboard').then(m => ({ default: m.FinancialDashboard })), { ssr: false });
 import type { LayoutWidget, LayoutColumn } from '@/lib/workspace/layoutEngine';
 import type { useWorkspace } from '@/lib/cellData/useWorkspace';
 import { TableEngine } from '@/components/cell/TableEngine';
@@ -863,6 +864,16 @@ export function WidgetRenderer({
           canManage={canManage}
           userId={userId ?? 'user'}
           userName={userName ?? 'User'}
+        />
+      );
+
+    case 'financial':
+      return (
+        <FinancialDashboard
+          canManage={canManage}
+          canApprove={canManage}
+          currentUser={userName ?? 'User'}
+          mode="embedded"
         />
       );
 

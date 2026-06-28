@@ -11,7 +11,8 @@ export type WidgetType =
  | 'announcements' | 'quick_links' | 'approval_queue' | 'staff_requests'
  | 'shared_table' | 'pdf' | 'image' | 'staff_directory'
  // Enterprise new types
- | 'database' | 'ai_assistant' | 'knowledge_base' | 'task_manager';
+ | 'database' | 'ai_assistant' | 'knowledge_base' | 'task_manager'
+ | 'financial';
 
 /** A single data source for an advanced KPI card */
 export type KpiAggregation = 'count' | 'sum' | 'avg' | 'min' | 'max' | 'unique';
