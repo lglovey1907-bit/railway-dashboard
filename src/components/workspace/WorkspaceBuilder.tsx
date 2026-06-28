@@ -27,7 +27,7 @@ import {
   type CellWindowStore, type CellWindow, type WindowVisibility,
   WINDOW_ICONS, WINDOW_COLORS,
 } from '@/lib/workspace/windowsEngine';
-import { getStaffForCell, STAFF_CHANGED_EVENT, type MasterStaffRecord } from '@/lib/staff/masterStaff';
+import { getStaffForCell, getAllMasterStaff, STAFF_CHANGED_EVENT, type MasterStaffRecord } from '@/lib/staff/masterStaff';
 import { SearchTrigger } from '@/components/search/UniversalSearch';
 
 // ── Portal modal helper ───────────────────────────────────────────────────────
@@ -63,10 +63,10 @@ const VIS_OPTIONS: { id: WindowVisibility; label: string; icon: React.ElementTyp
   { id: 'public',   label: 'Everyone',     icon: Globe,    desc: 'Visible to all users' },
 ];
 
-function WindowFormModal({ open, onClose, onSave, initial, existingWindows }: {
+function WindowFormModal({ open, onClose, onSave, initial, existingWindows, cell }: {
   open: boolean; onClose: () => void;
-  onSave: (label: string, icon: string, vis: WindowVisibility, roles: string[], cloneFrom: string) => void;
-  initial?: Partial<CellWindow>; existingWindows: CellWindow[];
+  onSave: (label: string, icon: string, vis: WindowVisibility, roles: string[], cloneFrom: string, users: string[]) => void;
+  initial?: Partial<CellWindow>; existingWindows: CellWindow[]; cell: string;
 }) {
   const [label, setLabel]       = useState(initial?.label ?? 'New Window');
   const [icon, setIcon]         = useState(initial?.icon ?? '📋');
@@ -74,9 +74,22 @@ function WindowFormModal({ open, onClose, onSave, initial, existingWindows }: {
   const [vis, setVis]           = useState<WindowVisibility>(initial?.visibility ?? 'cell');
   const [roles, setRoles]       = useState<string[]>(initial?.visibleToRoles ?? []);
   const [cloneFrom, setCloneFrom] = useState('');
+  const [selectedUsers, setSelectedUsers] = useState<string[]>(initial?.visibleToUsers ?? []);
+  const [cellMembers, setCellMembers] = useState<MasterStaffRecord[]>([]);
+  const [adminUsers, setAdminUsers] = useState<MasterStaffRecord[]>([]);
   const ALL_ROLES = ['admin', 'maintenance', 'incharge', 'user'];
 
-  const handleSave = () => { if (!label.trim()) return; onSave(label.trim(), icon, vis, roles, cloneFrom); onClose(); };
+  useEffect(() => {
+    if (vis === 'cell') {
+      setCellMembers(getStaffForCell(cell));
+    } else if (vis === 'admin') {
+      setAdminUsers(getAllMasterStaff().filter(s => s.role === 'admin' || s.role === 'maintenance' || s.workingAs === 'admin' || s.workingAs === 'maintenance'));
+    }
+    // Reset user selection when switching visibility mode
+    setSelectedUsers(initial?.visibleToUsers ?? []);
+  }, [vis, cell, initial]);
+
+  const handleSave = () => { if (!label.trim()) return; onSave(label.trim(), icon, vis, roles, cloneFrom, selectedUsers); onClose(); };
 
   return (
     <Modal open={open} onClose={onClose} maxWidth="max-w-md">
@@ -155,6 +168,92 @@ function WindowFormModal({ open, onClose, onSave, initial, existingWindows }: {
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Cell member picker */}
+          {vis === 'cell' && (
+            <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+              <div className="flex items-center justify-between mb-2.5">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Share with specific members</p>
+                <button type="button"
+                  onClick={() => setSelectedUsers(selectedUsers.length === cellMembers.length && cellMembers.length > 0 ? [] : cellMembers.map(s => s.id))}
+                  className="text-[10px] font-semibold text-rail-600 hover:underline">
+                  {selectedUsers.length === cellMembers.length && cellMembers.length > 0 ? 'Deselect All' : 'Select All'}
+                </button>
+              </div>
+              {cellMembers.length === 0 ? (
+                <p className="text-[10px] text-slate-400 text-center py-3">No members found in this cell</p>
+              ) : (
+                <div className="space-y-1 max-h-40 overflow-y-auto custom-scroll">
+                  {cellMembers.map(member => {
+                    const initials = member.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+                    const checked = selectedUsers.includes(member.id);
+                    return (
+                      <label key={member.id}
+                        className={cn('flex items-center gap-2.5 px-2.5 py-2 rounded-lg cursor-pointer transition-colors',
+                          checked ? 'bg-rail-50 border border-rail-200' : 'hover:bg-white border border-transparent')}>
+                        <input type="checkbox" checked={checked}
+                          onChange={() => setSelectedUsers(u => checked ? u.filter(x => x !== member.id) : [...u, member.id])}
+                          className="rounded border-slate-300 text-rail-600 focus:ring-rail-400 shrink-0"/>
+                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-slate-400 to-slate-600 flex items-center justify-center text-[9px] font-bold text-white shrink-0">
+                          {initials}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-slate-800 truncate">{member.name}</p>
+                          <p className="text-[9px] text-slate-400 truncate">{member.designation}{member.workingAs ? ` · ${member.workingAs}` : ''}</p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="text-[9px] text-slate-400 mt-2 italic">
+                {selectedUsers.length === 0 ? 'No selection = visible to all cell members' : `${selectedUsers.length} member${selectedUsers.length !== 1 ? 's' : ''} selected`}
+              </p>
+            </div>
+          )}
+
+          {/* Admin user picker */}
+          {vis === 'admin' && (
+            <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+              <div className="flex items-center justify-between mb-2.5">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Share with specific admins</p>
+                <button type="button"
+                  onClick={() => setSelectedUsers(selectedUsers.length === adminUsers.length && adminUsers.length > 0 ? [] : adminUsers.map(s => s.id))}
+                  className="text-[10px] font-semibold text-rail-600 hover:underline">
+                  {selectedUsers.length === adminUsers.length && adminUsers.length > 0 ? 'Deselect All' : 'Select All'}
+                </button>
+              </div>
+              {adminUsers.length === 0 ? (
+                <p className="text-[10px] text-slate-400 text-center py-3">No admin users found</p>
+              ) : (
+                <div className="space-y-1 max-h-40 overflow-y-auto custom-scroll">
+                  {adminUsers.map(admin => {
+                    const initials = admin.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+                    const checked = selectedUsers.includes(admin.id);
+                    return (
+                      <label key={admin.id}
+                        className={cn('flex items-center gap-2.5 px-2.5 py-2 rounded-lg cursor-pointer transition-colors',
+                          checked ? 'bg-rail-50 border border-rail-200' : 'hover:bg-white border border-transparent')}>
+                        <input type="checkbox" checked={checked}
+                          onChange={() => setSelectedUsers(u => checked ? u.filter(x => x !== admin.id) : [...u, admin.id])}
+                          className="rounded border-slate-300 text-rail-600 focus:ring-rail-400 shrink-0"/>
+                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-violet-500 to-violet-700 flex items-center justify-center text-[9px] font-bold text-white shrink-0">
+                          {initials}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-slate-800 truncate">{admin.name}</p>
+                          <p className="text-[9px] text-slate-400 truncate capitalize">{admin.role} · {admin.designation}</p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="text-[9px] text-slate-400 mt-2 italic">
+                {selectedUsers.length === 0 ? 'No selection = visible to all admins' : `${selectedUsers.length} admin${selectedUsers.length !== 1 ? 's' : ''} selected`}
+              </p>
             </div>
           )}
         </div>
@@ -565,9 +664,9 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
       {showCreateWin && (
         <WindowFormModal
           open={showCreateWin} onClose={() => setShowCreateWin(false)}
-          existingWindows={winStore.windows}
-          onSave={(label, icon, vis, roles, cloneFrom) => {
-            const next = createWindow(winStore, label, icon, vis, user?.id ?? '', user?.name ?? 'User', roles, undefined, cloneFrom || undefined);
+          existingWindows={winStore.windows} cell={cell}
+          onSave={(label, icon, vis, roles, cloneFrom, users) => {
+            const next = createWindow(winStore, label, icon, vis, user?.id ?? '', user?.name ?? 'User', roles, users.length > 0 ? users : undefined, cloneFrom || undefined);
             commitStore(next);
           }}
         />
@@ -575,9 +674,9 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
       {editingWin && (
         <WindowFormModal
           open={!!editingWin} onClose={() => setEditingWin(null)}
-          initial={editingWin} existingWindows={winStore.windows}
-          onSave={(label, icon, vis, roles) => {
-            commitStore(updateWindow(winStore, editingWin.id, { label, icon, visibility: vis, visibleToRoles: roles }));
+          initial={editingWin} existingWindows={winStore.windows} cell={cell}
+          onSave={(label, icon, vis, roles, _cloneFrom, users) => {
+            commitStore(updateWindow(winStore, editingWin.id, { label, icon, visibility: vis, visibleToRoles: roles, visibleToUsers: users.length > 0 ? users : undefined }));
           }}
         />
       )}
@@ -953,9 +1052,9 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
         {showCreateWin && (
           <WindowFormModal
             open={showCreateWin} onClose={() => setShowCreateWin(false)}
-            existingWindows={winStore.windows}
-            onSave={(label, icon, vis, roles, cloneFrom) => {
-              const next = createWindow(winStore, label, icon, vis, user?.id ?? '', user?.name ?? 'User', roles, undefined, cloneFrom || undefined);
+            existingWindows={winStore.windows} cell={cell}
+            onSave={(label, icon, vis, roles, cloneFrom, users) => {
+              const next = createWindow(winStore, label, icon, vis, user?.id ?? '', user?.name ?? 'User', roles, users.length > 0 ? users : undefined, cloneFrom || undefined);
               commitStore(next);
             }}
           />
@@ -963,9 +1062,9 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
         {editingWin && (
           <WindowFormModal
             open={!!editingWin} onClose={() => setEditingWin(null)}
-            initial={editingWin} existingWindows={winStore.windows}
-            onSave={(label, icon, vis, roles) => {
-              commitStore(updateWindow(winStore, editingWin.id, { label, icon, visibility: vis, visibleToRoles: roles }));
+            initial={editingWin} existingWindows={winStore.windows} cell={cell}
+            onSave={(label, icon, vis, roles, _cloneFrom, users) => {
+              commitStore(updateWindow(winStore, editingWin.id, { label, icon, visibility: vis, visibleToRoles: roles, visibleToUsers: users.length > 0 ? users : undefined }));
             }}
           />
         )}

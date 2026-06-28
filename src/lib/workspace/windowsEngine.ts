@@ -120,9 +120,23 @@ export function getVisibleWindows(
 ): CellWindow[] {
   return store.windows.filter(w => {
     if (w.isArchived) return false;
-    if (w.visibility === 'public' || w.visibility === 'cell') return true;
+    if (w.visibility === 'public') return true;
+    if (w.visibility === 'cell') {
+      // If specific users were selected, only they (+ owner) can see it
+      if (w.visibleToUsers && w.visibleToUsers.length > 0) {
+        return w.ownerId === userId || w.visibleToUsers.includes(userId);
+      }
+      return true; // no restriction = all cell members
+    }
     if (w.visibility === 'personal') return w.ownerId === userId;
-    if (w.visibility === 'admin') return userRole === 'admin' || userRole === 'maintenance';
+    if (w.visibility === 'admin') {
+      if (userRole !== 'admin' && userRole !== 'maintenance') return false;
+      // If specific admins were selected, only they (+ owner) can see it
+      if (w.visibleToUsers && w.visibleToUsers.length > 0) {
+        return w.ownerId === userId || w.visibleToUsers.includes(userId);
+      }
+      return true; // no restriction = all admins
+    }
     if (w.visibility === 'role') return (w.visibleToRoles ?? []).includes(userRole);
     return true;
   });
