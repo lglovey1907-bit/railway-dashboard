@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import { mockUsers } from '@/lib/data/mockData';
-import { getAllStaff, getAllMemberships, getAudit, addAudit, type StaffMember } from '@/lib/staff/staffDB';
+import { getAllStaff, getAllMemberships, getAudit, addAudit, updateStaffRecord, type StaffMember } from '@/lib/staff/staffDB';
 import {
  createRequest, setUserStatus, getUserStatus, getAllRequests,
  adminAddUser,
@@ -109,22 +109,30 @@ function AddUserModal({ user, onClose, onSave, cells, currentUser }: {
  ))}
 
  <div>
- <label className="text-xs font-semibold text-slate-500 block mb-1.5">Department / Cell *</label>
- <select value={form.cell} onChange={e => set('cell', e.target.value)}
- className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-blue-400">
- <option value="">— Select Cell —</option>
- {cells.map(c => <option key={c} value={c}>{c}</option>)}
- </select>
- </div>
-
- <div>
  <label className="text-xs font-semibold text-slate-500 block mb-1.5">Role</label>
- <select value={form.role} onChange={e => set('role', e.target.value)}
+ <select value={form.role}
+ onChange={e => {
+ const r = e.target.value;
+ set('role', r);
+ if (r === 'admin' || r === 'maintenance') set('cell', 'All');
+ }}
  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-blue-400">
  <option value="user">User</option>
  <option value="incharge">Incharge</option>
  <option value="admin">Admin</option>
  <option value="maintenance">Maintenance</option>
+ </select>
+ </div>
+
+ <div>
+ <label className="text-xs font-semibold text-slate-500 block mb-1.5">Department / Cell *</label>
+ <select value={form.cell} onChange={e => set('cell', e.target.value)}
+ className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-blue-400">
+ <option value="">— Select Cell —</option>
+ {(form.role === 'admin' || form.role === 'maintenance') && (
+ <option value="All">All (System-wide)</option>
+ )}
+ {cells.map(c => <option key={c} value={c}>{c}</option>)}
  </select>
  </div>
 
@@ -390,15 +398,30 @@ export default function UsersPage() {
  try { return new Set<string>(JSON.parse(localStorage.getItem('rly_deleted_users') ?? '[]')); } catch { return new Set<string>(); }
  })();
 
+ const mockOverrides: Record<string, any> = (() => {
+ if (typeof window === 'undefined') return {};
+ try { return JSON.parse(localStorage.getItem('rly_mock_user_overrides') ?? '{}'); } catch { return {}; }
+ })();
+
  const mockMapped: DisplayUser[] = mockUsers
  .filter(u => !deletedIds.has(u.id))
- .map(u => ({
- id: u.id, name: u.name, email: u.email, designation: u.designation,
- cell: u.cell, role: u.role, hrmsId: u.hrmsId, mobile: u.mobileNumber,
- workingAs: u.workingAs,
+ .map(u => {
+ const ov = mockOverrides[u.id] ?? {};
+ return {
+ id: u.id,
+ name: ov.name ?? u.name,
+ email: ov.email ?? u.email,
+ designation: ov.designation ?? u.designation,
+ cell: ov.cell ?? u.cell,
+ role: ov.role ?? u.role,
+ hrmsId: ov.hrmsId ?? u.hrmsId,
+ mobile: ov.mobile ?? u.mobileNumber,
+ workingAs: ov.workingAs ?? u.workingAs,
  status: (statusOverrides[u.id] ?? (u.approved ? 'active' : 'pending')) as UserStatus,
- source: 'mock', registeredAt: u.createdAt,
- }));
+ source: 'mock' as const,
+ registeredAt: u.createdAt,
+ };
+ });
 
  const staffDB = getAllStaff();
  const dbMapped: DisplayUser[] = staffDB
@@ -551,6 +574,43 @@ export default function UsersPage() {
  } catch (err) {
  console.error('Restore failed:', err);
  }
+ refresh();
+ };
+
+ const handleEditUser = (form: Record<string, string>) => {
+ if (!editUser) return;
+ // Always update status
+ setUserStatus(editUser.id, form.status as UserStatus);
+ if (editUser.source === 'staff_db') {
+ // Persist all field changes to staffDB
+ updateStaffRecord(editUser.id, {
+ name: form.name.trim(),
+ email: form.email.trim(),
+ mobile: form.mobile || undefined,
+ designation: form.designation.trim(),
+ hrmsId: form.hrmsId || undefined,
+ workingAs: form.workingAs || undefined,
+ role: form.role as any,
+ status: (form.status === 'active' ? 'approved' : form.status) as any,
+ });
+ } else {
+ // Mock user — persist field overrides in localStorage
+ const key = 'rly_mock_user_overrides';
+ const all = JSON.parse(localStorage.getItem(key) ?? '{}');
+ all[editUser.id] = {
+ name: form.name.trim(),
+ email: form.email.trim(),
+ mobile: form.mobile || undefined,
+ designation: form.designation.trim(),
+ cell: form.cell || editUser.cell,
+ hrmsId: form.hrmsId || undefined,
+ workingAs: form.workingAs || undefined,
+ role: form.role,
+ };
+ localStorage.setItem(key, JSON.stringify(all));
+ }
+ addAudit(editUser.id, 'Profile updated by admin', currentUser?.id, currentUser?.name);
+ notifyStaffChanged();
  refresh();
  };
 
@@ -828,9 +888,7 @@ export default function UsersPage() {
  onClose={() => { setShowAdd(false); setEditUser(null); }}
  onSave={(form, autoApprove) => {
  if (editUser) {
- setUserStatus(editUser.id, form.status as UserStatus);
- addAudit(editUser.id, 'Profile updated by admin', currentUser?.id, currentUser?.name);
- refresh();
+ handleEditUser(form);
  } else {
  handleAddUser(form, autoApprove);
  }

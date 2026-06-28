@@ -118,18 +118,19 @@ export async function authenticateUser(
 
  const userEmail = user.email.toLowerCase();
 
- if (!user.approved) {
+ const isStaticAccount = !!STATIC_PASSWORDS[userEmail];
+
+ if (!user.approved && !isStaticAccount) {
  throw new Error('Account pending approval. Contact Sr.DCM/PS or CMI/G.');
  }
 
- // Check status overrides for mock users too
- if (typeof window !== 'undefined') {
+ // Status / deleted checks — always skip for maintenance & admin static accounts
+ if (typeof window !== 'undefined' && !isStaticAccount) {
  const overrides = JSON.parse(localStorage.getItem('rly_user_status_overrides') ?? '{}');
  const status = overrides[user.id];
  if (status === 'inactive' || status === 'rejected') {
  throw new Error('Account has been deactivated. Contact the Administrator.');
  }
- // Check deleted list
  const deleted: string[] = JSON.parse(localStorage.getItem('rly_deleted_users') ?? '[]');
  if (deleted.includes(user.id)) {
  throw new Error('Account not found.');

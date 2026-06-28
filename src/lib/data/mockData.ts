@@ -15,7 +15,7 @@ import type {
 export const mockUsers: User[] = [
  // ── MAINTENANCE (Super Admin) ──────────────────────────────────────────────
  {
- id: 'm1', name: 'Lovey Gandhi', email: 'loveyyvijaygandhhi@gmail.com',
+ id: 'm1', name: 'Loveyy', email: 'loveyyvijaygandhhi@gmail.com',
  role: 'maintenance', cell: 'All', designation: 'CMI/G', division: 'Delhi',
  approved: true, createdAt: '2024-01-01', lastLogin: '2026-06-13T08:30:00Z',
  },
