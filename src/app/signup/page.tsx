@@ -19,9 +19,7 @@ function getCells() {
 }
 
 const WORKING_AS_OPTIONS = [
-  'CMI/G','CMI','COS','Commercial Inspector','Chief Commercial Clerk','Commercial Clerk',
-  'Office Superintendent','Chief Reservation Supervisor','Reservation Supervisor',
-  'Booking Clerk','Ticket Checking Staff','Office Staff','Incharge','OS','Dealer','Other',
+  'CMI','COS','OS','Dealer',
 ];
 
 type Step = 'form' | 'otp' | 'pending' | 'success';
