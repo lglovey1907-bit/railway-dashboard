@@ -29,6 +29,28 @@ export interface MasterStaffRecord {
 
 const STATUS_KEY = 'rly_user_status_overrides';
 const DELETED_KEY = 'rly_deleted_users'; // permanent delete for mock (seed) users
+const CELL_INFO_KEY = 'rly_cell_staff_info'; // working-since + work-assigned per employee
+
+export interface CellStaffInfo {
+ datePostingInCell?: string;
+ listOfWorkAssigned?: string;
+}
+
+function getCellStaffInfoMap(): Record<string, CellStaffInfo> {
+ if (typeof window === 'undefined') return {};
+ try { return JSON.parse(localStorage.getItem(CELL_INFO_KEY) ?? '{}'); } catch { return {}; }
+}
+
+/** Save Working Since / Work Assigned for a staff member (set by incharge/admin/maintenance) */
+export function updateCellStaffInfo(employeeId: string, info: CellStaffInfo): void {
+ if (typeof window === 'undefined') return;
+ try {
+ const all = getCellStaffInfoMap();
+ all[employeeId] = { ...(all[employeeId] ?? {}), ...info };
+ localStorage.setItem(CELL_INFO_KEY, JSON.stringify(all));
+ } catch {}
+ notifyStaffChanged();
+}
 
 function getStatusOverrides(): Record<string, string> {
  if (typeof window === 'undefined') return {};
@@ -57,11 +79,14 @@ function safeGet<T>(key: string, fallback: T): T {
 export function getAllMasterStaff(): MasterStaffRecord[] {
  const overrides = getStatusOverrides();
  const deletedIds = getDeletedIds(); // mock users permanently deleted by admin
+ const cellInfoMap = getCellStaffInfoMap(); // working-since + work-assigned overrides
 
  // ── 1. mockUsers (static seed — filter out permanently deleted ones) ─────────
  const fromMock: MasterStaffRecord[] = mockUsers
  .filter(u => !deletedIds.has(u.id))
- .map(u => ({
+ .map(u => {
+ const ci = cellInfoMap[u.id] ?? {};
+ return {
  id: u.id,
  name: u.name,
  email: u.email,
@@ -72,12 +97,13 @@ export function getAllMasterStaff(): MasterStaffRecord[] {
  mobile: u.mobileNumber,
  workingAs: u.workingAs,
  fatherHusbandName: u.fatherHusbandName,
- listOfWorkAssigned: u.listOfWorkAssigned,
- datePostingInCell: u.datePostingInCell,
+ listOfWorkAssigned: ci.listOfWorkAssigned ?? u.listOfWorkAssigned,
+ datePostingInCell: ci.datePostingInCell ?? u.datePostingInCell,
  status: (overrides[u.id] ?? (u.approved ? 'active' : 'pending')) as MasterStaffRecord['status'],
  source: 'mock' as const,
  registeredAt: u.createdAt,
- }));
+ };
+ });
 
  // ── 2. staffDB records (signed-up / admin-added users) ────────────────────
  const fromDB: MasterStaffRecord[] = [];
@@ -101,61 +127,25 @@ export function getAllMasterStaff(): MasterStaffRecord[] {
  'active'
  )) as MasterStaffRecord['status'];
 
+ const ci = cellInfoMap[s.id] ?? {};
+ const baseRecord = {
+ id: s.id, name: s.name, email: s.email, designation: s.designation,
+ role: s.role ?? 'user', hrmsId: s.hrmsId, mobile: s.mobile,
+ workingAs: s.workingAs, fatherHusbandName: s.fatherHusbandName,
+ source: 'staff_db' as const, registeredAt: s.registeredAt,
+ listOfWorkAssigned: ci.listOfWorkAssigned,
+ datePostingInCell: ci.datePostingInCell,
+ };
  if (approvedMemberships.length > 0) {
- // One record per approved cell membership
  approvedMemberships.forEach(m => {
- fromDB.push({
- id: s.id,
- name: s.name,
- email: s.email,
- designation: s.designation,
- cell: m.cellName,
- role: s.role ?? 'user',
- hrmsId: s.hrmsId,
- mobile: s.mobile,
- workingAs: s.workingAs,
- fatherHusbandName: s.fatherHusbandName,
- status: resolvedStatus,
- source: 'staff_db',
- registeredAt: s.registeredAt,
- });
+ fromDB.push({ ...baseRecord, cell: m.cellName, status: resolvedStatus });
  });
  } else if (pendingMemberships.length > 0) {
- // Pending — show in the cell they applied for
  pendingMemberships.forEach(m => {
- fromDB.push({
- id: s.id,
- name: s.name,
- email: s.email,
- designation: s.designation,
- cell: m.cellName,
- role: s.role ?? 'user',
- hrmsId: s.hrmsId,
- mobile: s.mobile,
- workingAs: s.workingAs,
- fatherHusbandName: s.fatherHusbandName,
- status: 'pending',
- source: 'staff_db',
- registeredAt: s.registeredAt,
- });
+ fromDB.push({ ...baseRecord, cell: m.cellName, status: 'pending' });
  });
  } else {
- // No memberships yet — show as unassigned
- fromDB.push({
- id: s.id,
- name: s.name,
- email: s.email,
- designation: s.designation,
- cell: 'Unassigned',
- role: s.role ?? 'user',
- hrmsId: s.hrmsId,
- mobile: s.mobile,
- workingAs: s.workingAs,
- fatherHusbandName: s.fatherHusbandName,
- status: resolvedStatus,
- source: 'staff_db',
- registeredAt: s.registeredAt,
- });
+ fromDB.push({ ...baseRecord, cell: 'Unassigned', status: resolvedStatus });
  }
  });
  } catch { /* ignore if staffDB unavailable */ }

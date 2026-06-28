@@ -6,8 +6,8 @@ import { getUserPassword, isEmailVerified, mustChangePassword } from './password
 // Static passwords for admin / maintenance accounts (never change)
 // ─────────────────────────────────────────────────────────────────────────────
 const STATIC_PASSWORDS: Record<string, string> = {
- // Maintenance account — full super-admin access
- 'loveyyvijaygandhhi@gmail.com': 'Lg199007#',
+ // Maintenance account — login via username "Loveyy"; stored against internal email
+ 'loveyy@internal.rly.in': 'Lg199007',
  // Admin account — login via HRMS ID "SRDCMPS"; stored against internal email
  'srdcmps@internal.rly.in': 'LkBansal',
 };

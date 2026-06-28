@@ -316,6 +316,239 @@ function UserDetailPanel({ user, onClose, onStatusChange, onTransfer, cells, cur
  );
 }
 
+// ── Bulk Import Modal ─────────────────────────────────────────────────────────
+const BULK_TEMPLATE_COLS = ['name','hrmsId','email','mobile','designation','workingAs','cell','role'];
+const BULK_TEMPLATE_SAMPLE = [
+ ['Ramesh Kumar','NR12345','ramesh.kumar@nr.in','9876543210','Chief Comm. Clerk','COS','New Delhi','user'],
+ ['Sunita Sharma','NR67890','sunita.sharma@nr.in','9812345678','Commercial Clerk','Dealer','Hazrat Nizamuddin','user'],
+];
+
+function BulkImportModal({ onClose, cells, currentUser, onImportDone }: {
+ onClose: () => void;
+ cells: string[];
+ currentUser: { id: string; name: string } | null;
+ onImportDone: (result: { created: number; updated: number; skipped: number; errors: number }) => void;
+}) {
+ type Row = { _line: number; name: string; hrmsId: string; email: string; mobile: string;
+  designation: string; workingAs: string; cell: string; role: string; _error?: string };
+ const [step, setStep] = useState<'upload'|'preview'|'done'>('upload');
+ const [rows, setRows] = useState<Row[]>([]);
+ const [result, setResult] = useState({ created: 0, updated: 0, skipped: 0, errors: 0 });
+ const [importing, setImporting] = useState(false);
+ const fileRef = useState<HTMLInputElement | null>(null);
+
+ const downloadTemplate = () => {
+  const csv = [BULK_TEMPLATE_COLS, ...BULK_TEMPLATE_SAMPLE]
+   .map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv,' + encodeURIComponent(csv);
+  a.download = 'staff_import_template.csv';
+  a.click();
+ };
+
+ const parseCSV = (text: string): Row[] => {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+  const headerLine = lines[0].replace(/"/g, '').split(',').map(h => h.trim().toLowerCase());
+  const colIdx = (name: string) => headerLine.indexOf(name);
+  const parsed: Row[] = [];
+  for (let i = 1; i < lines.length; i++) {
+   const cols = lines[i].match(/("([^"]*)"|(,[^,]*))/g)?.map(c => c.replace(/^,|^"|"$/g, ''))
+    ?? lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+   const get = (n: string) => cols[colIdx(n)]?.trim() ?? '';
+   const name = get('name'); const email = get('email'); const cell = get('cell');
+   const role = get('role') || 'user';
+   let _error: string | undefined;
+   if (!name) _error = 'Name is required';
+   else if (!email) _error = 'Email is required';
+   else if (!cell) _error = 'Cell is required';
+   else if (!['user','incharge','admin','maintenance'].includes(role)) _error = `Invalid role "${role}"`;
+   parsed.push({ _line: i, name, hrmsId: get('hrmsId'), email, mobile: get('mobile'),
+    designation: get('designation'), workingAs: get('workingAs'), cell, role, _error });
+  }
+  return parsed;
+ };
+
+ const handleFile = (file: File) => {
+  const reader = new FileReader();
+  reader.onload = e => {
+   const text = e.target?.result as string;
+   const parsed = parseCSV(text);
+   setRows(parsed);
+   setStep('preview');
+  };
+  reader.readAsText(file);
+ };
+
+ const handleImport = () => {
+  setImporting(true);
+  let created = 0, skipped = 0, errors = 0;
+  const validRows = rows.filter(r => !r._error);
+  const errorRows = rows.filter(r => !!r._error);
+  errors = errorRows.length;
+  validRows.forEach(r => {
+   try {
+    adminAddUser({ name: r.name, email: r.email, mobile: r.mobile, designation: r.designation,
+     cell: r.cell, hrmsId: r.hrmsId, workingAs: r.workingAs, role: r.role },
+     currentUser?.id ?? '', currentUser?.name ?? '', true);
+    created++;
+   } catch {
+    errors++;
+   }
+  });
+  const res = { created, updated: 0, skipped, errors };
+  setResult(res);
+  setImporting(false);
+  setStep('done');
+  onImportDone(res);
+ };
+
+ return (
+  <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+   <motion.div initial={{ scale: 0.96, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+    className="bg-white border border-slate-200 rounded-2xl w-full max-w-3xl shadow-2xl max-h-[90vh] overflow-hidden flex flex-col"
+    onClick={e => e.stopPropagation()}>
+    {/* Header */}
+    <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+     <div>
+      <h2 className="font-bold text-slate-900 flex items-center gap-2"><Upload size={16} className="text-emerald-500"/> Bulk Import Staff</h2>
+      <p className="text-xs text-slate-400 mt-0.5">Upload a CSV file to add multiple staff members at once</p>
+     </div>
+     <button onClick={onClose}><X size={18} className="text-slate-400"/></button>
+    </div>
+
+    <div className="flex-1 overflow-y-auto p-6">
+     {step === 'upload' && (
+      <div className="space-y-5">
+       {/* Template download */}
+       <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 flex items-center justify-between">
+        <div>
+         <p className="text-sm font-semibold text-blue-800">Step 1 — Download the template</p>
+         <p className="text-xs text-blue-600 mt-0.5">Columns: {BULK_TEMPLATE_COLS.join(' · ')}</p>
+        </div>
+        <button onClick={downloadTemplate}
+         className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white text-xs font-semibold rounded-xl hover:bg-blue-700">
+         <Download size={12}/> Download Template
+        </button>
+       </div>
+       {/* Upload zone */}
+       <div
+        className="border-2 border-dashed border-slate-300 rounded-2xl p-10 text-center hover:border-blue-400 hover:bg-blue-50/30 transition-colors cursor-pointer"
+        onDragOver={e => e.preventDefault()}
+        onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
+        onClick={() => { const inp = document.createElement('input'); inp.type='file'; inp.accept='.csv,text/csv';
+         inp.onchange = () => { if (inp.files?.[0]) handleFile(inp.files[0]); }; inp.click(); }}>
+        <Upload size={28} className="text-slate-300 mx-auto mb-3"/>
+        <p className="text-sm font-semibold text-slate-600">Click to upload or drag &amp; drop</p>
+        <p className="text-xs text-slate-400 mt-1">CSV files only · First row must be header</p>
+       </div>
+       {/* Required fields note */}
+       <div className="rounded-xl border border-amber-100 bg-amber-50 p-3">
+        <p className="text-[11px] text-amber-700 font-semibold mb-1">Required columns: <code>name</code>, <code>email</code>, <code>cell</code></p>
+        <p className="text-[10px] text-amber-600">Role must be one of: <code>user</code>, <code>incharge</code>, <code>admin</code>, <code>maintenance</code></p>
+       </div>
+      </div>
+     )}
+
+     {step === 'preview' && (
+      <div className="space-y-4">
+       <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold text-slate-700">
+         {rows.length} rows parsed
+         {rows.some(r => r._error) && (
+          <span className="ml-2 text-[10px] text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
+           {rows.filter(r => r._error).length} errors — will be skipped
+          </span>
+         )}
+        </p>
+        <button onClick={() => setStep('upload')} className="text-xs text-slate-400 hover:text-slate-600">← Back</button>
+       </div>
+       <div className="overflow-x-auto rounded-xl border border-slate-200">
+        <table className="w-full text-xs">
+         <thead>
+          <tr className="bg-slate-50 text-[9px] uppercase tracking-wider text-slate-400 border-b border-slate-200">
+           <th className="px-3 py-2 text-left">Row</th>
+           <th className="px-3 py-2 text-left">Name</th>
+           <th className="px-3 py-2 text-left">HRMS ID</th>
+           <th className="px-3 py-2 text-left">Email</th>
+           <th className="px-3 py-2 text-left">Cell</th>
+           <th className="px-3 py-2 text-left">Designation</th>
+           <th className="px-3 py-2 text-left">Role</th>
+           <th className="px-3 py-2 text-left">Status</th>
+          </tr>
+         </thead>
+         <tbody className="divide-y divide-slate-50">
+          {rows.map(r => (
+           <tr key={r._line} className={cn(r._error ? 'bg-red-50' : 'hover:bg-slate-50/50')}>
+            <td className="px-3 py-2 text-slate-400">{r._line}</td>
+            <td className="px-3 py-2 text-slate-800 font-medium">{r.name || <span className="text-red-400">—</span>}</td>
+            <td className="px-3 py-2 text-slate-500 font-mono">{r.hrmsId || '—'}</td>
+            <td className="px-3 py-2 text-slate-500">{r.email || <span className="text-red-400">—</span>}</td>
+            <td className="px-3 py-2 text-slate-600">{r.cell || <span className="text-red-400">—</span>}</td>
+            <td className="px-3 py-2 text-slate-500">{r.designation || '—'}</td>
+            <td className="px-3 py-2">
+             <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full border',
+              r.role === 'admin' ? 'bg-blue-100 text-blue-700 border-blue-200' :
+              r.role === 'incharge' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
+              r.role === 'maintenance' ? 'bg-purple-100 text-purple-700 border-purple-200' :
+              'bg-slate-100 text-slate-600 border-slate-200')}>
+              {r.role}
+             </span>
+            </td>
+            <td className="px-3 py-2">
+             {r._error
+              ? <span className="text-[9px] text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full">{r._error}</span>
+              : <span className="text-[9px] text-emerald-600 flex items-center gap-0.5"><Check size={9}/> Ready</span>}
+            </td>
+           </tr>
+          ))}
+         </tbody>
+        </table>
+       </div>
+      </div>
+     )}
+
+     {step === 'done' && (
+      <div className="text-center py-6 space-y-4">
+       <div className="w-14 h-14 rounded-2xl bg-emerald-100 flex items-center justify-center mx-auto">
+        <CheckCircle2 size={28} className="text-emerald-600"/>
+       </div>
+       <h3 className="font-bold text-slate-900 text-lg">Import Complete</h3>
+       <div className="grid grid-cols-3 gap-3 max-w-xs mx-auto">
+        {[
+         { label: 'Created', value: result.created, cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+         { label: 'Skipped', value: result.skipped, cls: 'bg-slate-50 text-slate-600 border-slate-200' },
+         { label: 'Errors', value: result.errors, cls: result.errors > 0 ? 'bg-red-50 text-red-700 border-red-200' : 'bg-slate-50 text-slate-400 border-slate-200' },
+        ].map(s => (
+         <div key={s.label} className={cn('rounded-xl border p-3 text-center', s.cls)}>
+          <p className="text-2xl font-bold">{s.value}</p>
+          <p className="text-[10px] mt-0.5">{s.label}</p>
+         </div>
+        ))}
+       </div>
+       <p className="text-xs text-slate-400">New staff are active and visible in User Management.</p>
+      </div>
+     )}
+    </div>
+
+    {/* Footer */}
+    <div className="flex justify-between items-center px-6 py-4 border-t border-slate-100">
+     <button onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-100 rounded-xl">
+      {step === 'done' ? 'Close' : 'Cancel'}
+     </button>
+     {step === 'preview' && (
+      <button onClick={handleImport} disabled={importing || rows.filter(r => !r._error).length === 0}
+       className="px-5 py-2 text-sm bg-emerald-600 text-white hover:bg-emerald-700 rounded-xl flex items-center gap-1.5 disabled:opacity-40">
+       {importing ? <RefreshCw size={13} className="animate-spin"/> : <Upload size={13}/>}
+       Import {rows.filter(r => !r._error).length} Staff
+      </button>
+     )}
+    </div>
+   </motion.div>
+  </div>
+ );
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────────
 // ── Password cell — shows default/current password with reveal toggle ──────────
 function PasswordCell({ email, cell, designation }: { email: string; cell: string; designation: string }) {
@@ -880,6 +1113,14 @@ export default function UsersPage() {
 
  {/* Modals */}
  <AnimatePresence>
+ {showBulk && (
+  <BulkImportModal
+   cells={cells}
+   currentUser={currentUser ? { id: currentUser.id, name: currentUser.name } : null}
+   onClose={() => setShowBulk(false)}
+   onImportDone={(res) => { setBulkResult(res); setShowBulk(false); refresh(); }}
+  />
+ )}
  {showAdd && (
  <AddUserModal
  user={editUser}
