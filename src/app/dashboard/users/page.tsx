@@ -856,7 +856,7 @@ export default function UsersPage() {
  .filter(s => !mockMapped.find(m => m.id === s.id)) // dedup
  .map(s => ({
  id: s.id, name: s.name, email: s.email, designation: s.designation,
- cell: s.role === 'user' ? getMembershipsForStaff(s.id) : 'All',
+ cell: s.role === 'user' ? getMembershipsForStaff(s.id, s.cell) : 'All',
  role: s.role, hrmsId: s.hrmsId, mobile: s.mobile, workingAs: s.workingAs,
  status: (statusOverrides[s.id] ?? (['pending','rejected'].includes(s.status) ? s.status : 'active')) as UserStatus,
  source: 'staff_db', registeredAt: s.registeredAt,
@@ -866,14 +866,13 @@ export default function UsersPage() {
  // eslint-disable-next-line
  }, [refreshKey]);
 
- function getMembershipsForStaff(id: string): string {
-  // Include both approved and pending memberships so that newly imported (pending)
-  // staff still show their designated cell instead of 'Unassigned'.
+ function getMembershipsForStaff(id: string, fallbackCell?: string): string {
   const all = getAllMemberships().filter(m => m.employeeId === id);
-  // Prefer approved, fall back to any pending
   const approved = all.filter(m => m.approvalStatus === 'approved');
   const used = approved.length > 0 ? approved : all;
-  return used.map(x => x.cellName).filter(Boolean).join(', ') || 'Unassigned';
+  const fromMembership = used.map(x => x.cellName).filter(Boolean).join(', ');
+  // Fall back to the cell stored directly on the staff record
+  return fromMembership || fallbackCell || 'Unassigned';
  }
 
  const filtered = useMemo(() => {
@@ -1237,7 +1236,7 @@ export default function UsersPage() {
  )}
  </div>
 
- {/* ── Cell-grouped user list ── */}
+ {/* ── User list: Pending queue at top, then cell groups ── */}
  {(() => {
   if (filtered.length === 0) {
    return (
@@ -1247,32 +1246,139 @@ export default function UsersPage() {
    );
   }
 
-  // Group by cell
+  // Separate pending from active/other
+  const pendingUsers = filtered.filter(u => u.status === 'pending');
+  const activeUsers  = filtered.filter(u => u.status !== 'pending');
+
+  // Group active users by cell
   const groups = new Map<string, DisplayUser[]>();
-  for (const u of filtered) {
+  for (const u of activeUsers) {
    const key = u.cell || 'Unassigned';
    if (!groups.has(key)) groups.set(key, []);
    groups.get(key)!.push(u);
   }
-
-  // Sort: named cells alphabetically, 'Unassigned' last
   const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
    if (a === 'Unassigned') return 1;
    if (b === 'Unassigned') return -1;
    return a.localeCompare(b);
   });
 
-  // Track which groups are collapsed
-  // We'll use a per-render state via a ref trick — simpler: just render all expanded
-  // (the filterStatus/cell dropdowns already narrow the view)
+  const importedEmails = (() => {
+   try { return new Set<string>(JSON.parse(localStorage.getItem('rly_gsheet_imported_emails') ?? '[]')); }
+   catch { return new Set<string>(); }
+  })();
 
   return (
    <div className="divide-y divide-slate-100">
+
+    {/* ── Pending Approval Queue (always at top) ── */}
+    {pendingUsers.length > 0 && (
+     <div>
+      {/* Pending header */}
+      <div className="flex items-center gap-3 px-4 py-3 bg-amber-50 border-b border-amber-100">
+       <div className="w-7 h-7 rounded-lg bg-amber-400/20 border border-amber-400/40 flex items-center justify-center shrink-0">
+        <Clock size={13} className="text-amber-600"/>
+       </div>
+       <div>
+        <p className="text-sm font-bold text-amber-800">Pending Approval</p>
+        <p className="text-[10px] text-amber-600">
+         {pendingUsers.length} user{pendingUsers.length !== 1 ? 's' : ''} waiting — review, assign cell, and approve
+        </p>
+       </div>
+       {isAdmin && (
+        <span className="ml-auto text-[9px] text-amber-600 bg-amber-100 border border-amber-200 rounded-full px-2 py-0.5 font-semibold">
+         Action Required
+        </span>
+       )}
+      </div>
+
+      {/* Pending users table */}
+      <table className="w-full text-sm">
+       <thead>
+        <tr className="border-b border-amber-100 text-[9px] text-amber-700 font-semibold uppercase tracking-wider bg-amber-50/60">
+         <th className="px-3 py-2 w-8"/>
+         <th className="px-3 py-2 text-left">Employee</th>
+         <th className="px-3 py-2 text-left">Cell / Designation</th>
+         <th className="px-3 py-2 text-left">Source</th>
+         {isAdmin && <th className="px-3 py-2 text-right">Actions</th>}
+        </tr>
+       </thead>
+       <tbody className="divide-y divide-amber-50">
+        {pendingUsers.map(u => {
+         const isSel    = selected.has(u.id);
+         const isSheet  = importedEmails.has(u.email.toLowerCase());
+         return (
+          <tr key={u.id} className={cn('hover:bg-amber-50/40 transition-colors', isSel && 'bg-blue-50/30')}>
+           <td className="px-3 py-2.5">
+            <button onClick={() => toggleSelect(u.id)}>
+             {isSel ? <CheckSquare size={14} className="text-blue-500"/> : <Square size={14} className="text-slate-300"/>}
+            </button>
+           </td>
+           <td className="px-3 py-2.5">
+            <div className="flex items-center gap-2.5">
+             <div className="w-8 h-8 rounded-xl bg-amber-100 flex items-center justify-center text-xs font-bold text-amber-700 shrink-0">
+              {u.name[0]}
+             </div>
+             <div>
+              <p className="font-semibold text-slate-900 text-sm">{u.name}</p>
+              <p className="text-[10px] text-slate-400">{u.email}</p>
+              {u.hrmsId && <code className="text-[9px] text-slate-400">{u.hrmsId}</code>}
+             </div>
+            </div>
+           </td>
+           <td className="px-3 py-2.5">
+            <p className="text-xs text-slate-700 font-medium">{u.cell !== 'Unassigned' ? u.cell : <span className="text-amber-500 italic">No cell assigned</span>}</p>
+            <p className="text-[10px] text-slate-400">{u.designation}</p>
+           </td>
+           <td className="px-3 py-2.5">
+            {isSheet ? (
+             <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">
+              <FileSpreadsheet size={9}/> Google Sheet
+             </span>
+            ) : (
+             <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border bg-slate-50 text-slate-500 border-slate-200">
+              <UserPlus size={9}/> Manual
+             </span>
+            )}
+           </td>
+           {isAdmin && (
+            <td className="px-3 py-2.5">
+             <div className="flex items-center gap-1.5 justify-end">
+              {/* Approve = open edit modal pre-filled so admin can set cell + activate */}
+              <button
+               onClick={() => { setEditUser(u); setShowAdd(true); }}
+               title="Review & Approve"
+               className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white text-[10px] font-semibold hover:bg-emerald-700">
+               <CheckCircle2 size={11}/> Approve
+              </button>
+              <button
+               onClick={() => setDetailUser(u)}
+               title="View details"
+               className="p-1.5 rounded-lg hover:bg-blue-100 text-slate-400 hover:text-blue-600">
+               <Eye size={14}/>
+              </button>
+              <button
+               onClick={() => setConfirmDelete(u)}
+               title="Reject / Deactivate"
+               className="p-1.5 rounded-lg hover:bg-red-100 text-slate-400 hover:text-red-500">
+               <XCircle size={14}/>
+              </button>
+             </div>
+            </td>
+           )}
+          </tr>
+         );
+        })}
+       </tbody>
+      </table>
+     </div>
+    )}
+
+    {/* ── Active users grouped by cell ── */}
     {sortedKeys.map(cellName => {
-     const cellUsers = groups.get(cellName)!;
+     const cellUsers    = groups.get(cellName)!;
      const activeCount  = cellUsers.filter(u => u.status === 'active').length;
      const pendingCount = cellUsers.filter(u => u.status === 'pending').length;
-
      return (
       <CellGroup
        key={cellName}
@@ -1292,8 +1398,11 @@ export default function UsersPage() {
       />
      );
     })}
+
     <div className="px-4 py-2 text-[10px] text-slate-400">
-     Showing {filtered.length} of {allUsers.length} users{selected.size > 0 && ` · ${selected.size} selected`}
+     Showing {filtered.length} of {allUsers.length} users
+     {pendingUsers.length > 0 && ` · ${pendingUsers.length} pending`}
+     {selected.size > 0 && ` · ${selected.size} selected`}
     </div>
    </div>
   );

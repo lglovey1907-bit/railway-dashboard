@@ -42,6 +42,7 @@ export function registerEmployee(data: {
  const staff: StaffMember = {
  id: data.id, hrmsId: data.hrmsId, name: data.name, email: data.email,
  mobile: data.mobile, designation: data.designation, division: data.division,
+ cell: data.cell || undefined,          // ← store cell directly on record
  role: data.role ?? 'user', workingAs: data.workingAs, fatherHusbandName: data.fatherHusbandName,
  status: 'pending', registeredAt: now, lastUpdatedAt: now,
  };
