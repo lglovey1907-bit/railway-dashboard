@@ -597,6 +597,168 @@ function PasswordCell({ email, cell, designation }: { email: string; cell: strin
  );
 }
 
+// ── Cell-grouped section component ────────────────────────────────────────────
+function CellGroup({
+ cellName, users, activeCount, pendingCount, isAdmin, selected,
+ toggleSelect, setDetailUser, setEditUser, setShowAdd,
+ handleRestore, setConfirmDelete, setConfirmHardDelete,
+}: {
+ cellName: string;
+ users: DisplayUser[];
+ activeCount: number;
+ pendingCount: number;
+ isAdmin: boolean;
+ selected: Set<string>;
+ toggleSelect: (id: string) => void;
+ setDetailUser: (u: DisplayUser) => void;
+ setEditUser: (u: DisplayUser | null) => void;
+ setShowAdd: (v: boolean) => void;
+ handleRestore: (u: DisplayUser) => void;
+ setConfirmDelete: (u: DisplayUser) => void;
+ setConfirmHardDelete: (u: DisplayUser) => void;
+}) {
+ const [collapsed, setCollapsed] = useState(false);
+
+ // Try to get the imported emails badge list once
+ const importedEmails = (() => {
+  try { return new Set<string>(JSON.parse(localStorage.getItem('rly_gsheet_imported_emails') ?? '[]')); }
+  catch { return new Set<string>(); }
+ })();
+
+ return (
+  <div>
+   {/* Cell header */}
+   <button
+    onClick={() => setCollapsed(c => !c)}
+    className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors text-left">
+    <div className="flex items-center gap-3">
+     <div className="w-7 h-7 rounded-lg bg-blue-500/15 border border-blue-500/30 flex items-center justify-center shrink-0">
+      <Building2 size={13} className="text-blue-600"/>
+     </div>
+     <div>
+      <p className="text-sm font-bold text-slate-800">{cellName}</p>
+      <div className="flex items-center gap-2 mt-0.5">
+       <span className="text-[10px] text-emerald-600 font-semibold">{activeCount} Active</span>
+       {pendingCount > 0 && (
+        <span className="text-[10px] text-amber-600 font-semibold">{pendingCount} Pending</span>
+       )}
+       <span className="text-[10px] text-slate-400">{users.length} total</span>
+      </div>
+     </div>
+    </div>
+    {collapsed ? <ChevronDown size={14} className="text-slate-400"/> : <ChevronUp size={14} className="text-slate-400"/>}
+   </button>
+
+   {/* Users table within this cell */}
+   {!collapsed && (
+    <table className="w-full text-sm">
+     <thead>
+      <tr className="border-b border-slate-100 text-[9px] text-slate-400 font-semibold uppercase tracking-wider bg-white">
+       <th className="px-3 py-2 w-8"/>
+       <th className="px-3 py-2 text-left">Employee</th>
+       <th className="px-3 py-2 text-left">Designation</th>
+       <th className="px-3 py-2 text-left">Role</th>
+       <th className="px-3 py-2 text-left">Status</th>
+       {isAdmin && <th className="px-3 py-2 text-left text-amber-600">Password</th>}
+       <th className="px-3 py-2 text-right">Actions</th>
+      </tr>
+     </thead>
+     <tbody className="divide-y divide-slate-50">
+      {users.map(u => {
+       const rb   = ROLE_BADGE[u.role] ?? ROLE_BADGE.user;
+       const RoleIcon = rb.icon;
+       const sc   = USER_STATUS_COLORS[u.status] ?? '';
+       const isSel = selected.has(u.id);
+       const isSheet = importedEmails.has(u.email.toLowerCase());
+
+       return (
+        <tr key={u.id}
+         className={cn('group hover:bg-slate-50/50 transition-colors', isSel && 'bg-blue-50/30')}>
+         <td className="px-3 py-2.5">
+          <button onClick={() => toggleSelect(u.id)}>
+           {isSel
+            ? <CheckSquare size={14} className="text-blue-500"/>
+            : <Square size={14} className="text-slate-300"/>}
+          </button>
+         </td>
+         <td className="px-3 py-2.5">
+          <div className="flex items-center gap-2.5">
+           <div className="w-8 h-8 rounded-xl bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-700 shrink-0">
+            {u.name[0]}
+           </div>
+           <div>
+            <p className="font-semibold text-slate-900 text-sm">{u.name}</p>
+            <p className="text-[10px] text-slate-400">{u.email}</p>
+            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+             {u.hrmsId && <code className="text-[9px] text-slate-400">{u.hrmsId}</code>}
+             {u.mobile && <span className="text-[9px] text-slate-400">{u.mobile}</span>}
+             {isSheet && (
+              <span className="inline-flex items-center gap-0.5 text-[8px] font-bold px-1.5 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">
+               <FileSpreadsheet size={7}/> Sheet
+              </span>
+             )}
+            </div>
+           </div>
+          </div>
+         </td>
+         <td className="px-3 py-2.5">
+          <p className="text-xs text-slate-600 font-medium">{u.designation}</p>
+          {u.workingAs && <p className="text-[10px] text-slate-400">{u.workingAs}</p>}
+         </td>
+         <td className="px-3 py-2.5">
+          <span className={cn('inline-flex items-center gap-1 text-[10px] font-semibold border rounded-full px-2 py-0.5', rb.cls)}>
+           <RoleIcon size={9}/> {rb.label}
+          </span>
+         </td>
+         <td className="px-3 py-2.5">
+          <span className={cn('inline-flex items-center text-[10px] font-semibold border rounded-full px-2 py-0.5', sc)}>
+           {USER_STATUS_LABELS[u.status]}
+          </span>
+         </td>
+         {isAdmin && (
+          <PasswordCell email={u.email} cell={u.cell} designation={u.designation}/>
+         )}
+         <td className="px-3 py-2.5">
+          <div className="flex items-center gap-1 justify-end">
+           <button onClick={() => setDetailUser(u)} title="View details"
+            className="p-1.5 rounded-lg hover:bg-blue-100 text-slate-400 hover:text-blue-600">
+            <Eye size={14}/>
+           </button>
+           {isAdmin && (
+            <>
+             <button onClick={() => { setEditUser(u); setShowAdd(true); }} title="Edit"
+              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700">
+              <Edit3 size={14}/>
+             </button>
+             {u.status === 'inactive' || u.status === 'suspended' ? (
+              <button onClick={() => handleRestore(u)} title="Restore to active"
+               className="p-1.5 rounded-lg hover:bg-emerald-100 text-slate-400 hover:text-emerald-600">
+               <RotateCcw size={14}/>
+              </button>
+             ) : (
+              <button onClick={() => setConfirmDelete(u)} title="Deactivate"
+               className="p-1.5 rounded-lg hover:bg-amber-100 text-slate-400 hover:text-amber-600">
+               <UserMinus size={14}/>
+              </button>
+             )}
+             <button onClick={() => setConfirmHardDelete(u)} title="Delete permanently"
+              className="p-1.5 rounded-lg hover:bg-red-100 text-slate-400 hover:text-red-600">
+              <Trash2 size={14}/>
+             </button>
+            </>
+           )}
+          </div>
+         </td>
+        </tr>
+       );
+      })}
+     </tbody>
+    </table>
+   )}
+  </div>
+ );
+}
+
 export default function UsersPage() {
  const { user: currentUser } = useAuthStore();
  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'maintenance';
@@ -705,8 +867,13 @@ export default function UsersPage() {
  }, [refreshKey]);
 
  function getMembershipsForStaff(id: string): string {
- const m = getAllMemberships().filter(m => m.employeeId === id && m.approvalStatus === 'approved');
- return m.map(x => x.cellName).join(', ') || 'Unassigned';
+  // Include both approved and pending memberships so that newly imported (pending)
+  // staff still show their designated cell instead of 'Unassigned'.
+  const all = getAllMemberships().filter(m => m.employeeId === id);
+  // Prefer approved, fall back to any pending
+  const approved = all.filter(m => m.approvalStatus === 'approved');
+  const used = approved.length > 0 ? approved : all;
+  return used.map(x => x.cellName).filter(Boolean).join(', ') || 'Unassigned';
  }
 
  const filtered = useMemo(() => {
@@ -1070,119 +1237,67 @@ export default function UsersPage() {
  )}
  </div>
 
- {/* Table */}
- <div className="overflow-x-auto">
- <table className="w-full text-sm">
- <thead>
- <tr className="bg-slate-50 border-b border-slate-100 text-[10px] text-slate-500 font-semibold uppercase tracking-wider">
- <th className="px-3 py-3 w-8">
- <button onClick={toggleAll}>{allSelected ? <CheckSquare size={14} className="text-blue-500"/> : <Square size={14} className="text-slate-300"/>}</button>
- </th>
- {[
- { k: 'name', label: 'Employee' },
- { k: 'cell', label: 'Cell' },
- { k: 'role', label: 'Role' },
- { k: 'status', label: 'Status' },
- ].map(col => (
- <th key={col.k} className="px-3 py-3 text-left">
- <button onClick={() => toggleSort(col.k as any)} className="flex items-center gap-1 hover:text-slate-700">
- {col.label}
- {sortKey === col.k ? (sortDir === 'asc' ? <ChevronUp size={10}/> : <ChevronDown size={10}/>) : <ArrowUpDown size={10} className="opacity-30"/>}
- </button>
- </th>
- ))}
- {isAdmin && <th className="px-3 py-3 text-left text-amber-600">Default Password</th>}
- <th className="px-3 py-3 text-right">Actions</th>
- </tr>
- </thead>
- <tbody className="divide-y divide-slate-50">
- {filtered.length === 0 ? (
- <tr><td colSpan={isAdmin ? 7 : 6} className="text-center py-10 text-slate-300 text-sm">No users match your filters.</td></tr>
- ) : filtered.map(u => {
- const rb = ROLE_BADGE[u.role] ?? ROLE_BADGE.user;
- const RoleIcon = rb.icon;
- const sc = USER_STATUS_COLORS[u.status] ?? '';
- const isSel = selected.has(u.id);
- return (
- <tr key={u.id} className={cn('group hover:bg-slate-50/50 transition-colors', isSel && 'bg-blue-50/30 ')}>
- <td className="px-3 py-3">
- <button onClick={() => toggleSelect(u.id)}>{isSel ? <CheckSquare size={14} className="text-blue-500"/> : <Square size={14} className="text-slate-300"/>}</button>
- </td>
- <td className="px-3 py-3">
- <div className="flex items-center gap-2.5">
- <div className="w-8 h-8 rounded-xl bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-700 shrink-0">
- {u.name[0]}
- </div>
- <div>
- <p className="font-semibold text-slate-900 text-sm">{u.name}</p>
- <p className="text-[10px] text-slate-400">{u.email}</p>
- <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-  {u.hrmsId && <code className="text-[9px] text-slate-400">{u.hrmsId}</code>}
-  {(() => {
-   try {
-    const imp: string[] = JSON.parse(localStorage.getItem('rly_gsheet_imported_emails') ?? '[]');
-    if (imp.includes(u.email.toLowerCase())) {
-     return <span className="inline-flex items-center gap-0.5 text-[8px] font-bold px-1.5 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200"><FileSpreadsheet size={7}/> Sheet</span>;
-    }
-   } catch {}
-   return null;
-  })()}
- </div>
- </div>
- </div>
- </td>
- <td className="px-3 py-3">
- <p className="text-xs text-slate-600 font-medium">{u.cell}</p>
- <p className="text-[10px] text-slate-400">{u.designation}</p>
- </td>
- <td className="px-3 py-3">
- <span className={cn('inline-flex items-center gap-1 text-[10px] font-semibold border rounded-full px-2 py-0.5', rb.cls)}>
- <RoleIcon size={9}/>{rb.label}
- </span>
- </td>
- <td className="px-3 py-3">
- <span className={cn('inline-flex items-center text-[10px] font-semibold border rounded-full px-2 py-0.5', sc)}>
- {USER_STATUS_LABELS[u.status]}
- </span>
- </td>
- {/* Password column — Admin/Maintenance only */}
- {isAdmin && (
- <PasswordCell email={u.email} cell={u.cell} designation={u.designation}/>
- )}
- <td className="px-3 py-3">
- <div className="flex items-center gap-1 justify-end">
- <button onClick={() => setDetailUser(u)} title="View details"
- className="p-1.5 rounded-lg hover:bg-blue-100 text-slate-400 hover:text-blue-600"><Eye size={14}/></button>
- {isAdmin && <>
- <button onClick={() => { setEditUser(u); setShowAdd(true); }} title="Edit"
- className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700"><Edit3 size={14}/></button>
- {u.status === 'inactive' || u.status === 'suspended' ? (
- <button onClick={() => handleRestore(u)} title="Restore to active"
- className="p-1.5 rounded-lg hover:bg-emerald-100 text-slate-400 hover:text-emerald-600">
- <RotateCcw size={14}/>
- </button>
- ) : (
- <button onClick={() => setConfirmDelete(u)} title="Deactivate (keep records)"
- className="p-1.5 rounded-lg hover:bg-amber-100 text-slate-400 hover:text-amber-600">
- <UserMinus size={14}/>
- </button>
- )}
- <button onClick={() => setConfirmHardDelete(u)} title="Delete permanently"
- className="p-1.5 rounded-lg hover:bg-red-100 text-slate-400 hover:text-red-600">
- <Trash2 size={14}/>
- </button>
- </>}
- </div>
- </td>
- </tr>
- );
- })}
- </tbody>
- </table>
- </div>
- <div className="px-4 py-2 border-t border-slate-100 text-[10px] text-slate-400">
- Showing {filtered.length} of {allUsers.length} users{selected.size > 0 && ` · ${selected.size} selected`}
- </div>
+ {/* ── Cell-grouped user list ── */}
+ {(() => {
+  if (filtered.length === 0) {
+   return (
+    <div className="text-center py-14 text-slate-300 text-sm">
+     No users match your filters.
+    </div>
+   );
+  }
+
+  // Group by cell
+  const groups = new Map<string, DisplayUser[]>();
+  for (const u of filtered) {
+   const key = u.cell || 'Unassigned';
+   if (!groups.has(key)) groups.set(key, []);
+   groups.get(key)!.push(u);
+  }
+
+  // Sort: named cells alphabetically, 'Unassigned' last
+  const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
+   if (a === 'Unassigned') return 1;
+   if (b === 'Unassigned') return -1;
+   return a.localeCompare(b);
+  });
+
+  // Track which groups are collapsed
+  // We'll use a per-render state via a ref trick — simpler: just render all expanded
+  // (the filterStatus/cell dropdowns already narrow the view)
+
+  return (
+   <div className="divide-y divide-slate-100">
+    {sortedKeys.map(cellName => {
+     const cellUsers = groups.get(cellName)!;
+     const activeCount  = cellUsers.filter(u => u.status === 'active').length;
+     const pendingCount = cellUsers.filter(u => u.status === 'pending').length;
+
+     return (
+      <CellGroup
+       key={cellName}
+       cellName={cellName}
+       users={cellUsers}
+       activeCount={activeCount}
+       pendingCount={pendingCount}
+       isAdmin={isAdmin}
+       selected={selected}
+       toggleSelect={toggleSelect}
+       setDetailUser={setDetailUser}
+       setEditUser={setEditUser}
+       setShowAdd={setShowAdd}
+       handleRestore={handleRestore}
+       setConfirmDelete={setConfirmDelete}
+       setConfirmHardDelete={setConfirmHardDelete}
+      />
+     );
+    })}
+    <div className="px-4 py-2 text-[10px] text-slate-400">
+     Showing {filtered.length} of {allUsers.length} users{selected.size > 0 && ` · ${selected.size} selected`}
+    </div>
+   </div>
+  );
+ })()}
  </div>
 
  {/* Modals */}
