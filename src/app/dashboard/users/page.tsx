@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import { mockUsers } from '@/lib/data/mockData';
 import { getAllStaff, getAllMemberships, getAudit, addAudit, updateStaffRecord, type StaffMember } from '@/lib/staff/staffDB';
@@ -12,13 +12,15 @@ import {
 import { deactivateMasterStaff, restoreMasterStaff, notifyStaffChanged } from '@/lib/staff/masterStaff';
 import { generateDefaultPassword, getUserPassword } from '@/lib/auth/passwordStore';
 import { getActiveCells } from '@/lib/cells/cellRegistry';
+import { getGSheetConfig, syncGoogleSheet, type SyncResult } from '@/lib/integrations/googleSheets';
+import { GoogleSheetsModal } from '@/components/users/GoogleSheetsModal';
 import {
  Users, Search, Filter, Plus, Trash2, ChevronDown, ChevronUp,
  Check, X, CheckSquare, Square, MoreHorizontal, ArrowUpDown,
  Download, Upload, Shield, ShieldCheck, Crown, AlertTriangle,
  Clock, CheckCircle2, XCircle, Eye, EyeOff, Edit3, UserMinus, UserPlus,
  ArrowRight, Activity, Mail, Phone, Briefcase, Building2,
- RefreshCw, History, FileText, RotateCcw, Copy,
+ RefreshCw, History, FileText, RotateCcw, Copy, FileSpreadsheet, Link2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -609,6 +611,9 @@ export default function UsersPage() {
  const [showAdd, setShowAdd] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
   const [bulkResult, setBulkResult] = useState<{created:number;updated:number;skipped:number;errors:number}|null>(null);
+ const [showGSheet, setShowGSheet] = useState(false);
+ const [gsheetSyncResult, setGsheetSyncResult] = useState<SyncResult | null>(null);
+ const [gsheetConnected, setGsheetConnected] = useState(false);
  const [editUser, setEditUser] = useState<DisplayUser | null>(null);
  const [detailUser, setDetailUser] = useState<DisplayUser | null>(null);
  const [confirmDelete, setConfirmDelete] = useState<DisplayUser | null>(null);
@@ -619,6 +624,34 @@ export default function UsersPage() {
  const refresh = () => setRefreshKey(k => k + 1);
 
  const cells = useMemo(() => getActiveCells().map(c => c.name), []);
+
+ // ── Google Sheets: check connection + auto-sync on mount ─────────────────────
+ const handleGSheetAddUser = useCallback((row: Record<string, string>) => {
+  adminAddUser(
+   { name: row.name, email: row.email, mobile: row.mobile, designation: row.designation,
+     cell: row.cell, hrmsId: row.hrmsId, workingAs: row.workingAs, role: row.role },
+   currentUser?.id ?? 'system', currentUser?.name ?? 'Google Sheets Sync',
+   false, // autoApprove = false → added as Pending
+  );
+ }, [currentUser]);
+
+ useEffect(() => {
+  const cfg = getGSheetConfig();
+  setGsheetConnected(!!cfg);
+  if (cfg?.autoSync) {
+   // Build existing email set from current allUsers (run after first render)
+   const emails = new Set(
+    mockUsers.map(u => u.email.toLowerCase()).concat(
+     (() => { try { return (JSON.parse(localStorage.getItem('rly_staff_master') ?? '[]') as any[]).map((s: any) => s.email?.toLowerCase() ?? ''); } catch { return []; } })()
+    )
+   );
+   syncGoogleSheet(cfg, emails, handleGSheetAddUser).then(result => {
+    if (result.added > 0) { setGsheetSyncResult(result); refresh(); }
+    setGsheetConnected(true);
+   });
+  }
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, []);
 
  // Build unified user list from mockUsers + staffDB
  const allUsers = useMemo((): DisplayUser[] => {
@@ -922,12 +955,27 @@ export default function UsersPage() {
  <h1 className="text-xl font-bold text-slate-900">User Management</h1>
  <p className="text-sm text-slate-400 mt-0.5">Central authority for all staff across all cells · Delhi Division</p>
  </div>
- <div className="flex items-center gap-2">
+ <div className="flex items-center gap-2 flex-wrap">
  <button onClick={handleExport} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-100 text-xs transition-colors">
  <Download size={13}/> Export CSV
  </button>
           {isAdmin && (
             <>
+              <button
+               onClick={() => setShowGSheet(true)}
+               className={cn(
+                'flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-colors',
+                gsheetConnected
+                 ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                 : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
+               )}>
+               <FileSpreadsheet size={13}/>
+               {gsheetConnected ? (
+                <span className="flex items-center gap-1">
+                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"/> Sheet Synced
+                </span>
+               ) : 'Connect Sheet'}
+              </button>
               <button onClick={() => setShowBulk(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-semibold hover:bg-emerald-100 transition-colors"><Upload size={13}/> Bulk Import</button>
               <button onClick={() => { setEditUser(null); setShowAdd(true); }} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors shadow-elevation-sm">
                 <Plus size={15}/> Add Staff
@@ -936,6 +984,21 @@ export default function UsersPage() {
           )}
  </div>
  </div>
+
+ {/* Google Sheets auto-sync banner */}
+ {gsheetSyncResult && gsheetSyncResult.added > 0 && (
+  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 flex items-center justify-between">
+   <div className="flex items-center gap-2">
+    <FileSpreadsheet size={15} className="text-emerald-600"/>
+    <p className="text-sm text-emerald-800 font-semibold">
+     Google Sheets synced — <span className="font-bold">{gsheetSyncResult.added}</span> new {gsheetSyncResult.added === 1 ? 'user' : 'users'} added as <span className="text-amber-600">Pending Approval</span>
+    </p>
+   </div>
+   <button onClick={() => setGsheetSyncResult(null)} className="text-emerald-400 hover:text-emerald-600">
+    <X size={14}/>
+   </button>
+  </div>
+ )}
 
  {/* KPI strip */}
  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1053,7 +1116,18 @@ export default function UsersPage() {
  <div>
  <p className="font-semibold text-slate-900 text-sm">{u.name}</p>
  <p className="text-[10px] text-slate-400">{u.email}</p>
- {u.hrmsId && <code className="text-[9px] text-slate-400">{u.hrmsId}</code>}
+ <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+  {u.hrmsId && <code className="text-[9px] text-slate-400">{u.hrmsId}</code>}
+  {(() => {
+   try {
+    const imp: string[] = JSON.parse(localStorage.getItem('rly_gsheet_imported_emails') ?? '[]');
+    if (imp.includes(u.email.toLowerCase())) {
+     return <span className="inline-flex items-center gap-0.5 text-[8px] font-bold px-1.5 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200"><FileSpreadsheet size={7}/> Sheet</span>;
+    }
+   } catch {}
+   return null;
+  })()}
+ </div>
  </div>
  </div>
  </td>
@@ -1113,6 +1187,14 @@ export default function UsersPage() {
 
  {/* Modals */}
  <AnimatePresence>
+ {showGSheet && (
+  <GoogleSheetsModal
+   existingEmails={new Set(allUsers.map(u => u.email.toLowerCase()))}
+   onAddUser={handleGSheetAddUser}
+   onClose={() => { setShowGSheet(false); setGsheetConnected(!!getGSheetConfig()); }}
+   onSyncDone={(result) => { setGsheetSyncResult(result); if (result.added > 0) refresh(); }}
+  />
+ )}
  {showBulk && (
   <BulkImportModal
    cells={cells}
