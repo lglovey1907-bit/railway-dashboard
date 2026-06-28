@@ -1,46 +1,44 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Google Sheets Integration
+// Google Sheets Integration — gviz/tq approach
 //
-// Reads a publicly-published Google Sheet (CSV format) and syncs new rows
-// as pending users into the staffDB.  No API key required — user must publish
-// their sheet via: File → Share → Publish to web → CSV format.
+// Uses Google's Visualization Query API (gviz/tq) endpoint which works for ANY
+// sheet shared as "Anyone with the link can view".
+// NO publishing, NO CSV export, NO API key required.
 //
-// CSV URL format:
-//   https://docs.google.com/spreadsheets/d/{ID}/pub?output=csv
-//   https://docs.google.com/spreadsheets/d/{ID}/export?format=csv
+// User just: Share → Anyone with the link → Copy link → Paste here.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CONFIG_KEY = 'rly_gsheet_config';
-const IMPORTED_KEY = 'rly_gsheet_imported_emails'; // emails already synced
+const CONFIG_KEY    = 'rly_gsheet_config';
+const IMPORTED_KEY  = 'rly_gsheet_imported_emails';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface GSheetColumnMap {
- name: number;
- email: number;
- hrmsId?: number;
- mobile?: number;
- designation?: number;
- workingAs?: number;
- cell?: number;
- role?: number;
+ name:          number;
+ email:         number;
+ hrmsId?:       number;
+ mobile?:       number;
+ designation?:  number;
+ workingAs?:    number;
+ cell?:         number;
+ role?:         number;
 }
 
 export interface GSheetConfig {
- csvUrl: string;
- columnMap: GSheetColumnMap;
- hasHeader: boolean;
- autoSync: boolean;
- detectedHeaders?: string[];
- lastSyncAt?: string;
- lastRowCount?: number;
- connectedAt?: string;
+ sheetUrl:          string;   // original URL the user pasted
+ gvizUrl:           string;   // normalised gviz/tq URL used for fetching
+ columnMap:         GSheetColumnMap;
+ autoSync:          boolean;
+ detectedHeaders?:  string[];
+ lastSyncAt?:       string;
+ lastRowCount?:     number;
+ connectedAt?:      string;
 }
 
 export interface SyncResult {
- added: number;
+ added:   number;
  skipped: number;
- error?: string;
+ error?:  string;
 }
 
 // ── Storage helpers ───────────────────────────────────────────────────────────
@@ -73,113 +71,140 @@ function markEmailImported(email: string): void {
  localStorage.setItem(IMPORTED_KEY, JSON.stringify(Array.from(s)));
 }
 
-// ── CSV parser (handles quoted fields + commas inside quotes) ─────────────────
+// ── URL normalisation — any Sheets link → gviz/tq ────────────────────────────
 
-export function parseCSV(text: string): string[][] {
- const rows: string[][] = [];
- for (const raw of text.split('\n')) {
-  const line = raw.replace(/\r$/, '');
-  if (!line.trim()) continue;
-  const cols: string[] = [];
-  let inQ = false, cur = '';
-  for (let i = 0; i < line.length; i++) {
-   const c = line[i];
-   if (c === '"') {
-    if (inQ && line[i + 1] === '"') { cur += '"'; i++; } // escaped quote
-    else inQ = !inQ;
-    continue;
-   }
-   if (c === ',' && !inQ) { cols.push(cur.trim()); cur = ''; continue; }
-   cur += c;
-  }
-  cols.push(cur.trim());
-  rows.push(cols);
- }
- return rows;
+/**
+ * Convert any Google Sheets URL into the gviz/tq JSON endpoint.
+ * Works for /edit, /view, /pub, share links, and gviz links already.
+ */
+export function normaliseSheetUrl(input: string): string {
+ const trimmed = input.trim();
+
+ // Already a gviz URL
+ if (trimmed.includes('gviz/tq')) return trimmed;
+
+ // Extract spreadsheet ID
+ const idMatch = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+ if (!idMatch) return trimmed; // can't normalise — return as-is
+
+ const sheetId = idMatch[1];
+ const gid     = trimmed.match(/[?&]gid=(\d+)/)?.[1];
+
+ let url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json`;
+ if (gid) url += `&gid=${gid}`;
+ return url;
 }
 
-// ── Column auto-detection from sheet headers ──────────────────────────────────
+// ── gviz/tq response parser ───────────────────────────────────────────────────
+
+interface GvizTable {
+ cols: { id: string; label: string; type: string }[];
+ rows: { c: ({ v: unknown; f?: string } | null)[] }[];
+}
+
+function parseGvizText(text: string): { headers: string[]; rows: string[][] } {
+ // Strip JSONP wrapper: /*O_o*/\ngoogle.visualization.Query.setResponse({...});
+ const jsonStr = text
+  .replace(/^[^(]+\(/, '') // remove everything up to and including first '('
+  .replace(/\);\s*$/, ''); // remove trailing ');'
+
+ const data = JSON.parse(jsonStr);
+ if (data.status === 'error') {
+  const msg = data.errors?.[0]?.detailed_message ?? data.errors?.[0]?.message ?? 'Sheet access denied';
+  throw new Error(msg);
+ }
+
+ const table: GvizTable = data.table;
+ const headers = table.cols.map(c => c.label || c.id || '');
+
+ const rows = (table.rows ?? []).map(row =>
+  table.cols.map((_, ci) => {
+   const cell = row.c?.[ci];
+   if (!cell || cell.v === null || cell.v === undefined) return '';
+   // Dates come as "Date(2024,0,15)" — convert to readable string
+   const v = cell.v;
+   if (typeof v === 'string' && v.startsWith('Date(')) {
+    try {
+     const parts = v.slice(5, -1).split(',').map(Number);
+     return new Date(parts[0], parts[1], parts[2]).toISOString().slice(0, 10);
+    } catch { return cell.f ?? String(v); }
+   }
+   return cell.f ?? String(v);
+  })
+ );
+
+ return { headers, rows };
+}
+
+// ── Column auto-detection ─────────────────────────────────────────────────────
 
 const FIELD_ALIASES: Record<keyof GSheetColumnMap, string[]> = {
- name: ['name', 'fullname', 'employeename', 'staffname', 'employeefullname'],
- email: ['email', 'emailaddress', 'mail', 'e-mail'],
- hrmsId: ['hrmsid', 'hrms', 'empid', 'employeeid', 'empno', 'hrmsnumber', 'staffid'],
- mobile: ['mobile', 'phone', 'contact', 'mobileno', 'phonenumber', 'contactno'],
- designation: ['designation', 'post', 'grade', 'rank', 'jobtitle', 'position'],
- workingAs: ['workingas', 'workingrole', 'category', 'type', 'stafftype'],
- cell: ['cell', 'department', 'section', 'unit', 'branch', 'office'],
- role: ['role', 'accessrole', 'systemrole', 'userrole'],
+ name:        ['name', 'fullname', 'employeename', 'staffname'],
+ email:       ['email', 'emailaddress', 'mail', 'e-mail'],
+ hrmsId:      ['hrmsid', 'hrms', 'empid', 'employeeid', 'empno', 'staffid'],
+ mobile:      ['mobile', 'phone', 'contact', 'mobileno', 'phoneno'],
+ designation: ['designation', 'post', 'grade', 'rank', 'jobtitle'],
+ workingAs:   ['workingas', 'workingrole', 'category', 'type', 'stafftype'],
+ cell:        ['cell', 'department', 'section', 'unit', 'branch', 'office'],
+ role:        ['role', 'accessrole', 'systemrole', 'userrole'],
 };
 
 export function autoDetectColumns(headers: string[]): Partial<GSheetColumnMap> {
- const normalized = headers.map(h => h.toLowerCase().replace(/[\s_\-/]/g, ''));
+ const norm = headers.map(h => h.toLowerCase().replace(/[\s_\-/]/g, ''));
  const result: Partial<GSheetColumnMap> = {};
  for (const [field, aliases] of Object.entries(FIELD_ALIASES) as [keyof GSheetColumnMap, string[]][]) {
   for (const alias of aliases) {
-   const idx = normalized.findIndex(n => n === alias || n.includes(alias));
+   const idx = norm.findIndex(n => n === alias || n.includes(alias));
    if (idx >= 0) { result[field] = idx; break; }
   }
  }
  return result;
 }
 
-// ── Fetch the published CSV ───────────────────────────────────────────────────
+// ── Main fetch ────────────────────────────────────────────────────────────────
 
 export interface SheetFetchResult {
  headers: string[];
- rows: string[][];
- error?: string;
+ rows:    string[][];
+ error?:  string;
 }
 
-export async function fetchSheetData(csvUrl: string): Promise<SheetFetchResult> {
+export async function fetchSheetData(gvizUrl: string): Promise<SheetFetchResult> {
  try {
-  // Route through our server-side proxy to avoid browser CORS restrictions
-  const proxyUrl = `/api/gsheet-proxy?url=${encodeURIComponent(csvUrl)}`;
+  // Server-side proxy avoids CORS and handles auth redirects properly
+  const proxyUrl = `/api/gsheet-proxy?url=${encodeURIComponent(gvizUrl)}`;
   const res = await fetch(proxyUrl, { cache: 'no-store' });
 
+  const contentType = res.headers.get('content-type') ?? '';
+
   if (!res.ok) {
-   // Proxy returns JSON errors
    let msg = `HTTP ${res.status}`;
-   try { const j = await res.json(); msg = j.error ?? msg; } catch {}
+   try {
+    if (contentType.includes('json')) { const j = await res.json(); msg = j.error ?? msg; }
+    else msg = (await res.text()).slice(0, 200) || msg;
+   } catch {}
    throw new Error(msg);
   }
 
   const text = await res.text();
-  const all = parseCSV(text);
-  if (all.length === 0) return { headers: [], rows: [] };
-  return { headers: all[0], rows: all.slice(1) };
+  const { headers, rows } = parseGvizText(text);
+  return { headers, rows };
  } catch (e: any) {
   return { headers: [], rows: [], error: e.message ?? 'Network error' };
  }
 }
 
-// ── Extract a URL for the "publish to CSV" link ──────────────────────────────
-
-/** Normalise any Google Sheets URL to the CSV export URL */
-export function normaliseSheetUrl(input: string): string {
- const trimmed = input.trim();
- // Already a CSV export or pub URL
- if (trimmed.includes('output=csv') || trimmed.includes('pub?output')) return trimmed;
- // Extract sheet ID from standard edit URL
- const m = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
- if (m) {
-  const gid = trimmed.match(/[?&]gid=(\d+)/)?.[1];
-  return `https://docs.google.com/spreadsheets/d/${m[1]}/pub?output=csv${gid ? `&gid=${gid}` : ''}`;
- }
- return trimmed; // Return as-is and let fetch fail with a useful error
-}
-
-// ── Main sync function ────────────────────────────────────────────────────────
+// ── Main sync ─────────────────────────────────────────────────────────────────
 
 export async function syncGoogleSheet(
  config: GSheetConfig,
  existingEmails: Set<string>,
  addUser: (row: Record<string, string>) => void,
 ): Promise<SyncResult> {
- const { rows, error } = await fetchSheetData(config.csvUrl);
+ const { rows, error } = await fetchSheetData(config.gvizUrl);
  if (error) return { added: 0, skipped: 0, error };
 
- const m = config.columnMap;
+ const m        = config.columnMap;
  const imported = getImportedEmails();
  let added = 0, skipped = 0;
 
@@ -189,7 +214,6 @@ export async function syncGoogleSheet(
  for (const row of rows) {
   const email = get(row, m.email).toLowerCase();
   if (!email) { skipped++; continue; }
-  // Skip already imported or already existing users
   if (imported.has(email) || existingEmails.has(email)) { skipped++; continue; }
 
   const name = get(row, m.name);
@@ -199,12 +223,12 @@ export async function syncGoogleSheet(
    addUser({
     name,
     email,
-    hrmsId: get(row, m.hrmsId),
-    mobile: get(row, m.mobile),
+    hrmsId:      get(row, m.hrmsId),
+    mobile:      get(row, m.mobile),
     designation: get(row, m.designation) || 'Staff',
-    workingAs: get(row, m.workingAs),
-    cell: get(row, m.cell) || '',
-    role: get(row, m.role) || 'user',
+    workingAs:   get(row, m.workingAs),
+    cell:        get(row, m.cell) || '',
+    role:        get(row, m.role) || 'user',
    });
    markEmailImported(email);
    added++;
@@ -213,7 +237,7 @@ export async function syncGoogleSheet(
 
  saveGSheetConfig({
   ...config,
-  lastSyncAt: new Date().toISOString(),
+  lastSyncAt:   new Date().toISOString(),
   lastRowCount: rows.length,
  });
 
