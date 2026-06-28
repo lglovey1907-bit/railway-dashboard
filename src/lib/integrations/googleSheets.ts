@@ -133,10 +133,18 @@ export interface SheetFetchResult {
 
 export async function fetchSheetData(csvUrl: string): Promise<SheetFetchResult> {
  try {
-  const res = await fetch(csvUrl, { cache: 'no-store' });
-  if (!res.ok) throw new Error(`Server returned ${res.status}`);
+  // Route through our server-side proxy to avoid browser CORS restrictions
+  const proxyUrl = `/api/gsheet-proxy?url=${encodeURIComponent(csvUrl)}`;
+  const res = await fetch(proxyUrl, { cache: 'no-store' });
+
+  if (!res.ok) {
+   // Proxy returns JSON errors
+   let msg = `HTTP ${res.status}`;
+   try { const j = await res.json(); msg = j.error ?? msg; } catch {}
+   throw new Error(msg);
+  }
+
   const text = await res.text();
-  if (text.trim().startsWith('<!')) throw new Error('Sheet is not published publicly. Please publish it via File → Share → Publish to web.');
   const all = parseCSV(text);
   if (all.length === 0) return { headers: [], rows: [] };
   return { headers: all[0], rows: all.slice(1) };
