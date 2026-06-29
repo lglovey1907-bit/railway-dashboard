@@ -57,8 +57,28 @@ export default function SignupPage() {
   const [userId, setUserId]       = useState('');
   const [copied, setCopied]       = useState(false);
   const [cells, setCells]         = useState<string[]>([]);
+  const [approvalStatus, setApprovalStatus] = useState<'pending' | 'approved'>('pending');
 
   useEffect(() => { setCells(getCells()); }, []);
+
+  // Poll for admin approval every 5 seconds while on the pending step
+  useEffect(() => {
+    if (step !== 'pending' || !userId) return;
+    const check = () => {
+      try {
+        const staffList: any[] = JSON.parse(localStorage.getItem('rly_staff_master') ?? '[]');
+        const overrides: Record<string, string> = JSON.parse(localStorage.getItem('rly_user_status_overrides') ?? '{}');
+        const member = staffList.find((s: any) => s.id === userId);
+        const status = overrides[userId] ?? member?.status ?? 'pending';
+        if (status === 'active' || status === 'approved') {
+          setApprovalStatus('approved');
+        }
+      } catch { /* ignore */ }
+    };
+    check(); // immediate check on mount
+    const interval = setInterval(check, 5000);
+    return () => clearInterval(interval);
+  }, [step, userId]);
 
   // OTP countdown timer
   useEffect(() => {
@@ -276,62 +296,109 @@ export default function SignupPage() {
         {/* ── STEP 3: Pending Approval ──────────────────────────────── */}
         {step === 'pending' && (
           <div className="bg-white/5 border border-white/10 rounded-2xl p-8 backdrop-blur-sm text-center space-y-6">
-            <div className="w-14 h-14 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center mx-auto">
-              <Clock size={24} className="text-amber-400"/>
-            </div>
-            <div>
-              <h2 className="text-white text-xl font-bold mb-2">Registration Submitted</h2>
-              <p className="text-white/50 text-sm leading-relaxed">
-                Your account is pending approval by your Cell In-Charge or Maintenance team.
-                You will receive an email once your account is activated.
-              </p>
-            </div>
 
-            {/* Status timeline */}
-            <div className="text-left space-y-3">
-              {[
-                { label: 'Form submitted', done: true },
-                { label: 'Email verified', done: true },
-                { label: 'Pending In-Charge / Maintenance approval', done: false, active: true },
-                { label: 'Account activation', done: false },
-                { label: 'First login & password setup', done: false },
-              ].map((item, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <div className={cn('w-5 h-5 rounded-full border flex items-center justify-center shrink-0',
-                    item.done ? 'bg-emerald-500 border-emerald-500' : item.active ? 'border-amber-400 bg-amber-400/10' : 'border-white/20')}>
-                    {item.done ? <Check size={11} className="text-white"/> : item.active ? <Clock size={10} className="text-amber-400"/> : null}
-                  </div>
-                  <span className={cn('text-sm', item.done ? 'text-emerald-400' : item.active ? 'text-amber-300 font-semibold' : 'text-white/30')}>{item.label}</span>
+            {approvalStatus === 'approved' ? (
+              /* ── APPROVED state ── */
+              <>
+                <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center mx-auto">
+                  <CheckCircle2 size={24} className="text-emerald-400"/>
                 </div>
-              ))}
-            </div>
+                <div>
+                  <h2 className="text-white text-xl font-bold mb-2">Account Activated!</h2>
+                  <p className="text-white/50 text-sm leading-relaxed">
+                    Your account has been approved. You can now sign in with your credentials.
+                  </p>
+                </div>
 
-            {/* Generated credentials (for Incharge-created accounts) */}
-            {generatedPwd && (
-              <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-left space-y-2">
-                <p className="text-white/50 text-[11px] font-bold uppercase tracking-wider">Your temporary credentials</p>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-white/30 text-[10px]">Login ID</p>
-                    <p className="text-white font-mono text-sm">{form.email}</p>
-                  </div>
+                {/* All steps done */}
+                <div className="text-left space-y-3">
+                  {[
+                    'Form submitted',
+                    'Email verified',
+                    'Approved by In-Charge / Maintenance',
+                    'Account activated',
+                  ].map((label, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                      <div className="w-5 h-5 rounded-full bg-emerald-500 border-emerald-500 border flex items-center justify-center shrink-0">
+                        <Check size={11} className="text-white"/>
+                      </div>
+                      <span className="text-sm text-emerald-400">{label}</span>
+                    </div>
+                  ))}
                 </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-white/30 text-[10px]">Temporary Password</p>
-                    <p className="text-white font-mono text-sm">{generatedPwd}</p>
+
+                {/* Credentials box */}
+                {generatedPwd && (
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-left space-y-2">
+                    <p className="text-white/50 text-[11px] font-bold uppercase tracking-wider">Your login credentials</p>
+                    <div><p className="text-white/30 text-[10px]">Login ID</p><p className="text-white font-mono text-sm">{form.email}</p></div>
+                    <div className="flex items-center justify-between">
+                      <div><p className="text-white/30 text-[10px]">Temporary Password</p><p className="text-white font-mono text-sm">{generatedPwd}</p></div>
+                      <button onClick={copyPwd} className="p-2 rounded-lg hover:bg-white/10 text-white/40 hover:text-white transition-colors">
+                        {copied ? <Check size={14} className="text-emerald-400"/> : <Copy size={14}/>}
+                      </button>
+                    </div>
+                    <p className="text-amber-400/80 text-[10px] flex items-center gap-1"><AlertCircle size={10}/> Change this password on first login</p>
                   </div>
-                  <button onClick={copyPwd} className="p-2 rounded-lg hover:bg-white/10 text-white/40 hover:text-white transition-colors">
-                    {copied ? <Check size={14} className="text-emerald-400"/> : <Copy size={14}/>}
-                  </button>
+                )}
+
+                <a href="/login" className="inline-flex items-center justify-center gap-2 w-full py-3 bg-rail-600 hover:bg-rail-500 text-white text-sm font-semibold rounded-xl transition-colors">
+                  <ChevronRight size={15}/> Sign In Now
+                </a>
+              </>
+            ) : (
+              /* ── PENDING state ── */
+              <>
+                <div className="w-14 h-14 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center mx-auto">
+                  <Clock size={24} className="text-amber-400"/>
                 </div>
-                <p className="text-amber-400/80 text-[10px] flex items-center gap-1"><AlertCircle size={10}/> Change this password on first login</p>
-              </div>
+                <div>
+                  <h2 className="text-white text-xl font-bold mb-2">Registration Submitted</h2>
+                  <p className="text-white/50 text-sm leading-relaxed">
+                    Your account is pending approval by your Cell In-Charge or Maintenance team.
+                    This page checks automatically — you&apos;ll see a confirmation here once approved.
+                  </p>
+                </div>
+
+                {/* Status timeline */}
+                <div className="text-left space-y-3">
+                  {[
+                    { label: 'Form submitted', done: true },
+                    { label: 'Email verified', done: true },
+                    { label: 'Pending In-Charge / Maintenance approval', done: false, active: true },
+                    { label: 'Account activation', done: false },
+                    { label: 'First login & password setup', done: false },
+                  ].map((item, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                      <div className={cn('w-5 h-5 rounded-full border flex items-center justify-center shrink-0',
+                        item.done ? 'bg-emerald-500 border-emerald-500' : item.active ? 'border-amber-400 bg-amber-400/10' : 'border-white/20')}>
+                        {item.done ? <Check size={11} className="text-white"/> : item.active ? <Clock size={10} className="text-amber-400"/> : null}
+                      </div>
+                      <span className={cn('text-sm', item.done ? 'text-emerald-400' : item.active ? 'text-amber-300 font-semibold' : 'text-white/30')}>{item.label}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Generated credentials */}
+                {generatedPwd && (
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-left space-y-2">
+                    <p className="text-white/50 text-[11px] font-bold uppercase tracking-wider">Your temporary credentials</p>
+                    <div><p className="text-white/30 text-[10px]">Login ID</p><p className="text-white font-mono text-sm">{form.email}</p></div>
+                    <div className="flex items-center justify-between">
+                      <div><p className="text-white/30 text-[10px]">Temporary Password</p><p className="text-white font-mono text-sm">{generatedPwd}</p></div>
+                      <button onClick={copyPwd} className="p-2 rounded-lg hover:bg-white/10 text-white/40 hover:text-white transition-colors">
+                        {copied ? <Check size={14} className="text-emerald-400"/> : <Copy size={14}/>}
+                      </button>
+                    </div>
+                    <p className="text-amber-400/80 text-[10px] flex items-center gap-1"><AlertCircle size={10}/> Change this password on first login</p>
+                  </div>
+                )}
+
+                <a href="/login" className="flex items-center justify-center gap-1.5 text-white/50 hover:text-white text-sm transition-colors">
+                  <ArrowLeft size={13}/> Return to Sign In
+                </a>
+              </>
             )}
-
-            <a href="/login" className="flex items-center justify-center gap-1.5 text-white/50 hover:text-white text-sm transition-colors">
-              <ArrowLeft size={13}/> Return to Sign In
-            </a>
           </div>
         )}
       </div>

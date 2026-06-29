@@ -62,6 +62,27 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// ── DELETE /api/users — permanently remove a user from KV ────────────────────
+export async function DELETE(req: NextRequest) {
+  const kv = await getKV();
+  if (!kv) return NextResponse.json({ ok: false, reason: 'kv_unavailable' });
+
+  let body: { email?: string };
+  try { body = await req.json(); } catch {
+    return NextResponse.json({ error: 'invalid json' }, { status: 400 });
+  }
+
+  const email = body.email?.toLowerCase().trim();
+  if (!email) return NextResponse.json({ error: 'email required' }, { status: 400 });
+
+  try {
+    await kv.del(KEY(email));
+    return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json({ ok: false, reason: 'kv_error' });
+  }
+}
+
 // ── POST /api/users — upsert fields (only supplied fields are overwritten) ────
 export async function POST(req: NextRequest) {
   const kv = await getKV();

@@ -845,7 +845,9 @@ export default function UsersPage() {
      }
      continue;
     }
-    // New user — add staff record
+    // New user — but skip permanently deleted users (they're in the blocklist)
+    const deletedIds: string[] = JSON.parse(localStorage.getItem('rly_deleted_users') ?? '[]');
+    if (u.staffRecord.id && deletedIds.includes(u.staffRecord.id as string)) continue;
     staffList.push(u.staffRecord);
     existingEmails.add(email);
     // Create a pending membership so they show in the approval queue
@@ -1220,6 +1222,15 @@ export default function UsersPage() {
 
  // 6. Notify live staff rosters
  window.dispatchEvent(new CustomEvent('rly_staff_changed'));
+
+ // 7. Remove from KV so mergeUsersFromServer can't re-add them on next page load
+ if (u.email) {
+  fetch('/api/users', {
+   method: 'DELETE',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({ email: u.email }),
+  }).catch(() => {});
+ }
  } catch (err) {
  console.error('Hard delete failed:', err);
  }

@@ -105,7 +105,9 @@ export async function authenticateUser(
                 }
                 if (serverData.status && serverData.staffRecord?.id) {
                   const ov = JSON.parse(localStorage.getItem('rly_user_status_overrides') ?? '{}');
-                  if (!ov[serverData.staffRecord.id]) { ov[serverData.staffRecord.id] = serverData.status; localStorage.setItem('rly_user_status_overrides', JSON.stringify(ov)); }
+                  // Always overwrite — KV has the authoritative status (e.g. admin approved on another device)
+                  ov[serverData.staffRecord.id] = serverData.status;
+                  localStorage.setItem('rly_user_status_overrides', JSON.stringify(ov));
                 }
                 dbUser = serverData.staffRecord;
               }
