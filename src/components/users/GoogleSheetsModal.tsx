@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 import {
  getGSheetConfig, saveGSheetConfig, clearGSheetConfig,
  fetchSheetData, normaliseSheetUrl, autoDetectColumns,
- syncGoogleSheet,
+ syncGoogleSheet, clearImportHistory,
  type GSheetConfig, type GSheetColumnMap, type SyncResult,
 } from '@/lib/integrations/googleSheets';
 
@@ -448,18 +448,34 @@ export function GoogleSheetsModal({
 
        {/* Sync result */}
        {syncResult && (
-        <div className={cn('rounded-xl border p-3', syncResult.error ? 'border-red-200 bg-red-50' : 'border-emerald-200 bg-emerald-50')}>
+        <div className={cn('rounded-xl border p-3', syncResult.error ? 'border-red-200 bg-red-50' : syncResult.added > 0 ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50')}>
          {syncResult.error ? (
           <p className="text-xs text-red-700 flex items-center gap-1.5">
            <AlertTriangle size={12}/> {syncResult.error}
           </p>
          ) : (
-          <div className="flex items-center gap-4">
-           <CheckCircle2 size={16} className="text-emerald-500 shrink-0"/>
-           <p className="text-xs text-emerald-800">
-            <span className="font-bold">{syncResult.added}</span> new user{syncResult.added !== 1 ? 's' : ''} added as Pending ·{' '}
-            <span className="font-semibold">{syncResult.skipped}</span> already existed
-           </p>
+          <div className="space-y-2">
+           <div className="flex items-center gap-3">
+            <CheckCircle2 size={15} className={syncResult.added > 0 ? 'text-emerald-500 shrink-0' : 'text-amber-500 shrink-0'}/>
+            <p className="text-xs text-slate-800 flex-1">
+             <span className="font-bold">{syncResult.added}</span> new user{syncResult.added !== 1 ? 's' : ''} added as Pending ·{' '}
+             <span className="font-semibold">{syncResult.skipped}</span> already in system
+            </p>
+           </div>
+           {syncResult.skipped > 0 && syncResult.added === 0 && (
+            <p className="text-[10px] text-amber-700">
+             All rows were previously imported. If users are not visible in User Management, use{' '}
+             <button
+              onClick={async () => {
+               clearImportHistory();
+               setSyncResult(null);
+              }}
+              className="underline font-semibold hover:text-amber-900">
+              Re-import All
+             </button>
+             {' '}to reset and sync again.
+            </p>
+           )}
           </div>
          )}
         </div>

@@ -808,7 +808,8 @@ export default function UsersPage() {
     )
    );
    syncGoogleSheet(cfg, emails, handleGSheetAddUser).then(result => {
-    if (result.added > 0) { setGsheetSyncResult(result); refresh(); }
+    setGsheetSyncResult(result);
+    refresh();
     setGsheetConnected(true);
    });
   }
@@ -1416,7 +1417,7 @@ export default function UsersPage() {
    existingEmails={new Set(allUsers.map(u => u.email.toLowerCase()))}
    onAddUser={handleGSheetAddUser}
    onClose={() => { setShowGSheet(false); setGsheetConnected(!!getGSheetConfig()); }}
-   onSyncDone={(result) => { setGsheetSyncResult(result); if (result.added > 0) refresh(); }}
+   onSyncDone={(result) => { setGsheetSyncResult(result); refresh(); }}
   />
  )}
  {showBulk && (

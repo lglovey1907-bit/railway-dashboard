@@ -59,6 +59,12 @@ export function clearGSheetConfig(): void {
  localStorage.removeItem(IMPORTED_KEY);
 }
 
+/** Clear only the import-history log so all rows are re-evaluated on next sync. */
+export function clearImportHistory(): void {
+ if (typeof window === 'undefined') return;
+ localStorage.removeItem(IMPORTED_KEY);
+}
+
 function getImportedEmails(): Set<string> {
  if (typeof window === 'undefined') return new Set();
  try { return new Set(JSON.parse(localStorage.getItem(IMPORTED_KEY) ?? '[]')); } catch { return new Set(); }
