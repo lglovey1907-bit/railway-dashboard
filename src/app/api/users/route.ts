@@ -51,8 +51,27 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // ── GET ?hrmsId=xxx — look up by HRMS ID ─────────────────────────────────
+  // KV records are keyed by email. When the user logs in with their HRMS ID
+  // (not email), auth.ts can't find the record with ?email=<hrmsId>.
+  // This endpoint scans all records to find one whose staffRecord.hrmsId matches.
+  const hrmsId = req.nextUrl.searchParams.get('hrmsId');
+  if (hrmsId) {
+    try {
+      const keys: string[] = await kv.keys('rly:user:*');
+      if (!keys.length) return NextResponse.json(null);
+      const records: (ServerUserRecord | null)[] = await kv.mget(...keys);
+      const match = records.find(
+        r => r && (r.staffRecord as any)?.hrmsId?.toLowerCase() === hrmsId.toLowerCase().trim()
+      );
+      return NextResponse.json(match ?? null);
+    } catch {
+      return NextResponse.json(null, { status: 503 });
+    }
+  }
+
   const email = req.nextUrl.searchParams.get('email');
-  if (!email) return NextResponse.json({ error: 'email or all param required' }, { status: 400 });
+  if (!email) return NextResponse.json({ error: 'email, hrmsId, or all param required' }, { status: 400 });
 
   try {
     const data = await kv.get<ServerUserRecord>(KEY(email));

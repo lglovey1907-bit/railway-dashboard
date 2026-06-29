@@ -83,7 +83,13 @@ export async function authenticateUser(
         // ── Cross-device fallback: fetch from server if user not in localStorage ──
         if (!dbUser) {
           try {
-            const res = await fetch(`/api/users?email=${encodeURIComponent(emailInput)}`, { cache: 'no-store' });
+            // emailInput may be an HRMS ID (no '@'). KV keys are by email, so
+            // if it looks like an HRMS ID use ?hrmsId= which scans staffRecord.hrmsId.
+            const isEmail = emailInput.includes('@');
+            const kvParam = isEmail
+              ? `email=${encodeURIComponent(emailInput)}`
+              : `hrmsId=${encodeURIComponent(emailInput)}`;
+            const res = await fetch(`/api/users?${kvParam}`, { cache: 'no-store' });
             if (res.ok) {
               const serverData = await res.json();
               if (serverData?.staffRecord) {
@@ -124,7 +130,11 @@ export async function authenticateUser(
           const localStatus = localOv[dbUser.id] ?? dbUser.status ?? 'pending';
           if (localStatus === 'pending') {
             try {
-              const res = await fetch(`/api/users?email=${encodeURIComponent(emailInput)}`, { cache: 'no-store' });
+              // IMPORTANT: use dbUser.email — not emailInput.
+              // If the user logged in with their HRMS ID, emailInput is the HRMS ID (e.g. 'UTSPRSSRCCTC123').
+              // KV records are keyed by email address, so ?email=<hrmsId> always returns null.
+              const kvEmail = dbUser.email?.toLowerCase().trim() ?? emailInput;
+              const res = await fetch(`/api/users?email=${encodeURIComponent(kvEmail)}`, { cache: 'no-store' });
               if (res.ok) {
                 const serverData = await res.json();
                 if (serverData?.status) {
