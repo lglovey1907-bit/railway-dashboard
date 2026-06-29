@@ -62,6 +62,32 @@ export default function LoginPage() {
  const loggedInUser = await login(email.trim(), password);
  if (!loggedInUser) return;
 
+ // ── Sync this user to KV so any device can log in (non-blocking) ──────
+ // Handles users who registered before server-sync code was added
+ try {
+   const staffList: any[] = JSON.parse(localStorage.getItem('rly_staff_master') ?? '[]');
+   const dbRecord = staffList.find((s: any) =>
+     s.email?.toLowerCase() === loggedInUser.email.toLowerCase()
+   );
+   if (dbRecord) {
+     const pwdMap: Record<string, string> = JSON.parse(localStorage.getItem('rly_user_passwords') ?? '{}');
+     const storedPwd = pwdMap[loggedInUser.email.toLowerCase()];
+     const statusOv: Record<string, string> = JSON.parse(localStorage.getItem('rly_user_status_overrides') ?? '{}');
+     const status = statusOv[dbRecord.id] ?? dbRecord.status ?? 'pending';
+     fetch('/api/users', {
+       method: 'POST',
+       headers: { 'Content-Type': 'application/json' },
+       body: JSON.stringify({
+         email: loggedInUser.email,
+         staffRecord: dbRecord,
+         password: storedPwd,
+         mustChange: mustChangePassword(loggedInUser.email.toLowerCase()),
+         status,
+       }),
+     }).catch(() => {});
+   }
+ } catch { /* non-critical — localStorage may be unavailable */ }
+
  // Maintenance & Admin accounts skip OTP — go straight to dashboard
  if (loggedInUser.role === 'maintenance' || loggedInUser.role === 'admin') {
  router.replace('/dashboard');

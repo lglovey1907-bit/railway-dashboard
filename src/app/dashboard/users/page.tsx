@@ -791,6 +791,8 @@ export default function UsersPage() {
  const [showGSheet, setShowGSheet] = useState(false);
  const [gsheetSyncResult, setGsheetSyncResult] = useState<SyncResult | null>(null);
  const [gsheetConnected, setGsheetConnected] = useState(false);
+ const [syncingToServer, setSyncingToServer] = useState(false);
+ const [serverSyncResult, setServerSyncResult] = useState<string | null>(null);
  const [editUser, setEditUser] = useState<DisplayUser | null>(null);
  const [detailUser, setDetailUser] = useState<DisplayUser | null>(null);
  const [confirmDelete, setConfirmDelete] = useState<DisplayUser | null>(null);
@@ -1088,6 +1090,37 @@ export default function UsersPage() {
  refresh();
  };
 
+ // ── Sync ALL existing staff to Vercel KV (one-time admin action) ─────────
+ const handleSyncAllToServer = async () => {
+   setSyncingToServer(true);
+   setServerSyncResult(null);
+   try {
+     const staffList: any[] = JSON.parse(localStorage.getItem('rly_staff_master') ?? '[]');
+     const pwdMap: Record<string, string> = JSON.parse(localStorage.getItem('rly_user_passwords') ?? '{}');
+     const statusOv: Record<string, string> = JSON.parse(localStorage.getItem('rly_user_status_overrides') ?? '{}');
+     let ok = 0, failed = 0;
+     await Promise.all(staffList.map(async (s: any) => {
+       if (!s.email) return;
+       const email = s.email.toLowerCase();
+       const pwd = pwdMap[email];
+       const status = statusOv[s.id] ?? s.status ?? 'pending';
+       try {
+         const res = await fetch('/api/users', {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({ email, staffRecord: s, password: pwd, mustChange: false, status }),
+         });
+         const data = await res.json();
+         if (data?.ok) ok++; else failed++;
+       } catch { failed++; }
+     }));
+     setServerSyncResult(`✓ Synced ${ok} users to server${failed ? ` (${failed} failed)` : ''}`);
+   } catch {
+     setServerSyncResult('✗ Sync failed — check KV connection');
+   }
+   setSyncingToServer(false);
+ };
+
  const handleHardDelete = (u: DisplayUser) => {
  try {
  // 1. Remove from staffDB master (works for staff_db users)
@@ -1178,6 +1211,14 @@ export default function UsersPage() {
                ) : 'Connect Sheet'}
               </button>
               <button onClick={() => setShowBulk(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-semibold hover:bg-emerald-100 transition-colors"><Upload size={13}/> Bulk Import</button>
+              <button
+                onClick={handleSyncAllToServer}
+                disabled={syncingToServer}
+                title="Push all users to server so they can log in from any device"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-violet-200 bg-violet-50 text-violet-700 text-xs font-semibold hover:bg-violet-100 transition-colors disabled:opacity-50">
+                {syncingToServer ? <RefreshCw size={13} className="animate-spin"/> : <RefreshCw size={13}/>}
+                Sync to Server
+              </button>
               <button onClick={() => { setEditUser(null); setShowAdd(true); }} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors shadow-elevation-sm">
                 <Plus size={15}/> Add Staff
               </button>
@@ -1185,6 +1226,14 @@ export default function UsersPage() {
           )}
  </div>
  </div>
+
+ {/* Server sync result banner */}
+ {serverSyncResult && (
+  <div className={`rounded-xl border px-4 py-3 flex items-center justify-between ${serverSyncResult.startsWith('✓') ? 'border-violet-200 bg-violet-50' : 'border-red-200 bg-red-50'}`}>
+   <p className={`text-sm font-semibold ${serverSyncResult.startsWith('✓') ? 'text-violet-800' : 'text-red-700'}`}>{serverSyncResult}</p>
+   <button onClick={() => setServerSyncResult(null)} className="text-slate-400 hover:text-slate-600"><X size={14}/></button>
+  </div>
+ )}
 
  {/* Google Sheets auto-sync banner */}
  {gsheetSyncResult && gsheetSyncResult.added > 0 && (

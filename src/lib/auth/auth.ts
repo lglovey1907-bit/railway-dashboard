@@ -98,6 +98,10 @@ export async function authenticateUser(
                 if (serverData.mustChange) {
                   const mc: string[] = JSON.parse(localStorage.getItem('rly_must_change_pwd') ?? '[]');
                   if (!mc.includes(emailInput)) localStorage.setItem('rly_must_change_pwd', JSON.stringify([...mc, emailInput]));
+                } else {
+                  // User already finished first-login on another device — skip OTP on this device too
+                  const ver: string[] = JSON.parse(localStorage.getItem('rly_email_verified') ?? '[]');
+                  if (!ver.includes(emailInput)) { ver.push(emailInput); localStorage.setItem('rly_email_verified', JSON.stringify(ver)); }
                 }
                 if (serverData.status && serverData.staffRecord?.id) {
                   const ov = JSON.parse(localStorage.getItem('rly_user_status_overrides') ?? '{}');
