@@ -74,7 +74,7 @@ function AddUserModal({ user, onClose, onSave, cells, currentUser }: {
  const isEdit = !!user;
  const [form, setForm] = useState({
  name: user?.name ?? '', email: user?.email ?? '', mobile: user?.mobile ?? '',
- designation: user?.designation ?? '', cell: user?.cell ?? '', hrmsId: user?.hrmsId ?? '',
+ designation: user?.designation ?? '', cell: (user?.role === 'incharge' && user?.cell === 'All') ? '' : (user?.cell ?? ''), hrmsId: user?.hrmsId ?? '',
  workingAs: user?.workingAs ?? '', role: user?.role ?? 'user', status: user?.status ?? 'active',
  reportingOfficer: '',
  });
@@ -120,8 +120,8 @@ function AddUserModal({ user, onClose, onSave, cells, currentUser }: {
  const r = e.target.value;
  set('role', r);
  if (r === 'admin' || r === 'maintenance') set('cell', 'All');
- // Incharge must have a specific cell — clear 'All' if previously set
- if (r === 'incharge' && form.cell === 'All') set('cell', '');
+ // Incharge must pick a specific cell — always clear 'All' when switching to incharge
+ if (r === 'incharge') set('cell', (prev => prev === 'All' ? '' : prev)(form.cell));
  }}
  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-blue-400">
  <option value="user">User</option>
@@ -139,7 +139,11 @@ function AddUserModal({ user, onClose, onSave, cells, currentUser }: {
  )}
  </label>
  <select value={form.cell} onChange={e => set('cell', e.target.value)}
- className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-blue-400">
+ className={`w-full bg-slate-50 border rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-blue-400 ${
+ form.role === 'incharge' && !form.cell
+ ? 'border-amber-400 ring-1 ring-amber-300'
+ : 'border-slate-300'
+ }`}>
  <option value="">— Select Cell —</option>
  {(form.role === 'admin' || form.role === 'maintenance') && (
  <option value="All">All (System-wide)</option>
