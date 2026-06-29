@@ -79,7 +79,10 @@ function AddUserModal({ user, onClose, onSave, cells, currentUser }: {
  reportingOfficer: '',
  });
  const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
- const valid = form.name.trim() && form.email.trim() && form.designation.trim() && form.cell;
+ const cellValid = form.role === 'incharge'
+ ? (form.cell && form.cell !== 'All')  // incharge must have a specific cell
+ : !!form.cell;                          // other roles just need any cell
+ const valid = form.name.trim() && form.email.trim() && form.designation.trim() && cellValid;
 
  return (
  <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"onClick={onClose}>
@@ -117,6 +120,8 @@ function AddUserModal({ user, onClose, onSave, cells, currentUser }: {
  const r = e.target.value;
  set('role', r);
  if (r === 'admin' || r === 'maintenance') set('cell', 'All');
+ // Incharge must have a specific cell — clear 'All' if previously set
+ if (r === 'incharge' && form.cell === 'All') set('cell', '');
  }}
  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-blue-400">
  <option value="user">User</option>
@@ -127,7 +132,12 @@ function AddUserModal({ user, onClose, onSave, cells, currentUser }: {
  </div>
 
  <div>
- <label className="text-xs font-semibold text-slate-500 block mb-1.5">Department / Cell *</label>
+ <label className="text-xs font-semibold text-slate-500 block mb-1.5">
+ Department / Cell *
+ {form.role === 'incharge' && (
+ <span className="ml-1.5 text-[10px] font-medium text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">Required for Incharge</span>
+ )}
+ </label>
  <select value={form.cell} onChange={e => set('cell', e.target.value)}
  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-blue-400">
  <option value="">— Select Cell —</option>
