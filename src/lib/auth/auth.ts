@@ -115,6 +115,33 @@ export async function authenticateUser(
           } catch { /* server unavailable — continue with localStorage only */ }
         }
 
+        // ── Status refresh for same-device users ─────────────────────────────
+        // Problem: user registered from THIS device → dbUser found locally (status='pending')
+        // → the !dbUser KV fallback never runs → admin's approval (in KV) is never seen.
+        // Fix: if local status is still 'pending', always check KV for an updated status.
+        if (dbUser) {
+          const localOv = JSON.parse(localStorage.getItem('rly_user_status_overrides') ?? '{}');
+          const localStatus = localOv[dbUser.id] ?? dbUser.status ?? 'pending';
+          if (localStatus === 'pending') {
+            try {
+              const res = await fetch(`/api/users?email=${encodeURIComponent(emailInput)}`, { cache: 'no-store' });
+              if (res.ok) {
+                const serverData = await res.json();
+                if (serverData?.staffRecord?.id && serverData.status) {
+                  // Admin approved on their device → KV has the real status → apply it here
+                  localOv[serverData.staffRecord.id] = serverData.status;
+                  localStorage.setItem('rly_user_status_overrides', JSON.stringify(localOv));
+                }
+                // Also sync password if KV has one and we don't yet
+                if (serverData?.password) {
+                  const pwds = JSON.parse(localStorage.getItem('rly_user_passwords') ?? '{}');
+                  if (!pwds[emailInput]) { pwds[emailInput] = serverData.password; localStorage.setItem('rly_user_passwords', JSON.stringify(pwds)); }
+                }
+              }
+            } catch { /* KV unavailable — local status used as fallback */ }
+          }
+        }
+
         if (dbUser) {
           const statusOverrides = JSON.parse(localStorage.getItem('rly_user_status_overrides') ?? '{}');
           const effectiveStatus = statusOverrides[dbUser.id] ?? dbUser.status ?? 'pending';

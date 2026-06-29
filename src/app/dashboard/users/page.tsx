@@ -996,8 +996,17 @@ export default function UsersPage() {
  const ids = Array.from(selected);
  ids.forEach(id => {
  if (['active','inactive','suspended','retired'].includes(bulkAction)) {
- setUserStatus(id, bulkAction as UserStatus);
- addAudit(id, `Status changed to ${bulkAction} (bulk action)`, currentUser?.id, currentUser?.name);
+  setUserStatus(id, bulkAction as UserStatus);
+  addAudit(id, `Status changed to ${bulkAction} (bulk action)`, currentUser?.id, currentUser?.name);
+  // Sync to KV so status change is visible cross-device
+  const target = allUsers.find(u => u.id === id);
+  if (target?.email) {
+   fetch('/api/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: target.email, status: bulkAction }),
+   }).catch(() => {});
+  }
  }
  });
  notifyStaffChanged();
@@ -1010,6 +1019,15 @@ export default function UsersPage() {
  notifyStaffChanged();
  refresh();
  if (detailUser?.id === userId) setDetailUser(d => d ? { ...d, status } : d);
+ // Sync to KV so the status change is visible cross-device
+ const target = allUsers.find(u => u.id === userId);
+ if (target?.email) {
+  fetch('/api/users', {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({ email: target.email, status }),
+  }).catch(() => {});
+ }
  };
 
  const handleTransfer = (userId: string, toCell: string) => {
@@ -1053,6 +1071,15 @@ export default function UsersPage() {
 
  // Fire event so CellStaffRoster updates live
  window.dispatchEvent(new CustomEvent('rly_staff_changed'));
+
+ // Sync deactivation to KV so user can't login from other devices either
+ if (u.email) {
+  fetch('/api/users', {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({ email: u.email, status: 'inactive' }),
+  }).catch(() => {});
+ }
  } catch (err) {
  console.error('Delete failed:', err);
  }
@@ -1086,6 +1113,15 @@ export default function UsersPage() {
  localStorage.setItem(auditKey, JSON.stringify(audit.slice(-2000)));
 
  window.dispatchEvent(new CustomEvent('rly_staff_changed'));
+
+ // Sync to KV so restored status is visible cross-device
+ if (u.email) {
+  fetch('/api/users', {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({ email: u.email, status: 'active' }),
+  }).catch(() => {});
+ }
  } catch (err) {
  console.error('Restore failed:', err);
  }
