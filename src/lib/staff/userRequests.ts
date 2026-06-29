@@ -114,10 +114,12 @@ export function adminAddUser(data: {
  designation: data.designation, cell: data.cell, division: 'Delhi',
  role: resolvedRole, hrmsId: data.hrmsId, workingAs: data.workingAs,
  });
- // Set default password and flag must-change on first login
+ // Set default password only if the user doesn't already have one
+ // (prevents overwriting a changed password if this function is called twice)
  if (data.email) {
- const { registerUserPassword } = require('../auth/passwordStore');
- registerUserPassword(data.email, data.cell, data.designation);
+ const { registerUserPassword, getUserPassword } = require('../auth/passwordStore');
+ const existing = getUserPassword(data.email);
+ if (!existing) registerUserPassword(data.email, data.cell, data.designation);
  }
  if (autoApprove) {
  const { approveMembership, getAllMemberships } = require('./staffDB');

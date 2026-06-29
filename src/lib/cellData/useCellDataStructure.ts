@@ -266,11 +266,10 @@ export function useCellDataStructure(cell: string) {
 }
 
 /**
- * A user can manage a cell's data structure (create/delete tables, fields,
- * rows, nominations) if:
- * - they are Maintenance or Admin (full override), OR
- * - they belong to that exact cell AND their workingAs is CMI or COS
- * (the two designations defined as"head of the cell").
+ * A user can manage a cell's data structure (create windows, tables, sections, etc.) if:
+ * - they are Maintenance or Admin (full access to all cells), OR
+ * - they belong to that exact cell (any role — user, incharge, CMI, COS all have
+ *   full workspace creation rights within their own cell)
  */
 export function canManageCellStructure(
  user: { cell: string; role: string; workingAs?: string } | null,
@@ -278,10 +277,8 @@ export function canManageCellStructure(
 ): boolean {
  if (!user) return false;
  if (user.role === 'maintenance' || user.role === 'admin') return true;
- if (user.cell !== cell) return false;
- // incharge has full control of their own cell
- if (user.role === 'incharge') return true;
- return user.workingAs === 'CMI' || user.workingAs === 'COS';
+ // Any user assigned to this cell can manage its workspace
+ return user.cell === cell;
 }
 
 /**

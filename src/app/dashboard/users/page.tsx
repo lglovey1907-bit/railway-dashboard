@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import { mockUsers } from '@/lib/data/mockData';
-import { getAllStaff, getAllMemberships, getAudit, addAudit, updateStaffRecord, type StaffMember } from '@/lib/staff/staffDB';
+import { getAllStaff, getAllMemberships, getAudit, addAudit, updateStaffRecord, approveMembership, type StaffMember } from '@/lib/staff/staffDB';
 import {
  createRequest, setUserStatus, getUserStatus, getAllRequests,
  adminAddUser,
@@ -388,11 +388,26 @@ function BulkImportModal({ onClose, cells, currentUser, onImportDone }: {
   const validRows = rows.filter(r => !r._error);
   const errorRows = rows.filter(r => !!r._error);
   errors = errorRows.length;
+
+  // Build existing email set to prevent duplicate imports and password overwrites
+  const existingEmails = new Set<string>((() => {
+   try {
+    const staff = JSON.parse(localStorage.getItem('rly_staff_master') ?? '[]') as any[];
+    return staff.map((s: any) => s.email?.toLowerCase() ?? '');
+   } catch { return []; }
+  })());
+
   validRows.forEach(r => {
+   const emailLower = r.email.toLowerCase();
+   if (existingEmails.has(emailLower)) {
+    skipped++;  // Already exists — skip to avoid overwriting changed passwords
+    return;
+   }
    try {
     adminAddUser({ name: r.name, email: r.email, mobile: r.mobile, designation: r.designation,
      cell: r.cell, hrmsId: r.hrmsId, workingAs: r.workingAs, role: r.role },
      currentUser?.id ?? '', currentUser?.name ?? '', true);
+    existingEmails.add(emailLower); // Prevent same email twice in file
     created++;
    } catch {
     errors++;
@@ -812,6 +827,10 @@ export default function UsersPage() {
     refresh();
     setGsheetConnected(true);
    });
+  } else {
+   // No auto-sync: still refresh so client-side localStorage data is loaded
+   // (SSR renders with empty data; this ensures real data appears after hydration)
+   refresh();
   }
  // eslint-disable-next-line react-hooks/exhaustive-deps
  }, []);
@@ -1015,7 +1034,7 @@ export default function UsersPage() {
  // Always update status
  setUserStatus(editUser.id, form.status as UserStatus);
  if (editUser.source === 'staff_db') {
- // Persist all field changes to staffDB
+ // Persist all field changes to staffDB (including cell)
  updateStaffRecord(editUser.id, {
  name: form.name.trim(),
  email: form.email.trim(),
@@ -1024,8 +1043,14 @@ export default function UsersPage() {
  hrmsId: form.hrmsId || undefined,
  workingAs: form.workingAs || undefined,
  role: form.role as any,
+ cell: form.cell || editUser.cell || undefined,
  status: (form.status === 'active' ? 'approved' : form.status) as any,
  });
+ // When admin approves (sets active), approve all pending memberships too
+ if (form.status === 'active') {
+  const mems = getAllMemberships().filter(m => m.employeeId === editUser.id && m.approvalStatus !== 'approved');
+  mems.forEach(m => approveMembership(m.id, currentUser?.id ?? 'system', currentUser?.name ?? 'Admin'));
+ }
  } else {
  // Mock user — persist field overrides in localStorage
  const key = 'rly_mock_user_overrides';
@@ -1249,11 +1274,10 @@ export default function UsersPage() {
 
   // Separate pending from active/other
   const pendingUsers = filtered.filter(u => u.status === 'pending');
-  const activeUsers  = filtered.filter(u => u.status !== 'pending');
 
-  // Group active users by cell
+  // Group ALL users by cell (pending users appear both here AND in the amber queue above)
   const groups = new Map<string, DisplayUser[]>();
-  for (const u of activeUsers) {
+  for (const u of filtered) {
    const key = u.cell || 'Unassigned';
    if (!groups.has(key)) groups.set(key, []);
    groups.get(key)!.push(u);
