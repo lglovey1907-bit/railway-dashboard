@@ -127,10 +127,25 @@ export async function authenticateUser(
               const res = await fetch(`/api/users?email=${encodeURIComponent(emailInput)}`, { cache: 'no-store' });
               if (res.ok) {
                 const serverData = await res.json();
-                if (serverData?.staffRecord?.id && serverData.status) {
-                  // Admin approved on their device → KV has the real status → apply it here
-                  localOv[serverData.staffRecord.id] = serverData.status;
+                if (serverData?.status) {
+                  // Admin approved on their device → KV has the real status → apply it here.
+                  // Use staffRecord.id if available; fall back to dbUser.id (KV may only have
+                  // { email, status } when admin approved before staffRecord was included in POST).
+                  const targetId = serverData.staffRecord?.id ?? dbUser.id;
+                  localOv[targetId] = serverData.status;
                   localStorage.setItem('rly_user_status_overrides', JSON.stringify(localOv));
+                  // Also write back to rly_staff_master so future logins skip the KV round-trip
+                  if (serverData.status !== 'pending') {
+                    const sIdx = staffList.findIndex((s: any) => s.id === targetId);
+                    if (sIdx >= 0) {
+                      staffList[sIdx] = {
+                        ...staffList[sIdx],
+                        status: serverData.status === 'active' ? 'approved' : serverData.status,
+                        lastUpdatedAt: new Date().toISOString(),
+                      };
+                      localStorage.setItem('rly_staff_master', JSON.stringify(staffList));
+                    }
+                  }
                 }
                 // Also sync password if KV has one and we don't yet
                 if (serverData?.password) {

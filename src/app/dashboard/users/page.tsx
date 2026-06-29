@@ -991,6 +991,29 @@ export default function UsersPage() {
  const allSelected = filtered.length > 0 && filtered.every(u => selected.has(u.id));
  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(filtered.map(u => u.id)));
 
+ // ── Helper: build a complete staffRecord payload for a KV POST ───────────────
+ // Reads the raw rly_staff_master entry first (most complete); falls back to
+ // building from DisplayUser fields so cross-device login can always reconstruct
+ // the full user object even if the record was approved before KV syncing existed.
+ const buildStaffRecordForKV = (u: DisplayUser, newStatus?: string): Record<string, unknown> => {
+   const rawStaff: any[] = JSON.parse(localStorage.getItem('rly_staff_master') ?? '[]');
+   const raw = rawStaff.find((s: any) => s.id === u.id);
+   // staffRecord.status uses 'approved' (not 'active') to match the signup/staffDB layer
+   const staffStatus = newStatus === 'active' ? 'approved' : (newStatus ?? (raw?.status ?? 'approved'));
+   if (raw) {
+     return { ...raw, status: staffStatus, lastUpdatedAt: new Date().toISOString() };
+   }
+   return {
+     id: u.id, name: u.name, email: u.email,
+     mobile: u.mobile ?? '', designation: u.designation ?? '',
+     cell: u.cell ?? '', division: 'Delhi Division',
+     hrmsId: u.hrmsId ?? '', workingAs: u.workingAs ?? '',
+     role: u.role, status: staffStatus,
+     registeredAt: u.registeredAt ?? new Date().toISOString(),
+     lastUpdatedAt: new Date().toISOString(),
+   };
+ };
+
  const handleBulkAction = () => {
  if (!bulkAction || selected.size === 0) return;
  const ids = Array.from(selected);
@@ -998,13 +1021,13 @@ export default function UsersPage() {
  if (['active','inactive','suspended','retired'].includes(bulkAction)) {
   setUserStatus(id, bulkAction as UserStatus);
   addAudit(id, `Status changed to ${bulkAction} (bulk action)`, currentUser?.id, currentUser?.name);
-  // Sync to KV so status change is visible cross-device
+  // Sync to KV — include staffRecord so cross-device login can reconstruct the user
   const target = allUsers.find(u => u.id === id);
   if (target?.email) {
    fetch('/api/users', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: target.email, status: bulkAction }),
+    body: JSON.stringify({ email: target.email, status: bulkAction, staffRecord: buildStaffRecordForKV(target, bulkAction) }),
    }).catch(() => {});
   }
  }
@@ -1019,13 +1042,13 @@ export default function UsersPage() {
  notifyStaffChanged();
  refresh();
  if (detailUser?.id === userId) setDetailUser(d => d ? { ...d, status } : d);
- // Sync to KV so the status change is visible cross-device
+ // Sync to KV — include staffRecord so cross-device login can reconstruct the user
  const target = allUsers.find(u => u.id === userId);
  if (target?.email) {
   fetch('/api/users', {
    method: 'POST',
    headers: { 'Content-Type': 'application/json' },
-   body: JSON.stringify({ email: target.email, status }),
+   body: JSON.stringify({ email: target.email, status, staffRecord: buildStaffRecordForKV(target, status) }),
   }).catch(() => {});
  }
  };
@@ -1072,12 +1095,12 @@ export default function UsersPage() {
  // Fire event so CellStaffRoster updates live
  window.dispatchEvent(new CustomEvent('rly_staff_changed'));
 
- // Sync deactivation to KV so user can't login from other devices either
+ // Sync deactivation to KV — include staffRecord so the record stays complete
  if (u.email) {
   fetch('/api/users', {
    method: 'POST',
    headers: { 'Content-Type': 'application/json' },
-   body: JSON.stringify({ email: u.email, status: 'inactive' }),
+   body: JSON.stringify({ email: u.email, status: 'inactive', staffRecord: buildStaffRecordForKV(u, 'inactive') }),
   }).catch(() => {});
  }
  } catch (err) {
@@ -1114,12 +1137,12 @@ export default function UsersPage() {
 
  window.dispatchEvent(new CustomEvent('rly_staff_changed'));
 
- // Sync to KV so restored status is visible cross-device
+ // Sync to KV — include staffRecord so cross-device login works after restore
  if (u.email) {
   fetch('/api/users', {
    method: 'POST',
    headers: { 'Content-Type': 'application/json' },
-   body: JSON.stringify({ email: u.email, status: 'active' }),
+   body: JSON.stringify({ email: u.email, status: 'active', staffRecord: buildStaffRecordForKV(u, 'active') }),
   }).catch(() => {});
  }
  } catch (err) {
@@ -1170,12 +1193,34 @@ export default function UsersPage() {
  notifyStaffChanged();
  refresh();
 
- // ── Sync approval status to server so user can log in from any device ──
+ // ── Sync to KV — include full staffRecord so cross-device login can
+ //    reconstruct the user object even from a device that never had this user.
  if (editUser.email) {
+   // Build the staffRecord from rly_staff_master (post-updateStaffRecord call above)
+   // so KV gets the freshest version including any field changes made in this dialog.
+   const freshStaff: any[] = JSON.parse(localStorage.getItem('rly_staff_master') ?? '[]');
+   const rawRecord = freshStaff.find((s: any) => s.id === editUser.id);
+   const staffRecordForKV: Record<string, unknown> = rawRecord
+     ? { ...rawRecord, lastUpdatedAt: new Date().toISOString() }
+     : {
+         id: editUser.id, name: form.name?.trim() ?? editUser.name, email: editUser.email,
+         mobile: form.mobile ?? editUser.mobile ?? '',
+         designation: form.designation?.trim() ?? editUser.designation ?? '',
+         cell: form.cell ?? editUser.cell ?? '',
+         division: 'Delhi Division',
+         hrmsId: form.hrmsId ?? editUser.hrmsId ?? '',
+         workingAs: form.workingAs ?? editUser.workingAs ?? '',
+         role: form.role ?? editUser.role,
+         status: form.status === 'active' ? 'approved' : form.status,
+         registeredAt: editUser.registeredAt ?? new Date().toISOString(),
+         lastUpdatedAt: new Date().toISOString(),
+       };
+   // Ensure staffRecord.status uses 'approved' (not 'active') for consistency
+   if (staffRecordForKV.status === 'active') staffRecordForKV.status = 'approved';
    fetch('/api/users', {
      method: 'POST',
      headers: { 'Content-Type': 'application/json' },
-     body: JSON.stringify({ email: editUser.email, status: form.status }),
+     body: JSON.stringify({ email: editUser.email, status: form.status, staffRecord: staffRecordForKV }),
    }).catch(() => {}); // non-blocking
  }
  };
