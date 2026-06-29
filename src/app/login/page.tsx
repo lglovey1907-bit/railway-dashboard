@@ -127,6 +127,14 @@ export default function LoginPage() {
  setUserPassword(userEmail, newPwd);
  clearMustChangePassword(userEmail);
  updateUser({ mustChangePassword: false });
+
+ // ── Sync new password to server so other devices pick it up ───────────
+ fetch('/api/users', {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({ email: userEmail, password: newPwd, mustChange: false }),
+ }).catch(() => {}); // non-blocking
+
  setCpLoading(false);
  router.replace('/dashboard');
  };

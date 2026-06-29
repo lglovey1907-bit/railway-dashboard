@@ -1070,6 +1070,15 @@ export default function UsersPage() {
  addAudit(editUser.id, 'Profile updated by admin', currentUser?.id, currentUser?.name);
  notifyStaffChanged();
  refresh();
+
+ // ── Sync approval status to server so user can log in from any device ──
+ if (editUser.email) {
+   fetch('/api/users', {
+     method: 'POST',
+     headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify({ email: editUser.email, status: form.status }),
+   }).catch(() => {}); // non-blocking
+ }
  };
 
  const handleAddUser = (form: Record<string, string>, autoApprove: boolean) => {

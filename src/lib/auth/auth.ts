@@ -72,23 +72,50 @@ export async function authenticateUser(
  user = allMockUsers.find(u => u.hrmsId?.toLowerCase() === emailInput);
  }
 
- // Also check staffDB users
+ // Also check staffDB users (localStorage first, then server fallback for cross-device access)
  if (!user) {
  try {
- const staffDB: any[] = JSON.parse(localStorage.getItem('rly_staff_master') ?? '[]');
-        const dbUser = staffDB.find((s: any) =>
+ let staffList: any[] = JSON.parse(localStorage.getItem('rly_staff_master') ?? '[]');
+        let dbUser = staffList.find((s: any) =>
           s.email?.toLowerCase() === emailInput || s.hrmsId?.toLowerCase() === emailInput
         );
+
+        // ── Cross-device fallback: fetch from server if user not in localStorage ──
+        if (!dbUser) {
+          try {
+            const res = await fetch(`/api/users?email=${encodeURIComponent(emailInput)}`, { cache: 'no-store' });
+            if (res.ok) {
+              const serverData = await res.json();
+              if (serverData?.staffRecord) {
+                // Populate localStorage so future logins on this device are instant
+                staffList = [...staffList, serverData.staffRecord];
+                localStorage.setItem('rly_staff_master', JSON.stringify(staffList));
+
+                if (serverData.password) {
+                  const pwds = JSON.parse(localStorage.getItem('rly_user_passwords') ?? '{}');
+                  if (!pwds[emailInput]) { pwds[emailInput] = serverData.password; localStorage.setItem('rly_user_passwords', JSON.stringify(pwds)); }
+                }
+                if (serverData.mustChange) {
+                  const mc: string[] = JSON.parse(localStorage.getItem('rly_must_change_pwd') ?? '[]');
+                  if (!mc.includes(emailInput)) localStorage.setItem('rly_must_change_pwd', JSON.stringify([...mc, emailInput]));
+                }
+                if (serverData.status && serverData.staffRecord?.id) {
+                  const ov = JSON.parse(localStorage.getItem('rly_user_status_overrides') ?? '{}');
+                  if (!ov[serverData.staffRecord.id]) { ov[serverData.staffRecord.id] = serverData.status; localStorage.setItem('rly_user_status_overrides', JSON.stringify(ov)); }
+                }
+                dbUser = serverData.staffRecord;
+              }
+            }
+          } catch { /* server unavailable — continue with localStorage only */ }
+        }
+
         if (dbUser) {
           const statusOverrides = JSON.parse(localStorage.getItem('rly_user_status_overrides') ?? '{}');
           const effectiveStatus = statusOverrides[dbUser.id] ?? dbUser.status ?? 'pending';
           if (effectiveStatus === 'rejected' || effectiveStatus === 'inactive') {
             throw new Error('Account has been deactivated. Contact the Administrator.');
           }
-          // FIXED: removed 'pending' block — self-registered users are now set to 'active'
-          // after email OTP verification. Admins can deactivate if needed.
 
-          // FIXED: read cell from CellMembership table (StaffMember has no cell field)
           const allMemberships: any[] = JSON.parse(localStorage.getItem('rly_cell_memberships') ?? '[]');
           const approvedMemberships = allMemberships.filter(
             (m: any) => m.employeeId === dbUser.id && m.approvalStatus === 'approved'

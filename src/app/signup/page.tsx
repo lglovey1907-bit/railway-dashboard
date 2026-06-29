@@ -111,13 +111,35 @@ export default function SignupPage() {
     // Create account in pending state
     const uid = `u_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
     const pwd = generateDefaultPassword(form.cell, form.designation.trim());
-    registerEmployee({
+    const staffRecord = {
       id: uid, name: form.name.trim(), email: form.email.trim(),
       mobile: form.mobileNumber.trim(), designation: form.designation.trim(),
       cell: form.cell, division: 'Delhi Division', hrmsId: form.hrmsId.trim(),
       workingAs: form.workingAs, fatherHusbandName: form.fatherHusbandName.trim(),
+      status: 'pending', registeredAt: new Date().toISOString(), lastUpdatedAt: new Date().toISOString(),
+      role: 'user',
+    };
+    registerEmployee({
+      id: uid, name: staffRecord.name, email: staffRecord.email,
+      mobile: staffRecord.mobile, designation: staffRecord.designation,
+      cell: staffRecord.cell, division: staffRecord.division, hrmsId: staffRecord.hrmsId,
+      workingAs: staffRecord.workingAs, fatherHusbandName: staffRecord.fatherHusbandName,
     });
     registerUserPassword(form.email.trim(), form.cell, form.designation.trim());
+
+    // ── Sync to server so user can log in from any device ──────────────────
+    fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: form.email.trim(),
+        staffRecord,
+        password: pwd,
+        mustChange: true,
+        status: 'pending',
+      }),
+    }).catch(() => {}); // non-blocking — localStorage is the primary store
+
     setUserId(uid); setGenPwd(pwd);
     setSubmitting(false);
     setStep('pending');
