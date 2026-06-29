@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Table2, BarChart3, FileText, Users2, Activity, UserCheck,
@@ -425,7 +425,7 @@ function SmartKPI({ widget, onUpdate, canManage, workspaceHook }: {
         onClick={() => hasLiveSources && primaryTable && setDrillSource(primarySrc)}>
         <p className={cn('text-2xl font-bold leading-none', col.text)}>
           {displayValue}
-          {widget.kpiSuffix && !['currency','percent'].includes(widget.kpiFormat ?? '') && (
+          {widget.kpiSuffix && (
             <span className="text-sm ml-1 font-normal text-slate-400">{widget.kpiSuffix}</span>
           )}
         </p>
@@ -571,30 +571,310 @@ function QuickLinksWidget({ widget, onUpdate, canManage }: {
  );
 }
 
-function EmbedWidget({ widget, onUpdate, canManage }: {
+
+// ── Heading Widget ─────────────────────────────────────────────────────────────
+function HeadingWidget({ widget, onUpdate, canManage }: {
  widget: LayoutWidget; onUpdate: (p: Partial<LayoutWidget>) => void; canManage: boolean;
 }) {
- const [editing, setEditing] = useState(!widget.content);
- const [draft, setDraft] = useState(widget.content ?? '');
+ const [editing, setEditing] = useState(false);
+ const [text, setText] = useState((widget as any).richText ?? widget.title);
+ const [level, setLevel] = useState<1|2|3>((widget as any).headingLevel ?? 2);
+
+ const save = () => {
+ onUpdate({ richText: text, headingLevel: level, title: text } as any);
+ setEditing(false);
+ };
+
  if (editing && canManage) {
  return (
- <div className="space-y-2">
- <p className="text-xs text-slate-500">Paste an embed URL (Power BI, Google Sheets, reports, dashboards…)</p>
- <input value={draft} onChange={e => setDraft(e.target.value)} placeholder="https://app.powerbi.com/…"
- className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-blue-400"/>
+ <div className="space-y-2 py-1">
+ <div className="flex items-center gap-1.5 mb-2">
+ {([1, 2, 3] as const).map(l => (
+ <button key={l} onClick={() => setLevel(l)}
+ className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${level === l ? 'bg-slate-800 text-white border-slate-800' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+ H{l}
+ </button>
+ ))}
+ <span className="text-[10px] text-slate-400 ml-1">· {level === 1 ? 'Large' : level === 2 ? 'Medium' : 'Small'} heading</span>
+ </div>
+ <input value={text} onChange={e => setText(e.target.value)} autoFocus
+ onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false); }}
+ className="w-full bg-transparent border-b-2 border-rail-400 outline-none text-slate-900 font-bold py-1"
+ style={{ fontSize: level === 1 ? '1.6rem' : level === 2 ? '1.25rem' : '1.05rem' }}
+ />
  <div className="flex gap-1.5 justify-end">
  <button onClick={() => setEditing(false)} className="px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100 rounded-lg">Cancel</button>
- <button onClick={() => { onUpdate({ content: draft }); setEditing(false); }} className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700">Embed</button>
+ <button onClick={save} className="px-3 py-1.5 text-xs bg-rail-600 text-white rounded-lg hover:bg-rail-700">Save</button>
  </div>
  </div>
  );
  }
- if (!widget.content) return <div className="text-xs text-slate-300 italic">No URL configured</div>;
+
+ const displayText = (widget as any).richText ?? widget.title;
+ const lv = (widget as any).headingLevel ?? 2;
+ return (
+ <div className="group relative py-1">
+ {lv === 1 && <h1 className="text-2xl font-black text-slate-900 border-b border-slate-100 pb-2">{displayText}</h1>}
+ {lv === 2 && <h2 className="text-xl font-bold text-slate-900">{displayText}</h2>}
+ {lv === 3 && <h3 className="text-base font-semibold text-slate-600">{displayText}</h3>}
+ {canManage && (
+ <button
+ onClick={() => { setText((widget as any).richText ?? widget.title); setLevel((widget as any).headingLevel ?? 2); setEditing(true); }}
+ className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-opacity">
+ <Edit3 size={12}/>
+ </button>
+ )}
+ </div>
+ );
+}
+
+// ── Callout Widget ─────────────────────────────────────────────────────────────
+const CALLOUT_COLORS_MAP = {
+ amber:   { bg: 'bg-amber-50',   border: 'border-amber-200',   text: 'text-amber-900',   dot: 'bg-amber-400'   },
+ blue:    { bg: 'bg-blue-50',    border: 'border-blue-200',    text: 'text-blue-900',    dot: 'bg-blue-400'    },
+ emerald: { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-900', dot: 'bg-emerald-400' },
+ red:     { bg: 'bg-red-50',     border: 'border-red-200',     text: 'text-red-900',     dot: 'bg-red-400'     },
+ violet:  { bg: 'bg-violet-50',  border: 'border-violet-200',  text: 'text-violet-900',  dot: 'bg-violet-400'  },
+ slate:   { bg: 'bg-slate-50',   border: 'border-slate-200',   text: 'text-slate-800',   dot: 'bg-slate-400'   },
+};
+const CALLOUT_EMOJI_SET = ['💡','ℹ️','⚠️','🚨','✅','📌','🔥','💬','🎯','📢','🔔','❗','🌟','🛑','👀','📝'];
+
+function CalloutWidget({ widget, onUpdate, canManage }: {
+ widget: LayoutWidget; onUpdate: (p: Partial<LayoutWidget>) => void; canManage: boolean;
+}) {
+ const [editing, setEditing] = useState(false);
+ const [icon, setIcon] = useState<string>((widget as any).calloutIcon ?? '💡');
+ const [color, setColor] = useState<keyof typeof CALLOUT_COLORS_MAP>((widget as any).calloutColor ?? 'amber');
+ const [text, setText] = useState<string>((widget as any).richText ?? widget.title ?? '');
+
+ const save = () => {
+ onUpdate({ calloutIcon: icon, calloutColor: color, richText: text, title: text.slice(0, 60) || 'Callout' } as any);
+ setEditing(false);
+ };
+
+ const cs = CALLOUT_COLORS_MAP[color] ?? CALLOUT_COLORS_MAP.amber;
+
+ if (editing && canManage) {
+ return (
+ <div className="space-y-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+ <div>
+ <p className="text-[10px] font-bold text-slate-500 uppercase mb-1.5">Icon</p>
+ <div className="flex flex-wrap gap-1">
+ {CALLOUT_EMOJI_SET.map(em => (
+ <button key={em} onClick={() => setIcon(em)}
+ className={`w-8 h-8 rounded-lg text-lg flex items-center justify-center transition-all ${icon === em ? 'bg-rail-100 ring-2 ring-rail-400' : 'hover:bg-white'}`}>
+ {em}
+ </button>
+ ))}
+ </div>
+ </div>
+ <div>
+ <p className="text-[10px] font-bold text-slate-500 uppercase mb-1.5">Color</p>
+ <div className="flex gap-2">
+ {(Object.entries(CALLOUT_COLORS_MAP) as [keyof typeof CALLOUT_COLORS_MAP, any][]).map(([c, s]) => (
+ <button key={c} onClick={() => setColor(c)} title={c}
+ className={`w-6 h-6 rounded-full ${s.dot} transition-all ${color === c ? 'ring-2 ring-offset-1 ring-slate-600 scale-110' : 'opacity-60 hover:opacity-100'}`}/>
+ ))}
+ </div>
+ </div>
+ <textarea value={text} onChange={e => setText(e.target.value)} rows={3} autoFocus
+ placeholder="Write your callout content…"
+ className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-rail-400 resize-none"/>
+ <div className="flex gap-1.5 justify-end">
+ <button onClick={() => setEditing(false)} className="px-3 py-1.5 text-xs text-slate-500 hover:bg-white rounded-lg border border-slate-200">Cancel</button>
+ <button onClick={save} className="px-3 py-1.5 text-xs bg-rail-600 text-white rounded-lg hover:bg-rail-700">Save</button>
+ </div>
+ </div>
+ );
+ }
+
+ const viewCs = CALLOUT_COLORS_MAP[((widget as any).calloutColor ?? 'amber') as keyof typeof CALLOUT_COLORS_MAP] ?? CALLOUT_COLORS_MAP.amber;
+ return (
+ <div className={`flex gap-3 p-3.5 rounded-xl border group relative ${viewCs.bg} ${viewCs.border}`}>
+ <span className="text-xl shrink-0 select-none leading-snug">{(widget as any).calloutIcon ?? '💡'}</span>
+ <p className={`text-sm leading-relaxed flex-1 ${viewCs.text}`}>
+ {(widget as any).richText || widget.title || <span className="opacity-40 italic">Empty callout — click edit to add content</span>}
+ </p>
+ {canManage && (
+ <button
+ onClick={() => { setIcon((widget as any).calloutIcon ?? '💡'); setColor((widget as any).calloutColor ?? 'amber'); setText((widget as any).richText ?? widget.title ?? ''); setEditing(true); }}
+ className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1.5 rounded-lg bg-white/80 hover:bg-white text-slate-400 hover:text-slate-600 transition-opacity shadow-sm">
+ <Edit3 size={11}/>
+ </button>
+ )}
+ </div>
+ );
+}
+
+// ── Checklist Widget ───────────────────────────────────────────────────────────
+// Defined outside WidgetRenderer to keep a stable component reference → no unmount on parent re-render
+function ChecklistWidget({ widget, onUpdate, canManage }: {
+ widget: LayoutWidget; onUpdate: (p: Partial<LayoutWidget>) => void; canManage: boolean;
+}) {
+ const [items, setItems] = useState<Array<{id:string;text:string;done:boolean}>>(() => (widget as any).checklistItems ?? []);
+ const [newText, setNewText] = useState('');
+ const prevJsonRef = useRef('');
+
+ // Sync from parent when widget.checklistItems changes externally
+ useEffect(() => {
+ const incoming = JSON.stringify((widget as any).checklistItems ?? []);
+ if (incoming !== prevJsonRef.current) {
+ prevJsonRef.current = incoming;
+ setItems((widget as any).checklistItems ?? []);
+ }
+ }, [(widget as any).checklistItems]); // eslint-disable-line
+
+ const save = (next: typeof items) => {
+ prevJsonRef.current = JSON.stringify(next);
+ setItems(next);
+ onUpdate({ checklistItems: next } as any);
+ };
+
+ const done = items.filter(i => i.done).length;
+ const total = items.length;
+
+ return (
+ <div className="space-y-1.5">
+ {total > 0 && (
+ <div className="flex items-center gap-2 mb-2.5">
+ <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+ <div className="h-full bg-emerald-400 rounded-full transition-all duration-300"
+ style={{ width: `${total > 0 ? Math.round(done/total*100) : 0}%` }}/>
+ </div>
+ <span className="text-[10px] text-slate-400 shrink-0">{done}/{total} done</span>
+ </div>
+ )}
+ {items.map(item => (
+ <div key={item.id} className="flex items-start gap-2.5 group/item py-0.5">
+ <button
+ onClick={() => save(items.map(i => i.id === item.id ? { ...i, done: !i.done } : i))}
+ className={`w-4 h-4 mt-0.5 rounded border-2 flex items-center justify-center shrink-0 transition-all ${item.done ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300 hover:border-emerald-400'}`}>
+ {item.done && <Check size={9} className="text-white"/>}
+ </button>
+ <span className={`flex-1 text-sm leading-snug transition-all ${item.done ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+ {item.text}
+ </span>
+ {canManage && (
+ <button onClick={() => save(items.filter(i => i.id !== item.id))}
+ className="opacity-0 group-hover/item:opacity-100 p-1 text-slate-300 hover:text-red-400 transition-opacity shrink-0">
+ <X size={11}/>
+ </button>
+ )}
+ </div>
+ ))}
+ {items.length === 0 && !canManage && (
+ <p className="text-xs text-slate-300 italic py-2 text-center">No checklist items</p>
+ )}
+ {canManage && (
+ <div className="flex gap-2 pt-1.5">
+ <input value={newText} onChange={e => setNewText(e.target.value)}
+ onKeyDown={e => {
+ if (e.key === 'Enter' && newText.trim()) {
+ save([...items, { id: `c${Date.now()}`, text: newText.trim(), done: false }]);
+ setNewText('');
+ }
+ }}
+ placeholder="Add item… (Enter to add)"
+ className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-rail-400"/>
+ <button
+ onClick={() => { if (newText.trim()) { save([...items, { id: `c${Date.now()}`, text: newText.trim(), done: false }]); setNewText(''); }}}
+ disabled={!newText.trim()}
+ className="px-3 py-1.5 text-xs bg-rail-600 text-white rounded-lg disabled:opacity-40 hover:bg-rail-700">
+ Add
+ </button>
+ </div>
+ )}
+ </div>
+ );
+}
+
+// ── Embed / Google Service Widget ──────────────────────────────────────────────
+const EMBED_SERVICE_TYPES = [
+ { id: 'url',    label: 'URL',         icon: '🌐', hint: 'Any embeddable URL' },
+ { id: 'gsheet', label: 'Google Sheet',icon: '📊', hint: 'Paste Google Sheet share URL' },
+ { id: 'gdoc',   label: 'Google Doc',  icon: '📄', hint: 'Paste Google Doc share URL' },
+ { id: 'gform',  label: 'Google Form', icon: '📝', hint: 'Paste Google Form URL' },
+ { id: 'gdrive', label: 'Drive Folder',icon: '📁', hint: 'Paste Google Drive folder URL' },
+] as const;
+type EmbedServiceType = typeof EMBED_SERVICE_TYPES[number]['id'];
+
+function toEmbedSrc(url: string, type: EmbedServiceType): string {
+ if (!url) return '';
+ try {
+ if (type === 'gsheet') {
+ const m = url.match(/\/spreadsheets\/d\/([^/]+)/);
+ if (m) return `https://docs.google.com/spreadsheets/d/${m[1]}/htmlview?widget=true&headers=false`;
+ }
+ if (type === 'gdoc') {
+ const m = url.match(/\/document\/d\/([^/]+)/);
+ if (m) return `https://docs.google.com/document/d/${m[1]}/preview`;
+ }
+ if (type === 'gform') {
+ const m = url.match(/\/forms\/d\/([^/]+)/);
+ if (m) return `https://docs.google.com/forms/d/${m[1]}/viewform?embedded=true`;
+ }
+ if (type === 'gdrive') {
+ const m = url.match(/\/drive\/folders\/([^/?]+)/);
+ if (m) return `https://drive.google.com/embeddedfolderview?id=${m[1]}#grid`;
+ }
+ } catch {}
+ return url;
+}
+
+function EmbedWidget({ widget, onUpdate, canManage }: {
+ widget: LayoutWidget; onUpdate: (p: Partial<LayoutWidget>) => void; canManage: boolean;
+}) {
+ const savedUrl: string = (widget as any).embedUrl ?? widget.content ?? '';
+ const savedType: EmbedServiceType = (widget as any).embedType ?? 'url';
+ const [editing, setEditing] = useState(!savedUrl);
+ const [url, setUrl] = useState(savedUrl);
+ const [svcType, setSvcType] = useState<EmbedServiceType>(savedType);
+
+ if (editing && canManage) {
+ return (
+ <div className="space-y-3">
+ <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-5">
+ {EMBED_SERVICE_TYPES.map(et => (
+ <button key={et.id} onClick={() => setSvcType(et.id)}
+ className={`flex items-center gap-1.5 px-2.5 py-2 rounded-xl border text-left text-xs transition-all ${svcType === et.id ? 'bg-rail-50 border-rail-300 text-rail-700 font-semibold' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+ <span>{et.icon}</span><span>{et.label}</span>
+ </button>
+ ))}
+ </div>
+ <div>
+ <p className="text-[10px] text-slate-400 mb-1.5">{EMBED_SERVICE_TYPES.find(e => e.id === svcType)?.hint}</p>
+ <input value={url} onChange={e => setUrl(e.target.value)} placeholder="Paste URL here…"
+ className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-rail-400"/>
+ </div>
+ <div className="flex gap-1.5 justify-end">
+ {savedUrl && <button onClick={() => setEditing(false)} className="px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100 rounded-lg">Cancel</button>}
+ <button onClick={() => {
+ const embedSrc = toEmbedSrc(url.trim(), svcType);
+ onUpdate({ embedUrl: url.trim(), embedType: svcType, content: embedSrc } as any);
+ setEditing(false);
+ }} disabled={!url.trim()}
+ className="px-3 py-1.5 text-xs bg-rail-600 text-white rounded-lg disabled:opacity-40 hover:bg-rail-700">
+ Embed
+ </button>
+ </div>
+ </div>
+ );
+ }
+ if (!savedUrl) return <div className="text-xs text-slate-300 italic text-center py-4">No URL configured</div>;
+ const iframeSrc = toEmbedSrc(savedUrl, savedType);
  return (
  <div className="group relative">
- <iframe src={widget.content} className="w-full h-64 rounded-xl border border-slate-200"title={widget.title} sandbox="allow-scripts allow-same-origin allow-popups"/>
+ <iframe
+ src={iframeSrc}
+ className="w-full rounded-xl border border-slate-200 block"
+ style={{ height: widget.fullscreen ? 'calc(100vh - 140px)' : '520px' }}
+ allowFullScreen
+ title={widget.title}
+ sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-presentation allow-downloads"
+ />
  {canManage && (
- <button onClick={() => setEditing(true)} className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-1.5 rounded-lg bg-white shadow text-slate-400 transition-opacity">
+ <button onClick={() => { setUrl(savedUrl); setSvcType(savedType); setEditing(true); }}
+ className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1.5 rounded-lg bg-white shadow text-slate-400 hover:text-slate-600 transition-opacity">
  <Edit3 size={12}/>
  </button>
  )}
@@ -707,34 +987,14 @@ export function WidgetRenderer({
  </div>
  );
 
-    case 'heading': {
-      const level = (widget as any).headingLevel ?? 2;
-      const sizes: Record<number, string> = { 1: 'text-2xl font-black', 2: 'text-xl font-bold', 3: 'text-lg font-semibold' };
-      return (
-        <div onClick={() => canManage && undefined} className="py-1">
-          {level === 1 && <h1 className="text-2xl font-black text-slate-900">{(widget as any).richText ?? widget.title}</h1>}
-          {level === 2 && <h2 className="text-xl font-bold text-slate-900">{(widget as any).richText ?? widget.title}</h2>}
-          {level === 3 && <h3 className="text-lg font-semibold text-slate-900">{(widget as any).richText ?? widget.title}</h3>}
-        </div>
-      );
-    }
+    case 'heading':
+      return <HeadingWidget widget={widget} onUpdate={onUpdate} canManage={canManage}/>;
 
     case 'divider':
       return <div className="border-t border-slate-200 my-2"/>;
 
-    case 'callout': {
-      const col = (widget as any).calloutColor ?? 'amber';
-      const colors: Record<string, string> = {
-        blue: 'bg-blue-50 border-blue-200', amber: 'bg-amber-50 border-amber-200',
-        emerald: 'bg-emerald-50 border-emerald-200', red: 'bg-red-50 border-red-200',
-      };
-      return (
-        <div className={`flex gap-3 p-3.5 rounded-xl border \${colors[col] ?? colors.amber}`}>
-          <span className="text-xl shrink-0">{(widget as any).calloutIcon ?? '💡'}</span>
-          <p className="text-sm text-slate-700 leading-relaxed flex-1">{(widget as any).richText ?? widget.title}</p>
-        </div>
-      );
-    }
+    case 'callout':
+      return <CalloutWidget widget={widget} onUpdate={onUpdate} canManage={canManage}/>;
 
     case 'toggle': {
       const ToggleW = () => {
@@ -752,36 +1012,8 @@ export function WidgetRenderer({
       return <ToggleW/>;
     }
 
-    case 'checklist': {
-      const CLW = () => {
-        const [items, setItems] = React.useState<Array<{id:string;text:string;done:boolean}>>((widget as any).checklistItems ?? []);
-        const [newText, setNewText] = React.useState('');
-        const save = (next: typeof items) => { setItems(next); if (onUpdate) onUpdate({ checklistItems: next } as any); };
-        return (
-          <div className="space-y-2">
-            {items.map(item => (
-              <div key={item.id} className="flex items-center gap-2 group">
-                <button onClick={() => save(items.map(i => i.id !== item.id ? i : { ...i, done: !i.done }))}
-                  className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors \${item.done ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300 hover:border-rail-400'}`}>
-                  {item.done && <Check size={10} className="text-white"/>}
-                </button>
-                <span className={`flex-1 text-sm \${item.done ? 'line-through text-slate-400' : 'text-slate-700'}`}>{item.text}</span>
-                {canManage && <button onClick={() => save(items.filter(i => i.id !== item.id))} className="opacity-0 group-hover:opacity-100 p-1 text-slate-300 hover:text-red-500">✕</button>}
-              </div>
-            ))}
-            {canManage && (
-              <div className="flex gap-2 mt-2">
-                <input value={newText} onChange={e => setNewText(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && newText.trim()) { save([...items, { id: `c\${Date.now()}`, text: newText.trim(), done: false }]); setNewText(''); }}}
-                  placeholder="Add item…" className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-rail-400"/>
-                <button onClick={() => { if (newText.trim()) { save([...items, { id: `c\${Date.now()}`, text: newText.trim(), done: false }]); setNewText(''); }}} disabled={!newText.trim()} className="px-3 py-1.5 text-xs bg-rail-600 text-white rounded-lg disabled:opacity-40">Add</button>
-              </div>
-            )}
-          </div>
-        );
-      };
-      return <CLW/>;
-    }
+    case 'checklist':
+      return <ChecklistWidget widget={widget} onUpdate={onUpdate} canManage={canManage}/>;
 
     case 'google_links': {
       const { GoogleLinksRepo } = require('@/components/cell/GoogleLinksRepo');
@@ -810,22 +1042,7 @@ export function WidgetRenderer({
       return <PBIW/>;
     }
 
-    case 'embed': {
-      const EBW = () => {
-        const [url, setUrl] = React.useState<string>((widget as any).embedUrl ?? '');
-        const [live, setLive] = React.useState<boolean>(!!(widget as any).embedUrl);
-        if (!live) return (
-          <div className="space-y-2">
-            <input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://..."
-              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-rail-400"/>
-            <button onClick={() => { if (onUpdate) onUpdate({ embedUrl: url } as any); setLive(true); }} disabled={!url.trim()}
-              className="px-3 py-1.5 text-xs bg-rail-600 text-white rounded-lg disabled:opacity-40">Embed</button>
-          </div>
-        );
-        return <iframe src={url} className="w-full rounded-lg border" style={{ height: 400 }} allowFullScreen/>;
-      };
-      return <EBW/>;
-    }
+    // 'embed' handled above by EmbedWidget
 
     // ── Enterprise Blocks ─────────────────────────────────────────────────────
     case 'database': {

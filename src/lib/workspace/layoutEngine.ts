@@ -54,6 +54,19 @@ export interface LayoutWidget {
  pinned?: boolean;
  fullscreen?: boolean;
  googleSheetUrl?: string;
+ // ── Heading ──────────────────────────────────────────────────
+ richText?: string;           // editable text for heading/callout/toggle
+ headingLevel?: 1 | 2 | 3;   // heading size selector
+ // ── Callout ──────────────────────────────────────────────────
+ calloutIcon?: string;        // emoji icon
+ calloutColor?: string;       // 'amber' | 'blue' | 'emerald' | 'red' | 'violet' | 'slate'
+ // ── Checklist ────────────────────────────────────────────────
+ checklistItems?: { id: string; text: string; done: boolean }[];
+ // ── Toggle ───────────────────────────────────────────────────
+ toggleOpen?: boolean;
+ // ── Embed / GSheet ───────────────────────────────────────────
+ embedUrl?: string;           // raw user-pasted URL
+ embedType?: string;          // 'url' | 'gsheet' | 'gdoc' | 'gform' | 'gdrive'
 }
 
 export interface LayoutColumn {
