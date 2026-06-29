@@ -74,14 +74,12 @@ function AddUserModal({ user, onClose, onSave, cells, currentUser }: {
  const isEdit = !!user;
  const [form, setForm] = useState({
  name: user?.name ?? '', email: user?.email ?? '', mobile: user?.mobile ?? '',
- designation: user?.designation ?? '', cell: (user?.role === 'incharge' && user?.cell === 'All') ? '' : (user?.cell ?? ''), hrmsId: user?.hrmsId ?? '',
+ designation: user?.designation ?? '', cell: user?.cell ?? '', hrmsId: user?.hrmsId ?? '',
  workingAs: user?.workingAs ?? '', role: user?.role ?? 'user', status: user?.status ?? 'active',
  reportingOfficer: '',
  });
  const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
- const cellValid = form.role === 'incharge'
- ? (form.cell && form.cell !== 'All')  // incharge must have a specific cell
- : !!form.cell;                          // other roles just need any cell
+ const cellValid = !!form.cell; // any role needs a cell selected
  const valid = form.name.trim() && form.email.trim() && form.designation.trim() && cellValid;
 
  return (
@@ -120,8 +118,8 @@ function AddUserModal({ user, onClose, onSave, cells, currentUser }: {
  const r = e.target.value;
  set('role', r);
  if (r === 'admin' || r === 'maintenance') set('cell', 'All');
- // Incharge must pick a specific cell — always clear 'All' when switching to incharge
- if (r === 'incharge') set('cell', (prev => prev === 'All' ? '' : prev)(form.cell));
+ // Incharge can have a specific cell OR 'All' — just ensure cell is set
+ // No forced clear needed; admin picks whatever is appropriate
  }}
  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-blue-400">
  <option value="user">User</option>
@@ -135,17 +133,13 @@ function AddUserModal({ user, onClose, onSave, cells, currentUser }: {
  <label className="text-xs font-semibold text-slate-500 block mb-1.5">
  Department / Cell *
  {form.role === 'incharge' && (
- <span className="ml-1.5 text-[10px] font-medium text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">Required for Incharge</span>
+ <span className="ml-1.5 text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5">Select cell or All</span>
  )}
  </label>
  <select value={form.cell} onChange={e => set('cell', e.target.value)}
- className={`w-full bg-slate-50 border rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-blue-400 ${
- form.role === 'incharge' && !form.cell
- ? 'border-amber-400 ring-1 ring-amber-300'
- : 'border-slate-300'
- }`}>
+ className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-blue-400">
  <option value="">— Select Cell —</option>
- {(form.role === 'admin' || form.role === 'maintenance') && (
+ {(form.role === 'admin' || form.role === 'maintenance' || form.role === 'incharge') && (
  <option value="All">All (System-wide)</option>
  )}
  {cells.map(c => <option key={c} value={c}>{c}</option>)}
@@ -1006,7 +1000,11 @@ export default function UsersPage() {
  .filter(s => !mockMapped.find(m => m.id === s.id)) // dedup
  .map(s => ({
  id: s.id, name: s.name, email: s.email, designation: s.designation,
- cell: s.role === 'user' ? getMembershipsForStaff(s.id, s.cell) : 'All',
+ cell: (s.role === 'admin' || s.role === 'maintenance')
+   ? 'All'
+   : s.role === 'incharge'
+     ? (s.cell ?? 'All')   // incharge: use their assigned cell
+     : getMembershipsForStaff(s.id, s.cell),  // user: derive from memberships
  role: s.role, hrmsId: s.hrmsId, mobile: s.mobile, workingAs: s.workingAs,
  status: (statusOverrides[s.id] ?? (['pending','rejected'].includes(s.status) ? s.status : 'active')) as UserStatus,
  source: 'staff_db', registeredAt: s.registeredAt,

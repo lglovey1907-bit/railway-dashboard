@@ -3,7 +3,7 @@ export type CellRole = 'head' | 'delegate' | 'editor' | 'viewer';
 
 export interface StaffMember {
  id: string; hrmsId?: string; name: string; email: string; mobile?: string;
- designation: string; division: string; cell?: string; role: 'maintenance' | 'admin' | 'user';
+ designation: string; division: string; cell?: string; role: 'maintenance' | 'admin' | 'user' | 'incharge';
  workingAs?: string; fatherHusbandName?: string; photoUrl?: string;
  status: ApprovalStatus; registeredAt: string; lastUpdatedAt: string; lastLogin?: string;
 }
@@ -35,7 +35,7 @@ function saveStaff(s: StaffMember[]) { if (typeof window !== 'undefined') localS
 
 export function registerEmployee(data: {
  id: string; name: string; email: string; mobile?: string; designation: string;
- cell: string; division: string; role?: 'maintenance'|'admin'|'user';
+ cell: string; division: string; role?: 'maintenance'|'admin'|'user'|'incharge';
  hrmsId?: string; workingAs?: string; fatherHusbandName?: string;
 }): { staff: StaffMember; membership: CellMembership } {
  const now = new Date().toISOString();
@@ -43,7 +43,7 @@ export function registerEmployee(data: {
  id: data.id, hrmsId: data.hrmsId, name: data.name, email: data.email,
  mobile: data.mobile, designation: data.designation, division: data.division,
  cell: data.cell || undefined,          // ← store cell directly on record
- role: data.role ?? 'user', workingAs: data.workingAs, fatherHusbandName: data.fatherHusbandName,
+ role: (data.role ?? 'user') as StaffMember['role'], workingAs: data.workingAs, fatherHusbandName: data.fatherHusbandName,
  status: 'pending', registeredAt: now, lastUpdatedAt: now,
  };
  const existing = getAllStaff();

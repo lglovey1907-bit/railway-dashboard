@@ -314,7 +314,7 @@ export function hasPermission(role: UserRole, permission: Permission): boolean {
 
 export function canViewCell(user: User, cell: string): boolean {
  if (user.role === 'maintenance' || user.role === 'admin') return true;
- // incharge: full control of own cell only, cannot see other cells
- if (user.role === 'incharge') return user.cell === cell;
+ // incharge with 'All' → sees everything; otherwise restricted to their assigned cell
+ if (user.role === 'incharge') return user.cell === 'All' || user.cell === cell;
  return user.cell === cell || cell === 'All';
 }
