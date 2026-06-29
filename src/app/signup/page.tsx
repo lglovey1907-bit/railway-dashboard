@@ -148,17 +148,29 @@ export default function SignupPage() {
     registerUserPassword(form.email.trim(), form.cell, form.designation.trim());
 
     // ── Sync to server so user can log in from any device ──────────────────
-    fetch('/api/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    // Uses retry-with-backoff so a transient network hiccup doesn't
+    // permanently break cross-device login. Runs in the background (IIFE).
+    (async () => {
+      const body = JSON.stringify({
         email: form.email.trim(),
         staffRecord,
         password: pwd,
         mustChange: true,
         status: 'pending',
-      }),
-    }).catch(() => {}); // non-blocking — localStorage is the primary store
+      });
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          const res = await fetch('/api/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body,
+          });
+          const data = await res.json();
+          if (data?.ok) break; // KV confirmed write — done
+        } catch { /* ignore, will retry */ }
+        if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * (attempt + 1))); // 1s 2s 3s
+      }
+    })(); // non-blocking IIFE — localStorage remains the primary store
 
     setUserId(uid); setGenPwd(pwd);
     setSubmitting(false);

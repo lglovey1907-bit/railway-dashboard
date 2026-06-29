@@ -74,17 +74,25 @@ export default function LoginPage() {
      const storedPwd = pwdMap[loggedInUser.email.toLowerCase()];
      const statusOv: Record<string, string> = JSON.parse(localStorage.getItem('rly_user_status_overrides') ?? '{}');
      const status = statusOv[dbRecord.id] ?? dbRecord.status ?? 'pending';
-     fetch('/api/users', {
-       method: 'POST',
-       headers: { 'Content-Type': 'application/json' },
-       body: JSON.stringify({
-         email: loggedInUser.email,
-         staffRecord: dbRecord,
-         password: storedPwd,
-         mustChange: mustChangePassword(loggedInUser.email.toLowerCase()),
-         status,
-       }),
-     }).catch(() => {});
+     // Retry up to 4× with backoff — transient KV failures must not
+     // permanently break cross-device login for this user.
+     const _loginBody = JSON.stringify({
+       email: loggedInUser.email,
+       staffRecord: dbRecord,
+       password: storedPwd,
+       mustChange: mustChangePassword(loggedInUser.email.toLowerCase()),
+       status,
+     });
+     (async () => {
+       for (let _i = 0; _i < 4; _i++) {
+         try {
+           const _r = await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: _loginBody });
+           const _d = await _r.json();
+           if (_d?.ok) break;
+         } catch { /* retry */ }
+         if (_i < 3) await new Promise(r => setTimeout(r, 1000 * (_i + 1)));
+       }
+     })();
    }
  } catch { /* non-critical — localStorage may be unavailable */ }
 
