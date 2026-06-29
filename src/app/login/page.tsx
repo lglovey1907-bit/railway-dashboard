@@ -163,11 +163,19 @@ export default function LoginPage() {
  updateUser({ mustChangePassword: false });
 
  // ── Sync new password to server so other devices pick it up ───────────
- fetch('/api/users', {
-   method: 'POST',
-   headers: { 'Content-Type': 'application/json' },
-   body: JSON.stringify({ email: userEmail, password: newPwd, mustChange: false }),
- }).catch(() => {}); // non-blocking
+ // Retry up to 4× — a failed sync means KV keeps the old password and
+ // cross-device logins will always require re-entering the default password.
+ (async () => {
+   const _body = JSON.stringify({ email: userEmail, password: newPwd, mustChange: false });
+   for (let _i = 0; _i < 4; _i++) {
+     try {
+       const _r = await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: _body });
+       const _d = await _r.json();
+       if (_d?.ok) break;
+     } catch { /* retry */ }
+     if (_i < 3) await new Promise(r => setTimeout(r, 1000 * (_i + 1)));
+   }
+ })(); // non-blocking IIFE
 
  setCpLoading(false);
  router.replace('/dashboard');

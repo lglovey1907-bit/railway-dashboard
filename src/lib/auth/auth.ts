@@ -97,17 +97,22 @@ export async function authenticateUser(
                 staffList = [...staffList, serverData.staffRecord];
                 localStorage.setItem('rly_staff_master', JSON.stringify(staffList));
 
+                // IMPORTANT: always use the email address (from staffRecord), NOT emailInput.
+                // If the user logged in with their HRMS ID, emailInput is the HRMS ID (e.g. 'MANPOWERPLANNINGCCTS').
+                // Storing password / flags under the HRMS ID key means mustChangePassword(email) always
+                // returns false and getUserPassword(email) always returns null — both silent login failures.
+                const resolvedEmail = (serverData.staffRecord?.email as string | undefined)?.toLowerCase() ?? emailInput;
                 if (serverData.password) {
                   const pwds = JSON.parse(localStorage.getItem('rly_user_passwords') ?? '{}');
-                  if (!pwds[emailInput]) { pwds[emailInput] = serverData.password; localStorage.setItem('rly_user_passwords', JSON.stringify(pwds)); }
+                  if (!pwds[resolvedEmail]) { pwds[resolvedEmail] = serverData.password; localStorage.setItem('rly_user_passwords', JSON.stringify(pwds)); }
                 }
                 if (serverData.mustChange) {
                   const mc: string[] = JSON.parse(localStorage.getItem('rly_must_change_pwd') ?? '[]');
-                  if (!mc.includes(emailInput)) localStorage.setItem('rly_must_change_pwd', JSON.stringify([...mc, emailInput]));
+                  if (!mc.includes(resolvedEmail)) localStorage.setItem('rly_must_change_pwd', JSON.stringify([...mc, resolvedEmail]));
                 } else {
                   // User already finished first-login on another device — skip OTP on this device too
                   const ver: string[] = JSON.parse(localStorage.getItem('rly_email_verified') ?? '[]');
-                  if (!ver.includes(emailInput)) { ver.push(emailInput); localStorage.setItem('rly_email_verified', JSON.stringify(ver)); }
+                  if (!ver.includes(resolvedEmail)) { ver.push(resolvedEmail); localStorage.setItem('rly_email_verified', JSON.stringify(ver)); }
                 }
                 if (serverData.status && serverData.staffRecord?.id) {
                   const ov = JSON.parse(localStorage.getItem('rly_user_status_overrides') ?? '{}');
@@ -157,10 +162,12 @@ export async function authenticateUser(
                     }
                   }
                 }
-                // Also sync password if KV has one and we don't yet
+                // Also sync password if KV has one and we don't yet.
+                // Use dbUser.email (the real email) — not emailInput which may be an HRMS ID.
                 if (serverData?.password) {
                   const pwds = JSON.parse(localStorage.getItem('rly_user_passwords') ?? '{}');
-                  if (!pwds[emailInput]) { pwds[emailInput] = serverData.password; localStorage.setItem('rly_user_passwords', JSON.stringify(pwds)); }
+                  const dbEmail = dbUser.email?.toLowerCase() ?? emailInput;
+                  if (!pwds[dbEmail]) { pwds[dbEmail] = serverData.password; localStorage.setItem('rly_user_passwords', JSON.stringify(pwds)); }
                 }
               }
             } catch { /* KV unavailable — local status used as fallback */ }
