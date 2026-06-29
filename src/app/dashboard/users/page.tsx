@@ -814,6 +814,54 @@ export default function UsersPage() {
   );
  }, [currentUser]);
 
+ // ── Auto-repair: push admin's approved users to KV on every page load ────
+ // Problem: admin approved a user BEFORE KV-sync was added to handleEditUser.
+ // KV still has status:'pending' for those users, so cross-device/cross-browser
+ // login always fails even though admin's localStorage has them as 'active'.
+ // Fix: silently push every locally-approved user to KV when admin opens this page.
+ // Non-blocking fire-and-forget — at most one run per session (tracked in sessionStorage).
+ const silentSyncApprovedToKV = async () => {
+  try {
+   if (typeof window === 'undefined') return;
+   // Only run once per browser session to avoid hammering KV
+   if (sessionStorage.getItem('rly_kv_sync_done')) return;
+   sessionStorage.setItem('rly_kv_sync_done', '1');
+
+   const staffList: any[] = JSON.parse(localStorage.getItem('rly_staff_master') ?? '[]');
+   if (!staffList.length) return;
+   const pwdMap: Record<string, string> = JSON.parse(localStorage.getItem('rly_user_passwords') ?? '{}');
+   const statusOv: Record<string, string> = JSON.parse(localStorage.getItem('rly_user_status_overrides') ?? '{}');
+
+   // Collect only users whose effective local status is active/approved
+   const toSync = staffList.filter((s: any) => {
+    if (!s.email) return false;
+    const eff = statusOv[s.id] ?? s.status ?? 'pending';
+    return eff === 'active' || eff === 'approved';
+   });
+   if (!toSync.length) return;
+
+   await Promise.all(toSync.map(async (s: any) => {
+    const email = (s.email as string).toLowerCase();
+    const eff = statusOv[s.id] ?? s.status ?? 'pending';
+    const kvStatus = eff === 'approved' ? 'active' : eff; // KV uses 'active' not 'approved'
+    // staffRecord.status uses 'approved' (staffDB layer convention)
+    const staffRecordForKV = { ...s, status: 'approved', lastUpdatedAt: new Date().toISOString() };
+    try {
+     await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+       email,
+       staffRecord: staffRecordForKV,
+       status: kvStatus,
+       ...(pwdMap[email] ? { password: pwdMap[email] } : {}),
+      }),
+     });
+    } catch { /* silent — KV unavailable */ }
+   }));
+  } catch { /* silent */ }
+ };
+
  // ── Pull users registered on other devices from KV ───────────────────────
  // Employees sign up on their own browser → their data is in KV but NOT in
  // the admin's localStorage. This function fetches all KV records and merges
@@ -895,6 +943,8 @@ export default function UsersPage() {
   }
   // Merge any users who signed up on another device from KV
   mergeUsersFromServer();
+  // Repair stale KV data: push locally-approved users to KV (once per session)
+  silentSyncApprovedToKV();
  // eslint-disable-next-line react-hooks/exhaustive-deps
  }, []);
 
