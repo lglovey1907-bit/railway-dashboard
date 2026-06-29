@@ -814,6 +814,63 @@ export default function UsersPage() {
   );
  }, [currentUser]);
 
+ // ── Pull users registered on other devices from KV ───────────────────────
+ // Employees sign up on their own browser → their data is in KV but NOT in
+ // the admin's localStorage. This function fetches all KV records and merges
+ // any missing users into the admin's localStorage so they appear in this page.
+ const mergeUsersFromServer = async () => {
+  try {
+   const res = await fetch('/api/users?all=true', { cache: 'no-store' });
+   if (!res.ok) return;
+   const kvUsers: any[] = await res.json();
+   if (!Array.isArray(kvUsers) || !kvUsers.length) return;
+
+   const staffList: any[] = JSON.parse(localStorage.getItem('rly_staff_master') ?? '[]');
+   const memberships: any[] = JSON.parse(localStorage.getItem('rly_cell_memberships') ?? '[]');
+   const existingEmails = new Set(staffList.map((s: any) => s.email?.toLowerCase() ?? ''));
+   const existingMemberEmployeeIds = new Set(memberships.map((m: any) => m.employeeId));
+
+   let changed = false;
+   for (const u of kvUsers) {
+    if (!u?.staffRecord?.email) continue;
+    const email = (u.staffRecord.email as string).toLowerCase();
+    if (existingEmails.has(email)) {
+     // User already present — sync status override if admin approved on another device
+     if (u.status && u.status !== 'pending') {
+      const staffIdx = staffList.findIndex((s: any) => s.email?.toLowerCase() === email);
+      if (staffIdx >= 0 && staffList[staffIdx].status !== u.status) {
+       staffList[staffIdx] = { ...staffList[staffIdx], status: u.status, lastUpdatedAt: new Date().toISOString() };
+       changed = true;
+      }
+     }
+     continue;
+    }
+    // New user — add staff record
+    staffList.push(u.staffRecord);
+    existingEmails.add(email);
+    // Create a pending membership so they show in the approval queue
+    if (u.staffRecord.cell && !existingMemberEmployeeIds.has(u.staffRecord.id)) {
+     memberships.push({
+      id: `mem_kv_${u.staffRecord.id}`,
+      employeeId: u.staffRecord.id,
+      cellName: u.staffRecord.cell,
+      cellRole: 'viewer',
+      approvalStatus: 'pending',
+      appliedAt: u.staffRecord.registeredAt ?? new Date().toISOString(),
+     });
+     existingMemberEmployeeIds.add(u.staffRecord.id);
+    }
+    changed = true;
+   }
+
+   if (changed) {
+    localStorage.setItem('rly_staff_master', JSON.stringify(staffList));
+    localStorage.setItem('rly_cell_memberships', JSON.stringify(memberships));
+    refresh();
+   }
+  } catch { /* KV unavailable — silently continue with localStorage only */ }
+ };
+
  useEffect(() => {
   const cfg = getGSheetConfig();
   setGsheetConnected(!!cfg);
@@ -834,6 +891,8 @@ export default function UsersPage() {
    // (SSR renders with empty data; this ensures real data appears after hydration)
    refresh();
   }
+  // Merge any users who signed up on another device from KV
+  mergeUsersFromServer();
  // eslint-disable-next-line react-hooks/exhaustive-deps
  }, []);
 

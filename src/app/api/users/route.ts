@@ -32,13 +32,27 @@ export interface ServerUserRecord {
   updatedAt?:   string;
 }
 
-// ── GET /api/users?email=xxx ──────────────────────────────────────────────────
+// ── GET /api/users?email=xxx  — single user lookup ───────────────────────────
+// ── GET /api/users?all=true   — list ALL users (for admin User Management) ───
 export async function GET(req: NextRequest) {
   const kv = await getKV();
   if (!kv) return NextResponse.json(null, { status: 503 });
 
+  const all = req.nextUrl.searchParams.get('all');
+  if (all === 'true') {
+    // Return every user record stored in KV
+    try {
+      const keys: string[] = await kv.keys('rly:user:*');
+      if (!keys.length) return NextResponse.json([]);
+      const records: (ServerUserRecord | null)[] = await kv.mget(...keys);
+      return NextResponse.json(records.filter(Boolean));
+    } catch {
+      return NextResponse.json([], { status: 503 });
+    }
+  }
+
   const email = req.nextUrl.searchParams.get('email');
-  if (!email) return NextResponse.json({ error: 'email param required' }, { status: 400 });
+  if (!email) return NextResponse.json({ error: 'email or all param required' }, { status: 400 });
 
   try {
     const data = await kv.get<ServerUserRecord>(KEY(email));
