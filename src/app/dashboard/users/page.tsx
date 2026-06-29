@@ -823,9 +823,12 @@ export default function UsersPage() {
  const silentSyncApprovedToKV = async () => {
   try {
    if (typeof window === 'undefined') return;
-   // Only run once per browser session to avoid hammering KV
-   if (sessionStorage.getItem('rly_kv_sync_done')) return;
-   sessionStorage.setItem('rly_kv_sync_done', '1');
+   // Throttle: skip if synced within the last 5 minutes.
+   // Uses localStorage so the gate resets between browser profiles/devices
+   // but still throttles rapid refreshes on the same device.
+   const lastSync = Number(localStorage.getItem('rly_kv_sync_ts') ?? '0');
+   if (Date.now() - lastSync < 5 * 60 * 1000) return;
+   localStorage.setItem('rly_kv_sync_ts', String(Date.now()));
 
    const staffList: any[] = JSON.parse(localStorage.getItem('rly_staff_master') ?? '[]');
    if (!staffList.length) return;
