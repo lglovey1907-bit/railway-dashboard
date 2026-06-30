@@ -67,6 +67,9 @@ export interface LayoutWidget {
  // ── Embed / GSheet ───────────────────────────────────────────
  embedUrl?: string;           // raw user-pasted URL
  embedType?: string;          // 'url' | 'gsheet' | 'gdoc' | 'gform' | 'gdrive'
+ // ── Table scope ──────────────────────────────────────────────────────────────
+ tableScope?: 'all' | 'section' | 'table'; // what this widget displays
+ tableSectionId?: string;     // section filter when scope = 'section'
 }
 
 export interface LayoutColumn {

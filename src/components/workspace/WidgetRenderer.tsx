@@ -7,6 +7,7 @@ import {
   Globe, TrendingUp, ExternalLink, Edit3, Check, X, ChevronRight,
   Database, Bot, BookOpen, CheckSquare, Plus, Trash2, Settings2,
   ChevronDown, TrendingDown, Target, Layers, Filter,
+  FolderOpen, Settings,
 } from 'lucide-react';
 import type { KpiSource, KpiAggregation, KpiCombineMode } from '@/lib/workspace/layoutEngine';
 import type { TableDef } from '@/lib/cellData/types';
@@ -883,6 +884,159 @@ function EmbedWidget({ widget, onUpdate, canManage }: {
 }
 
 // ── Main WidgetRenderer ───────────────────────────────────────────────────────
+
+// ── TableScopePicker ─────────────────────────────────────────────────────────
+function TableScopePicker({ sectionGroups, unassigned, onSelect }: {
+  sectionGroups: { id: string; title: string; tables: any[] }[];
+  unassigned: any[];
+  onSelect: (scope: 'all'|'section'|'table', secId: string|null, tblId: string|null, label: string) => void;
+}) {
+  const [step, setStep] = useState<'scope'|'section'|'table'>('scope');
+  const [pendingScope, setPendingScope] = useState<'section'|'table'>('section');
+  const [pendingSec, setPendingSec] = useState<{ id: string; title: string; tables: any[] }|null>(null);
+
+  const allGroups = [...sectionGroups, ...(unassigned.length > 0 ? [{ id: '__none__', title: 'No Section', tables: unassigned }] : [])];
+
+  if (step === 'scope') return (
+    <div className="space-y-2.5">
+      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">What do you want to display?</p>
+      {/* All sections */}
+      <button onClick={() => onSelect('all', null, null, 'All Tables')}
+        className="w-full flex items-center gap-3 px-3 py-3 bg-slate-50 hover:bg-rail-50 border border-slate-200 hover:border-rail-300 rounded-xl text-left transition-all group">
+        <div className="w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
+          <Database size={16} className="text-indigo-600"/>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-slate-800">All Tables</p>
+          <p className="text-[10px] text-slate-400">Show every table from all sections</p>
+        </div>
+        <ChevronRight size={14} className="text-slate-300 group-hover:text-rail-500"/>
+      </button>
+      {/* Specific section */}
+      {sectionGroups.length > 0 && (
+        <button onClick={() => { setPendingScope('section'); setStep('section'); }}
+          className="w-full flex items-center gap-3 px-3 py-3 bg-slate-50 hover:bg-rail-50 border border-slate-200 hover:border-rail-300 rounded-xl text-left transition-all group">
+          <div className="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
+            <FolderOpen size={16} className="text-emerald-600"/>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-slate-800">A Section — all its tables</p>
+            <p className="text-[10px] text-slate-400">Pick one section, show all tables inside it</p>
+          </div>
+          <ChevronRight size={14} className="text-slate-300 group-hover:text-rail-500"/>
+        </button>
+      )}
+      {/* Specific table */}
+      <button onClick={() => { setPendingScope('table'); setStep('section'); }}
+        className="w-full flex items-center gap-3 px-3 py-3 bg-slate-50 hover:bg-rail-50 border border-slate-200 hover:border-rail-300 rounded-xl text-left transition-all group">
+        <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
+          <Table2 size={16} className="text-amber-600"/>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-slate-800">A Specific Table</p>
+          <p className="text-[10px] text-slate-400">Choose one table to embed</p>
+        </div>
+        <ChevronRight size={14} className="text-slate-300 group-hover:text-rail-500"/>
+      </button>
+    </div>
+  );
+
+  if (step === 'section') return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 mb-3">
+        <button onClick={() => setStep('scope')} className="text-[10px] text-slate-400 hover:text-slate-700">← Back</button>
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+          {pendingScope === 'section' ? 'Choose Section' : 'Choose Section'}
+        </p>
+      </div>
+      {allGroups.map(g => (
+        <button key={g.id} onClick={() => {
+          if (pendingScope === 'section') {
+            onSelect('section', g.id, null, g.title);
+          } else {
+            setPendingSec(g); setStep('table');
+          }
+        }}
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 bg-slate-50 hover:bg-rail-50 border border-slate-200 hover:border-rail-300 rounded-xl text-left transition-all group">
+          <FolderOpen size={14} className="text-emerald-500 shrink-0"/>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-slate-800">{g.title}</p>
+            <p className="text-[10px] text-slate-400">{g.tables.length} table{g.tables.length !== 1 ? 's' : ''}</p>
+          </div>
+          <ChevronRight size={12} className="text-slate-300 group-hover:text-rail-500"/>
+        </button>
+      ))}
+    </div>
+  );
+
+  // step === 'table'
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 mb-3">
+        <button onClick={() => setStep('section')} className="text-[10px] text-slate-400 hover:text-slate-700">← Back</button>
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Choose Table</p>
+      </div>
+      {(pendingSec?.tables ?? []).map((t: any) => (
+        <button key={t.id} onClick={() => onSelect('table', pendingSec?.id ?? null, t.id, t.name)}
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 bg-slate-50 hover:bg-rail-50 border border-slate-200 hover:border-rail-300 rounded-xl text-left transition-all group">
+          <Table2 size={14} className="text-rail-500 shrink-0"/>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-slate-800 truncate">{t.name}</p>
+            <p className="text-[10px] text-slate-400">{t.rows?.length ?? 0} rows · {t.fields?.length ?? 0} cols</p>
+          </div>
+          <span className="text-[10px] text-rail-600 font-bold opacity-0 group-hover:opacity-100">Select →</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── TableMultiView ────────────────────────────────────────────────────────────
+function TableMultiView({ tables, scope, scopeLabel, hook, cell, canManage, userId, userName, onReset }: {
+  tables: any[]; scope: string; scopeLabel: string;
+  hook: any; cell: string; canManage: boolean;
+  userId?: string; userName?: string; onReset?: () => void;
+}) {
+  const [activeId, setActiveId] = useState<string>('');
+  const effectiveId = activeId && tables.find((t: any) => t.id === activeId) ? activeId : (tables[0]?.id ?? '');
+  const activeTbl = tables.find((t: any) => t.id === effectiveId);
+
+  return (
+    <div className="flex flex-col gap-0">
+      {/* Header bar: scope label + tab strip + reset */}
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0">
+          {scopeLabel}
+        </span>
+        {tables.length > 1 && (
+          <div className="flex items-center gap-1 flex-1 overflow-x-auto min-w-0">
+            {tables.map((t: any) => (
+              <button key={t.id} onClick={() => setActiveId(t.id)}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap transition-all ${
+                  t.id === effectiveId
+                    ? 'bg-rail-600 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                }`}>
+                {t.name}
+              </button>
+            ))}
+          </div>
+        )}
+        {onReset && (
+          <button onClick={onReset}
+            className="text-[10px] text-slate-400 hover:text-slate-600 flex items-center gap-1 shrink-0 ml-auto">
+            <Settings size={9}/> Change
+          </button>
+        )}
+      </div>
+      {activeTbl
+        ? <TableEngine table={activeTbl} hook={hook} cell={cell} canManage={canManage} userId={userId} userName={userName}/>
+        : <p className="text-xs text-slate-400 py-4 text-center">No table selected</p>
+      }
+    </div>
+  );
+}
+
 export function WidgetRenderer({
  widget, col, cell, canManage, userId, userName,
  workspaceHook, onUpdate,
@@ -930,85 +1084,86 @@ export function WidgetRenderer({
 
     case 'table': {
       if (!workspaceHook) return <p className="text-xs text-slate-400">Workspace not loaded</p>;
-      if (!widget.tableId) {
-        const available = workspaceHook.ws.tables.filter((t: any) => !t.deletedAt);
-        if (available.length === 0) return (
+
+      // ── helpers ──────────────────────────────────────────────────────────────
+      const allTables: any[] = workspaceHook.ws.tables; // deleted tables are removed from this array
+      const wsSections: any[] = (workspaceHook.ws.sections ?? [])
+        .slice().sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+
+      // Map tableId → sectionId (first section wins)
+      const tableToSection = new Map<string, string>();
+      wsSections.forEach((sec: any) => {
+        (sec.widgets ?? []).forEach((w: any) => {
+          if (w.type === 'table' && w.tableId && !tableToSection.has(w.tableId))
+            tableToSection.set(w.tableId, sec.id);
+        });
+      });
+
+      // Build groups: sections that have at least one live table
+      const sectionGroups = wsSections
+        .map((sec: any) => ({
+          id: sec.id, title: sec.title || 'Untitled Section',
+          tables: allTables.filter((t: any) => tableToSection.get(t.id) === sec.id),
+        }))
+        .filter(g => g.tables.length > 0);
+      const unassignedTables = allTables.filter((t: any) => !tableToSection.has(t.id));
+
+      // resolve the tables this widget should show right now
+      const scope: string = (widget as any).tableScope ?? '';
+      const scopeSecId: string = (widget as any).tableSectionId ?? '';
+
+      let resolvedTables: any[] = [];
+      if (scope === 'all') {
+        resolvedTables = allTables;
+      } else if (scope === 'section') {
+        const sec = wsSections.find((s: any) => s.id === scopeSecId);
+        const ids = new Set(
+          (sec?.widgets ?? []).filter((w: any) => w.type === 'table').map((w: any) => w.tableId)
+        );
+        resolvedTables = allTables.filter((t: any) => ids.has(t.id));
+      } else if (scope === 'table') {
+        resolvedTables = allTables.filter((t: any) => t.id === widget.tableId);
+      }
+
+      // ── SCOPE PICKER (shown when no scope chosen yet) ─────────────────────
+      if (!scope) {
+        if (allTables.length === 0) return (
           <div className="flex flex-col items-center gap-2 py-6 text-center">
             <Table2 size={20} className="text-slate-300"/>
             <p className="text-xs font-semibold text-slate-500">No tables yet</p>
-            <p className="text-[10px] text-slate-400">Open the Database panel to create your first table</p>
+            <p className="text-[10px] text-slate-400">Open the Database panel to create a table first</p>
           </div>
         );
-        // Build section-grouped picker
-        const sections: any[] = workspaceHook.ws.sections ?? [];
-        // Map each table to the first section that contains it
-        const tableInSection = new Map<string, string>();
-        sections.forEach((sec: any) => {
-          (sec.widgets ?? []).forEach((w: any) => {
-            if (w.type === 'table' && w.tableId && !tableInSection.has(w.tableId))
-              tableInSection.set(w.tableId, sec.id);
-          });
-        });
-        // Group available tables by section
-        const grouped: { secId: string; secTitle: string; tables: any[] }[] = sections
-          .sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0))
-          .map((sec: any) => ({
-            secId: sec.id,
-            secTitle: sec.title || 'Untitled Section',
-            tables: available.filter((t: any) => tableInSection.get(t.id) === sec.id),
-          }))
-          .filter((g: any) => g.tables.length > 0);
-        const unassigned = available.filter((t: any) => !tableInSection.has(t.id));
-        if (unassigned.length > 0) grouped.push({ secId: '__none__', secTitle: 'No Section', tables: unassigned });
-
-        const TableBtn = ({ t }: { t: any }) => (
-          <button key={t.id} onClick={() => onUpdate({ tableId: t.id, title: t.name })}
-            className="w-full flex items-center gap-2.5 px-3 py-2.5 bg-slate-50 hover:bg-rail-50 border border-slate-200 hover:border-rail-300 rounded-xl text-left transition-all group">
-            <Table2 size={14} className="text-rail-500 shrink-0"/>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold text-slate-800 truncate">{t.name}</p>
-              <p className="text-[10px] text-slate-400">{t.rows?.length ?? 0} rows · {t.fields?.length ?? 0} cols</p>
-            </div>
-            <span className="text-[10px] text-rail-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">Select →</span>
-          </button>
-        );
-
-        return (
-          <div className="space-y-3">
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Select table to display:</p>
-            {grouped.length > 0 ? grouped.map(g => (
-              <div key={g.secId}>
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-1 mb-1.5 flex items-center gap-1">
-                  <span className="inline-block w-2 h-2 rounded-sm bg-slate-300"/>
-                  {g.secTitle}
-                </p>
-                <div className="space-y-1.5 pl-2">
-                  {g.tables.map((t: any) => <TableBtn key={t.id} t={t}/>)}
-                </div>
-              </div>
-            )) : available.map((t: any) => <TableBtn key={t.id} t={t}/>)}
-          </div>
-        );
+        return <TableScopePicker
+          sectionGroups={sectionGroups} unassigned={unassignedTables}
+          onSelect={(sc, secId, tblId, label) =>
+            onUpdate({ tableScope: sc, tableSectionId: secId ?? undefined, tableId: tblId ?? undefined, title: label } as any)
+          }
+        />;
       }
-      const tbl = workspaceHook.ws.tables.find((t: any) => t.id === widget.tableId);
-      if (!tbl) return (
-        <div className="space-y-1.5">
-          <p className="text-xs text-amber-600">Table not found — it may have been deleted.</p>
-          <button onClick={() => onUpdate({ tableId: undefined })} className="text-xs text-rail-600 hover:underline">← Choose a different table</button>
-        </div>
-      );
-      return (
-        <div>
+
+      // ── NOTHING FOUND (tables deleted or scope invalid) ───────────────────
+      if (resolvedTables.length === 0) return (
+        <div className="space-y-2 py-4 text-center">
+          <p className="text-xs text-amber-600">No tables found — they may have been deleted.</p>
           {canManage && (
-            <div className="flex justify-end mb-2">
-              <button onClick={() => onUpdate({ tableId: undefined })} className="text-[10px] text-slate-400 hover:text-slate-600 flex items-center gap-1 hover:underline">
-                <Table2 size={9}/> Change table
-              </button>
-            </div>
+            <button onClick={() => onUpdate({ tableScope: undefined, tableSectionId: undefined, tableId: undefined } as any)}
+              className="text-xs text-rail-600 hover:underline">← Change selection</button>
           )}
-          <TableEngine table={tbl} hook={workspaceHook} cell={cell} canManage={canManage} userId={userId} userName={userName}/>
         </div>
       );
+
+      // ── MULTI-TABLE TAB VIEW ──────────────────────────────────────────────
+      return <TableMultiView
+        tables={resolvedTables} scope={scope} scopeLabel={
+          scope === 'all' ? 'All Tables' :
+          scope === 'section' ? (wsSections.find((s: any) => s.id === scopeSecId)?.title ?? 'Section') :
+          resolvedTables[0]?.name ?? 'Table'
+        }
+        hook={workspaceHook} cell={cell} canManage={canManage}
+        userId={userId} userName={userName}
+        onReset={canManage ? () => onUpdate({ tableScope: undefined, tableSectionId: undefined, tableId: undefined } as any) : undefined}
+      />;
     }
 
  case 'chart':

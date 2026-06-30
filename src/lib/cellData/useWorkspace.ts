@@ -55,9 +55,24 @@ export function useWorkspace(cell: string, currentUser?: { id: string; name: str
  } catch { /* ignore */ }
  }, [key, cell]);
 
+ // Sync from other useWorkspace instances on the same page (e.g. DatabasePeekModal ↔ canvas)
+ useEffect(() => {
+ if (typeof window === 'undefined') return;
+ const handler = (e: Event) => {
+   const ce = e as CustomEvent<{ key: string; data: CellWorkspace }>;
+   if (ce.detail.key === key) setWs(ce.detail.data);
+ };
+ window.addEventListener('ws-sync', handler);
+ return () => window.removeEventListener('ws-sync', handler);
+ }, [key]);
+
  // ── Core persistence + history ─────────────────────────────────────────────
  const persist = useCallback((next: CellWorkspace) => {
- if (typeof window !== 'undefined') localStorage.setItem(key, JSON.stringify(next));
+ if (typeof window !== 'undefined') {
+   localStorage.setItem(key, JSON.stringify(next));
+   // Broadcast to other useWorkspace instances on the same page
+   window.dispatchEvent(new CustomEvent('ws-sync', { detail: { key, data: next } }));
+ }
  }, [key]);
 
  /**
