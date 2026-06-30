@@ -51,7 +51,7 @@ function ConfirmDialog({ title, message, onConfirm, onCancel, danger = true }: {
  return (
  <Portal>
  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
- className="fixed inset-0 z-[400] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+ className="fixed inset-0 z-[2150] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
  onClick={onCancel}>
  <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95 }}
  className="bg-white border border-slate-200 rounded-2xl p-6 w-full max-w-sm shadow-2xl"
@@ -80,7 +80,7 @@ function NomineePickerModal({ title, current, cellStaff, onClose, onSave }: {
  return (
  <Portal>
  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
- className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"onClick={onClose}>
+ className="fixed inset-0 z-[2100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"onClick={onClose}>
  <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
  className="bg-white border border-slate-200 rounded-2xl p-6 w-full max-w-sm shadow-2xl"onClick={e => e.stopPropagation()}>
  <p className="font-semibold text-slate-900 text-sm mb-4 flex items-center gap-2"><Users size={15} className="text-blue-500"/>{title}</p>
@@ -166,7 +166,7 @@ function ColSettingsModal({ field, tableId, hook, cellStaff, onClose }: {
  return (
  <Portal>
  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
- className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"onClick={onClose}>
+ className="fixed inset-0 z-[2100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"onClick={onClose}>
  <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
  className="bg-white border border-slate-200 rounded-2xl p-6 w-full max-w-lg shadow-2xl overflow-y-auto max-h-[90vh]"onClick={e => e.stopPropagation()}>
  <div className="flex items-center justify-between mb-4">
@@ -284,7 +284,7 @@ function SheetModal({ table, hook, onClose }: { table: TableDef; hook: Hook; onC
  return (
  <Portal>
  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
- className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"onClick={onClose}>
+ className="fixed inset-0 z-[2100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"onClick={onClose}>
  <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
  className="bg-white border border-slate-200 rounded-2xl p-6 w-full max-w-lg shadow-2xl"onClick={e => e.stopPropagation()}>
  <div className="flex items-center justify-between mb-1">
@@ -433,7 +433,7 @@ export function CreateTableModal({ onClose, onCreated, cell = '' }: {
  return (
  <Portal>
  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
- className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"onClick={onClose}>
+ className="fixed inset-0 z-[2100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"onClick={onClose}>
  <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
  className="bg-white border border-slate-200 rounded-2xl p-6 w-full max-w-md shadow-2xl"onClick={e => e.stopPropagation()}>
  <h3 className="font-bold text-slate-900 text-base mb-5">Create Table</h3>
