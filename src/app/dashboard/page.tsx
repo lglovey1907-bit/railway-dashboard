@@ -19,11 +19,16 @@ import { PowerBIEmbed } from '@/components/embeds/PowerBIEmbed';
 import { PoliciesWorkspace } from '@/components/policies/PoliciesWorkspace';
 import { WorkspaceBuilder } from '@/components/workspace/WorkspaceBuilder';
 import { OverviewWorkspace } from '@/components/overview/OverviewWorkspace';
+import { OverviewAccessModal } from '@/components/overview/OverviewAccessModal';
+import {
+  getOverviewAccess, saveOverviewAccess, canViewOverview, canEditOverview,
+  type OverviewAccess,
+} from '@/lib/overview/overviewAccess';
 import {
  ChevronRight, ChevronDown, Train, Users, MonitorCheck,
  Link2, Edit3, Save, X, ExternalLink, UserCircle,
  FileText, Search, BookOpen, AlertCircle, MoreHorizontal, Plus,
- LayoutDashboard, TrendingUp, Trash2,
+ LayoutDashboard, TrendingUp, Trash2, Lock, Settings,
 } from 'lucide-react';
 
 // ─── Category colour map ──────────────────────────────────────────────────────
@@ -465,7 +470,16 @@ function CustomTabButton({ tab, isActive, canEdit, menuOpen, onSwitch, onMenuTog
 
 export default function DashboardHomePage() {
   const { user } = useAuthStore();
-  const canEdit = user?.role === 'maintenance' || user?.role === 'admin';
+
+  // ── Overview access control ────────────────────────────────────────────────
+  const [overviewAccess, setOverviewAccess] = useState<OverviewAccess>(getOverviewAccess);
+  const [showAccessModal, setShowAccessModal] = useState(false);
+  const canViewOv  = canViewOverview(user, overviewAccess);
+  const canEditOv  = canEditOverview(user, overviewAccess);
+  const isManager  = user?.role === 'admin' || user?.role === 'maintenance';
+
+  // Legacy canEdit (for custom tabs, other controls)
+  const canEdit = isManager || canEditOv;
 
   // ── Custom tabs ────────────────────────────────────────────────────────────
   const [customTabs, setCustomTabs] = useState<CustomTab[]>(() => {
@@ -531,13 +545,33 @@ export default function DashboardHomePage() {
           {BUILTIN_TABS.map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id && !activeCustomTab;
+            const isOverview = tab.id === 'overview';
             return (
-              <button key={tab.id} onClick={() => switchToBuiltin(tab.id)}
-                className={cn('flex items-center gap-1.5 px-4 py-3 text-xs font-semibold border-b-2 whitespace-nowrap transition-all shrink-0',
-                  isActive ? 'text-rail-600 border-rail-600' : 'text-slate-500 border-transparent hover:text-slate-700 hover:bg-slate-50')}>
-                <Icon size={13} className={isActive ? 'text-rail-500' : 'text-slate-400'}/>
-                {tab.label}
-              </button>
+              <div key={tab.id} className="flex items-center shrink-0 group/ovtab">
+                <button onClick={() => switchToBuiltin(tab.id)}
+                  className={cn('flex items-center gap-1.5 px-4 py-3 text-xs font-semibold border-b-2 whitespace-nowrap transition-all',
+                    isActive ? 'text-rail-600 border-rail-600' : 'text-slate-500 border-transparent hover:text-slate-700 hover:bg-slate-50')}>
+                  <Icon size={13} className={isActive ? 'text-rail-500' : 'text-slate-400'}/>
+                  {tab.label}
+                  {/* Lock badge when overview has restricted access */}
+                  {isOverview && overviewAccess.viewMode === 'selected' && (
+                    <Lock size={9} className="text-amber-500 ml-0.5"/>
+                  )}
+                </button>
+                {/* Access settings icon — Overview tab only, admin/maintenance only */}
+                {isOverview && isManager && (
+                  <button
+                    onClick={e => { e.stopPropagation(); setShowAccessModal(true); }}
+                    title="Configure who can view/edit this page"
+                    className={cn(
+                      'p-1 mr-1 rounded transition-all text-slate-400 hover:text-rail-600 hover:bg-rail-50',
+                      'opacity-0 group-hover/ovtab:opacity-100',
+                      showAccessModal && 'opacity-100 text-rail-600',
+                    )}>
+                    <Settings size={11}/>
+                  </button>
+                )}
+              </div>
             );
           })}
           {customTabs.map(tab => {
@@ -574,7 +608,20 @@ export default function DashboardHomePage() {
       {/* Tab content */}
       <AnimatePresence mode="wait">
         <motion.div key={activeTab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-          {activeTab === 'overview'  && !activeCustomTab && <OverviewWorkspace />}
+          {activeTab === 'overview'  && !activeCustomTab && (
+            canViewOv
+              ? <OverviewWorkspace canEdit={canEditOv}/>
+              : <div className="flex flex-col items-center justify-center py-24 text-center">
+                  <div className="w-14 h-14 bg-amber-50 border border-amber-200 rounded-2xl flex items-center justify-center mb-4">
+                    <Lock size={22} className="text-amber-500"/>
+                  </div>
+                  <p className="font-bold text-slate-800 text-sm mb-1">Access Restricted</p>
+                  <p className="text-xs text-slate-500 max-w-xs">
+                    You don&apos;t have permission to view the Overview page.
+                    Contact your Admin or Maintenance officer to request access.
+                  </p>
+                </div>
+          )}
           {activeTab === 'revenue'   && !activeCustomTab && <RevenueTab />}
           {activeTab === 'policies'  && !activeCustomTab && <PoliciesWorkspace />}
           {activeCustomTab && (
@@ -592,7 +639,14 @@ export default function DashboardHomePage() {
         {showAddDialog && (
           <TabNameDialog title="Add New Tab" onSave={addTab} onClose={() => setShowAddDialog(false)}/>
         )}
-        {renameTarget && (
+        {showAccessModal && (
+        <OverviewAccessModal
+          onClose={() => setShowAccessModal(false)}
+          onSave={access => { setOverviewAccess(access); setShowAccessModal(false); }}
+        />
+      )}
+
+      {renameTarget && (
           <TabNameDialog title="Rename Tab" initial={renameTarget.label}
             onSave={label => renameTab(renameTarget.id, label)}
             onClose={() => setRenameTarget(null)}/>

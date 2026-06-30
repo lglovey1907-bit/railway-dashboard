@@ -1149,9 +1149,12 @@ function ViewMenu({ view, canEdit, isActive, totalViews, btnRef, open, onClose, 
 // ── WorkspaceBar: sticky single header ────────────────────────────────────────
 const LAYOUT_ICON_MAP: Record<string, React.ElementType> = { Table2, LayoutGrid, List, Columns };
 
-export function OverviewWorkspace() {
+export function OverviewWorkspace({ canEdit: canEditProp }: { canEdit?: boolean } = {}) {
   const { user } = useAuthStore();
-  const canEdit = user?.role === 'maintenance' || user?.role === 'admin';
+  // canEditProp from parent overrides internal role check (used for access-controlled overview)
+  const canEdit = canEditProp !== undefined
+    ? canEditProp
+    : (user?.role === 'maintenance' || user?.role === 'admin');
   const pageSheet = usePageSheet('sheet_nsg_category_wise', user?.id);
 
   const [store, setStore] = useState<DBViewStore>(() => getDBViewStore('sheet_nsg_category_wise'));
