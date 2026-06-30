@@ -1,10 +1,13 @@
 // /api/monthly – Monthly Comparative Statement persistence via Vercel KV
 // GET  ?division=DELHI&fyYear=2026            → returns YearlyReport (or empty skeleton)
 // POST { division, fyYear, month, entry, annualTargets? } → upserts month entry
+// POST { division, fyYear, customHead }        → adds a custom head to the report
 
 import { NextRequest, NextResponse } from 'next/server';
 import { kv } from '@vercel/kv';
-import type { YearlyReport, MonthIndex, MonthEntry, ReportHeadId, AnnualTarget } from '@/lib/monthly/types';
+import type {
+  YearlyReport, MonthIndex, MonthEntry, AnnualTarget, CustomHead,
+} from '@/lib/monthly/types';
 import { REPORT_HEADS } from '@/lib/monthly/types';
 
 function kvKey(division: string, fyYear: number) {
@@ -12,7 +15,7 @@ function kvKey(division: string, fyYear: number) {
 }
 
 function emptyReport(division: string, fyYear: number): YearlyReport {
-  return { division: division.toUpperCase(), fyYear, months: {}, annualTargets: {} };
+  return { division: division.toUpperCase(), fyYear, months: {}, annualTargets: {}, customHeads: [] };
 }
 
 export async function GET(req: NextRequest) {
@@ -38,27 +41,46 @@ export async function POST(req: NextRequest) {
       month,
       entry,
       annualTargets,
+      customHead,
     }: {
       division: string;
       fyYear: number;
-      month: MonthIndex;
-      entry: MonthEntry;
-      annualTargets?: Partial<Record<ReportHeadId, AnnualTarget>>;
+      month?: MonthIndex;
+      entry?: MonthEntry;
+      annualTargets?: Record<string, AnnualTarget>;
+      customHead?: CustomHead;
     } = body;
 
-    if (!division || !fyYear || !month || !entry) {
+    if (!division || !fyYear) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
     const key = kvKey(division, fyYear);
     const existing = (await kv.get<YearlyReport>(key)) ?? emptyReport(division, fyYear);
 
+    // ── Add custom head ────────────────────────────────────────────────────
+    if (customHead) {
+      const heads = existing.customHeads ?? [];
+      // Avoid duplicate IDs
+      if (!heads.find(h => h.id === customHead.id)) {
+        heads.push(customHead);
+        existing.customHeads = heads;
+      }
+      await kv.set(key, existing);
+      return NextResponse.json({ ok: true, report: existing });
+    }
+
+    // ── Upsert month entry ─────────────────────────────────────────────────
+    if (!month || !entry) {
+      return NextResponse.json({ error: 'Missing month/entry' }, { status: 400 });
+    }
+
     // Auto-compute Total Revenue CY and PY from the four component heads
+    const revenueHeads = [
+      'passenger_revenue', 'other_coaching_revenue', 'goods_revenue', 'sundry_revenue',
+    ];
     const total = REPORT_HEADS.find(h => h.id === 'total_revenue');
     if (total) {
-      const revenueHeads: ReportHeadId[] = [
-        'passenger_revenue', 'other_coaching_revenue', 'goods_revenue', 'sundry_revenue',
-      ];
       let cyCum = 0, pyCum = 0, cyOk = true, pyOk = true;
       for (const rh of revenueHeads) {
         const cy = entry.heads[rh]?.cy;

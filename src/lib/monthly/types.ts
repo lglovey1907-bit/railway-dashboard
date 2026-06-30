@@ -24,6 +24,14 @@ export const REPORT_HEADS = [
 
 export type ReportHeadId = (typeof REPORT_HEADS)[number]['id'];
 
+/** A custom (admin-added) revenue head */
+export interface CustomHead {
+  id: string;
+  label: string;
+  unit: 'Cr' | 'Lakh';
+  order: number;
+}
+
 /** Values stored per head per month */
 export interface HeadValues {
   cy: number | null;  // Current Year actual
@@ -39,7 +47,7 @@ export interface AnnualTarget {
 /** Full data record for one month */
 export interface MonthEntry {
   month: MonthIndex;
-  heads: Record<ReportHeadId, HeadValues>;
+  heads: Record<string, HeadValues>;
   enteredAt?: string;  // ISO timestamp
   enteredBy?: string;  // user email
 }
@@ -49,7 +57,8 @@ export interface YearlyReport {
   division: string;
   fyYear: number;  // start year, e.g. 2026 means FY 2026-27
   months: Partial<Record<MonthIndex, MonthEntry>>;
-  annualTargets?: Partial<Record<ReportHeadId, AnnualTarget>>;
+  annualTargets?: Record<string, AnnualTarget>;
+  customHeads?: CustomHead[];
 }
 
 // ── Helper functions ────────────────────────────────────────────────────────
@@ -90,15 +99,13 @@ export function computeVariation(cy: number | null, py: number | null) {
 /** Compute cumulative value for a head up to a given month */
 export function computeCumulativeForHead(
   months: Partial<Record<MonthIndex, MonthEntry>>,
-  headId: ReportHeadId,
+  headId: string,
   upToMonth: MonthIndex,
   field: 'cy' | 'py',
 ): number | null {
-  const head = REPORT_HEADS.find(h => h.id === headId);
-  if (!head) return null;
-
-  if (head.isTotal) {
-    const revenueHeads: ReportHeadId[] = [
+  // total_revenue is computed from 4 component heads
+  if (headId === 'total_revenue') {
+    const revenueHeads = [
       'passenger_revenue', 'other_coaching_revenue', 'goods_revenue', 'sundry_revenue',
     ];
     let total = 0;

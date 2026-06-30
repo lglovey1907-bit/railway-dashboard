@@ -210,7 +210,13 @@ export function useAppSync(userId: string | undefined): SyncStatus {
           // Custom tab list
           e.nsKey === 'dashboard_custom_tabs' ||
           // Policy workspace content
-          e.nsKey.startsWith('policy_ws_')
+          e.nsKey.startsWith('policy_ws_') ||
+          // Cell workspaces — admin authors content in each cell, all users must see it
+          e.nsKey.startsWith('cell_ws_') ||
+          e.nsKey.startsWith('cell_rowlayout_') ||
+          e.nsKey.startsWith('links_') ||
+          e.nsKey.startsWith('sidebar_hidden_') ||
+          e.nsKey === 'cell_registry'
         ).map(e => e.nsKey);
         const userNsKeys = nsKeys.filter(k => !sharedNsKeys.includes(k));
 

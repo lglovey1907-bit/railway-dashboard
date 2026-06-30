@@ -13,6 +13,7 @@
  */
 import { useEffect, useRef } from 'react';
 import { sharedWrite } from './sharedSync';
+import { getAllCells } from '@/lib/cells/cellRegistry';
 
 const POLICY_SUB_IDS = [
   'commercial-circulars','railway-board','divisional','sops',
@@ -81,6 +82,29 @@ export function useSharedPush(role: string | undefined) {
       const safe = id.replace(/[^a-zA-Z0-9]/g, '_');
       push(`rly_policy_ws_${id}`, `policy_ws_${safe}`);
     });
+
+    // ── Cell workspace content (Marketing, Revenue, etc.) ──────────────────
+    // Each cell's workspace builder layout must be visible to all users
+    try {
+      const cells = getAllCells();
+      cells.forEach(cell => {
+        const cn = cell.name;
+        const lsSafe = cn.replace(/\W/g, '_');
+        const nsSafe = cn.replace(/\W/g, '_');
+        // Main workspace canvas
+        push(`workspace_v2_${lsSafe}`, `cell_ws_${nsSafe}`);
+        // Row layout
+        push(`rly_rowlayout_${lsSafe}`, `cell_rowlayout_${nsSafe}`);
+        // Page/link registry
+        const linkSafe = cn.replace(/[^a-zA-Z0-9]/g, '_');
+        push(`rly_links_${linkSafe}`, `links_${linkSafe}`);
+        // Sidebar hidden state
+        push(`rly_sidebar_hidden_${lsSafe}`, `sidebar_hidden_${nsSafe}`);
+      });
+    } catch { /* ignore */ }
+
+    // ── Cell registry (which cells are active/created) ──────────────────────
+    push('rly_cell_registry', 'cell_registry');
 
   }, [role]);
 }
