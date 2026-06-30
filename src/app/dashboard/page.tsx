@@ -1,5 +1,6 @@
 'use client';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RevenueTrendChart } from '@/components/charts/RevenueTrendChart';
 import { CellDistributionChart, TargetAchievementChart } from '@/components/charts/CellCharts';
@@ -17,7 +18,6 @@ import { SheetViewBuilder } from '@/components/sheets/SheetViewBuilder';
 import { PowerBIEmbed } from '@/components/embeds/PowerBIEmbed';
 import { PoliciesWorkspace } from '@/components/policies/PoliciesWorkspace';
 import { OverviewWorkspace } from '@/components/overview/OverviewWorkspace';
-import ProfilePage from '@/app/dashboard/profile/page';
 import {
  ChevronRight, ChevronDown, Train, Users, MonitorCheck,
  Link2, Edit3, Save, X, ExternalLink, UserCircle,
@@ -408,6 +408,60 @@ function TabNameDialog({ title, initial = '', onSave, onClose }: {
   );
 }
 
+// ── Custom tab button with portal dropdown (avoids overflow-x-auto clipping) ─
+interface CustomTab { id: string; label: string; content: string }
+function CustomTabButton({ tab, isActive, canEdit, menuOpen, onSwitch, onMenuToggle, onMenuClose, onRename, onDelete }: {
+  tab: CustomTab; isActive: boolean; canEdit: boolean; menuOpen: string | null;
+  onSwitch: () => void; onMenuToggle: (id: string) => void; onMenuClose: () => void;
+  onRename: () => void; onDelete: () => void;
+}) {
+  const btnRef = useRef<HTMLDivElement>(null);
+  const isOpen = menuOpen === tab.id;
+
+  // Portal dropdown position
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  useEffect(() => {
+    if (isOpen && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setPos({ top: r.bottom + 4, left: r.left });
+    }
+  }, [isOpen]);
+
+  return (
+    <div ref={btnRef} className="relative flex-shrink-0 group/ctab">
+      <button onClick={onSwitch}
+        className={cn('flex items-center gap-1 px-4 py-3 text-xs font-semibold border-b-2 whitespace-nowrap transition-all',
+          isActive ? 'text-rail-600 border-rail-600' : 'text-slate-500 border-transparent hover:text-slate-700')}>
+        {tab.label}
+        {canEdit && (
+          <span
+            onClick={e => { e.stopPropagation(); onMenuToggle(tab.id); }}
+            className="ml-0.5 p-0.5 rounded opacity-0 group-hover/ctab:opacity-100 hover:bg-slate-100 text-slate-300 hover:text-slate-600 transition-opacity">
+            <MoreHorizontal size={11}/>
+          </span>
+        )}
+      </button>
+      {isOpen && typeof document !== 'undefined' && createPortal(
+        <>
+          <div className="fixed inset-0 z-[900]" onClick={onMenuClose}/>
+          <div className="fixed z-[901] bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden w-36"
+            style={{ top: pos.top, left: pos.left }}>
+            <button onClick={() => { onRename(); onMenuClose(); }}
+              className="flex items-center gap-2 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 w-full">
+              <Edit3 size={11} className="text-slate-400"/> Rename
+            </button>
+            <button onClick={() => { onDelete(); onMenuClose(); }}
+              className="flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50 w-full">
+              <Trash2 size={11}/> Delete
+            </button>
+          </div>
+        </>,
+        document.body,
+      )}
+    </div>
+  );
+}
+
 export default function DashboardHomePage() {
   const { user } = useAuthStore();
   const canEdit = user?.role === 'maintenance' || user?.role === 'admin';
@@ -425,7 +479,6 @@ export default function DashboardHomePage() {
 
   const BUILTIN_TABS: { id: string; label: string; icon: React.ElementType }[] = [
     { id: 'overview',  label: 'Overview',                icon: LayoutDashboard },
-    { id: 'profile',   label: 'Profile',                 icon: UserCircle },
     { id: 'revenue',   label: 'Revenue',                 icon: TrendingUp },
     { id: 'policies',  label: 'Policies / Circulars / SOP', icon: FileText },
   ];
@@ -489,25 +542,18 @@ export default function DashboardHomePage() {
           {customTabs.map(tab => {
             const isActive = activeTab === tab.id;
             return (
-              <div key={tab.id} className="relative flex-shrink-0">
-                <button onClick={() => switchToCustom(tab)}
-                  className={cn('flex items-center gap-1 px-4 py-3 text-xs font-semibold border-b-2 whitespace-nowrap transition-all',
-                    isActive ? 'text-rail-600 border-rail-600' : 'text-slate-500 border-transparent hover:text-slate-700')}>
-                  {tab.label}
-                  {isActive && canEdit && (
-                    <span onClick={e => { e.stopPropagation(); setMenuOpen(m => m === tab.id ? null : tab.id); }}
-                      className="ml-1 p-0.5 rounded hover:bg-slate-100 text-slate-300 hover:text-slate-500">
-                      <ChevronDown size={10}/>
-                    </span>
-                  )}
-                </button>
-                {menuOpen === tab.id && (
-                  <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden w-36" onClick={() => setMenuOpen(null)}>
-                    <button onClick={() => setRenameTarget(tab)} className="flex items-center gap-2 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 w-full"><Edit3 size={11} className="text-slate-400"/> Rename</button>
-                    <button onClick={() => deleteTab(tab.id)} className="flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50 w-full"><Trash2 size={11}/> Delete</button>
-                  </div>
-                )}
-              </div>
+              <CustomTabButton
+                key={tab.id}
+                tab={tab}
+                isActive={isActive}
+                canEdit={canEdit}
+                menuOpen={menuOpen}
+                onSwitch={() => switchToCustom(tab)}
+                onMenuToggle={id => setMenuOpen(m => m === id ? null : id)}
+                onMenuClose={() => setMenuOpen(null)}
+                onRename={() => setRenameTarget(tab)}
+                onDelete={() => deleteTab(tab.id)}
+              />
             );
           })}
           {canEdit && (
@@ -528,7 +574,6 @@ export default function DashboardHomePage() {
       <AnimatePresence mode="wait">
         <motion.div key={activeTab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
           {activeTab === 'overview'  && !activeCustomTab && <OverviewWorkspace />}
-          {activeTab === 'profile'   && !activeCustomTab && <ProfilePage />}
           {activeTab === 'revenue'   && !activeCustomTab && <RevenueTab />}
           {activeTab === 'policies'  && !activeCustomTab && <PoliciesWorkspace />}
           {activeCustomTab && (
