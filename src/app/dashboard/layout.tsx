@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useAppSync } from '@/lib/config/useAppSync';
+import { useSharedPush } from '@/lib/config/useSharedPush';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { useSidebarStore } from '@/store/sidebarStore';
@@ -23,6 +24,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   // ── Cross-device sync ────────────────────────────────────────────────────────
   const syncStatus = useAppSync(user?.id);
+  // Backfill _shared_ namespace from admin's localStorage on every admin session
+  useSharedPush(user?.role);
 
   useEffect(() => {
     if (isInitialized && !user) router.replace('/login');

@@ -252,11 +252,39 @@ export function useAppSync(userId: string | undefined): SyncStatus {
             });
           }
           setStatus({ loading: false, done: true, kvAvailable: true, namespacesSynced: synced });
-          // Trigger a page reload if significant data was synced from cloud
-          // This ensures all components re-read their localStorage values
-          if (synced > 0) {
-            window.dispatchEvent(new CustomEvent('rly_cloud_sync_complete', { detail: { synced } }));
-          }
+
+          // ── Phase 2: custom tab workspace catch-up ────────────────────────
+          // rly_dashboard_custom_tabs may have been empty at phase-1 scan time
+          // (Prashant's device had no tabs yet). Now that it is populated from
+          // _shared_, fetch any workspace content we missed.
+          (() => {
+            try {
+              const tabs: Array<{ id: string }> = JSON.parse(
+                localStorage.getItem('rly_dashboard_custom_tabs') ?? '[]'
+              );
+              const needed = tabs
+                .map(tab => ({
+                  lsKey: `workspace_v2_dashboard_tab_${tab.id.replace(/[^a-zA-Z0-9]/g, '_')}`,
+                  nsKey: `ws_dashboard_tab_${tab.id.replace(/[^a-zA-Z0-9]/g, '_')}`,
+                }))
+                .filter(e => !localStorage.getItem(e.lsKey));   // skip already-populated
+
+              if (needed.length > 0) {
+                return fetchAll(SHARED_UID, needed.map(e => e.nsKey)).then(r2 => {
+                  needed.forEach(({ lsKey, nsKey }) => {
+                    const v = r2[nsKey];
+                    if (v) localStorage.setItem(lsKey, v);
+                  });
+                });
+              }
+            } catch { /* ignore */ }
+            return Promise.resolve();
+          })().finally(() => {
+            // Fire the sync event AFTER both phases complete
+            if (synced > 0) {
+              window.dispatchEvent(new CustomEvent('rly_cloud_sync_complete', { detail: { synced } }));
+            }
+          });
         });
       })
       .catch(() => {
