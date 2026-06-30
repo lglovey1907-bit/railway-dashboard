@@ -12,7 +12,8 @@ export type WidgetType =
  | 'shared_table' | 'pdf' | 'image' | 'staff_directory'
  // Enterprise new types
  | 'database' | 'ai_assistant' | 'knowledge_base' | 'task_manager'
- | 'financial';
+ | 'financial'
+ | 'monthly_report';
 
 /** A single data source for an advanced KPI card */
 export type KpiAggregation = 'count' | 'sum' | 'avg' | 'min' | 'max' | 'unique';
@@ -70,6 +71,8 @@ export interface LayoutWidget {
  // ── Table scope ──────────────────────────────────────────────────────────────
  tableScope?: 'all' | 'section' | 'table'; // what this widget displays
  tableSectionId?: string;     // section filter when scope = 'section'
+ // ── Monthly Report ───────────────────────────────────────────────────────────
+ division?: string;           // railway division, e.g. 'DELHI'
 }
 
 export interface LayoutColumn {

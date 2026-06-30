@@ -906,7 +906,8 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
                   <div className="grid grid-cols-3 gap-2.5 w-[420px]">
                     {([
                       { type: 'database'     as WidgetType, emoji: '📊', label: 'Database',          desc: 'Structured table view' },
-                      { type: 'financial'    as WidgetType, emoji: '💰', label: 'Revenue Dashboard', desc: 'Financial performance' },
+                      { type: 'financial'    as WidgetType, emoji: '💰', label: 'Revenue Dashboard',  desc: 'Financial performance' },
+      { type: 'monthly_report' as WidgetType, emoji: '📋', label: 'Monthly Statement', desc: 'Revenue comparative' },
                       { type: 'task_manager' as WidgetType, emoji: '✅', label: 'Tasks',             desc: 'Track action items' },
                       { type: 'ai_assistant' as WidgetType, emoji: '🤖', label: 'AI Assistant',      desc: 'Chat with AI' },
                       { type: 'knowledge_base' as WidgetType, emoji: '📚', label: 'Knowledge',       desc: 'Docs & SOPs' },

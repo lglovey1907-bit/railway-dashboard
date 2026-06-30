@@ -17,6 +17,7 @@ const AIAssistantBlock = dynamic(() => import('@/components/ai/AIAssistantBlock'
 const KnowledgeBaseBlock = dynamic(() => import('@/components/knowledge/KnowledgeBaseBlock').then(m => ({ default: m.KnowledgeBaseBlock })), { ssr: false });
 const TaskManagerBlock = dynamic(() => import('@/components/tasks/TaskManagerBlock').then(m => ({ default: m.TaskManagerBlock })), { ssr: false });
 const FinancialDashboard = dynamic(() => import('@/components/financial/FinancialDashboard').then(m => ({ default: m.FinancialDashboard })), { ssr: false });
+const MonthlyReportWidget = dynamic(() => import('@/components/monthly/MonthlyReportWidget').then(m => ({ default: m.MonthlyReportWidget })), { ssr: false });
 import type { LayoutWidget, LayoutColumn } from '@/lib/workspace/layoutEngine';
 import type { useWorkspace } from '@/lib/cellData/useWorkspace';
 import { TableEngine } from '@/components/cell/TableEngine';
@@ -1278,6 +1279,14 @@ export function WidgetRenderer({
           canApprove={canManage}
           currentUser={userName ?? 'User'}
           mode="embedded"
+        />
+      );
+
+    case 'monthly_report':
+      return (
+        <MonthlyReportWidget
+          division={(widget as any).division ?? 'DELHI'}
+          isAdmin={canManage}
         />
       );
 
