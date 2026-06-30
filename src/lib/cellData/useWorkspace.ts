@@ -19,10 +19,13 @@ const TRASH_RETAIN_DAYS = 30;
 const EMPTY_WS = (cell: string): CellWorkspace => ({ cell, sections: [], tables: [], trash: [] });
 
 
-// Namespace for a given cell key (shared across all users)
-function sharedNS(cell: string) { return `ws_${cell.replace(/[^a-zA-Z0-9]/g, '_')}`; }
-// Dashboard tab cells that should sync globally
-const isDashboardTab = (cell: string) => cell.startsWith('dashboard_tab_');
+// Namespace for a given cell key (shared across all users in _shared_ Upstash)
+function sharedNS(cell: string) {
+  // Dashboard tab workspaces keep their legacy ws_ prefix (backward-compat with useAppSync)
+  if (cell.startsWith('dashboard_tab_')) return `ws_${cell.replace(/[^a-zA-Z0-9]/g, '_')}`;
+  // All other cells: cell_ws_ prefix — matches NS.cellWorkspace() used in useAppSync
+  return `cell_ws_${cell.replace(/[^a-zA-Z0-9]/g, '_')}`;
+}
 
 export function useWorkspace(cell: string, currentUser?: { id: string; name: string }) {
  const key = `workspace_v2_${cell.replace(/[^a-zA-Z0-9]/g, '_')}`;
@@ -30,36 +33,43 @@ export function useWorkspace(cell: string, currentUser?: { id: string; name: str
  const [history, setHistory] = useState<HistoryEntry[]>([]);
  const [future, setFuture] = useState<HistoryEntry[]>([]);
 
- // Load from localStorage
- useEffect(() => {
- if (typeof window === 'undefined') return;
- try {
- const raw = localStorage.getItem(key);
- if (raw) {
- const parsed = JSON.parse(raw) as CellWorkspace;
- setWs({
- cell,
- sections: (parsed.sections ?? []).map((s: any) => ({
- ...s, collapsed: s.collapsed ?? false, widgets: s.widgets ?? [],
- })),
- tables: (parsed.tables ?? []).map((t: any) => ({
- ...t,
- // Stamp ownerCell so SharedTablesView can always read the owner workspace
- ownerCell: t.ownerCell || cell,
- firstColLabel: t.firstColLabel ?? 'Label',
- dataSource: t.dataSource ?? 'manual',
- filters: t.filters ?? {},
- nominatedUserIds: t.nominatedUserIds ?? [],
- trash: t.trash ?? [],
- rows: (t.rows ?? []).map((r: any, i: number) => ({
- ...r, order: r.order ?? i,
- })),
- columnOrder: t.columnOrder ?? (t.fields ?? []).map((f: any) => f.id),
- })),
- trash: parsed.trash ?? [],
+ // ── Helper: apply stored CellWorkspace data with safe defaults ──────────────
+ const applyWsData = (parsed: CellWorkspace | any) => ({
+   cell,
+   sections: (parsed.sections ?? []).map((s: any) => ({
+     ...s, collapsed: s.collapsed ?? false, widgets: s.widgets ?? [],
+   })),
+   tables: (parsed.tables ?? []).map((t: any) => ({
+     ...t,
+     ownerCell: t.ownerCell || cell,
+     firstColLabel: t.firstColLabel ?? 'Label',
+     dataSource: t.dataSource ?? 'manual',
+     filters: t.filters ?? {},
+     nominatedUserIds: t.nominatedUserIds ?? [],
+     trash: t.trash ?? [],
+     rows: (t.rows ?? []).map((r: any, i: number) => ({ ...r, order: r.order ?? i })),
+     columnOrder: t.columnOrder ?? (t.fields ?? []).map((f: any) => f.id),
+   })),
+   trash: parsed.trash ?? [],
  });
- }
- } catch { /* ignore */ }
+
+ // Load from localStorage first (fast / instant render), then override from cloud
+ useEffect(() => {
+   if (typeof window === 'undefined') return;
+   // Phase 1: localStorage (synchronous, immediate)
+   try {
+     const raw = localStorage.getItem(key);
+     if (raw) setWs(applyWsData(JSON.parse(raw)));
+   } catch { /* ignore */ }
+   // Phase 2: cloud read (authoritative — ensures cross-browser sync on page load)
+   sharedRead(sharedNS(cell)).then(cloudData => {
+     if (!cloudData) return;
+     try {
+       const normalized = applyWsData(cloudData as CellWorkspace);
+       setWs(normalized);
+       localStorage.setItem(key, JSON.stringify(normalized));
+     } catch { /* ignore */ }
+   }).catch(() => { /* silent */ });
  }, [key, cell]);
 
  // Sync from other useWorkspace instances on the same page (e.g. DatabasePeekModal ↔ canvas)
@@ -75,14 +85,14 @@ export function useWorkspace(cell: string, currentUser?: { id: string; name: str
 
  // ── Core persistence + history ─────────────────────────────────────────────
  const persist = useCallback((next: CellWorkspace) => {
- if (typeof window !== 'undefined') {
-   localStorage.setItem(key, JSON.stringify(next));
-   // Push to shared cloud namespace for dashboard tabs (visible to all users)
-   if (isDashboardTab(cell)) sharedWrite(sharedNS(cell), next);
-   // Broadcast to other useWorkspace instances on the same page
-   window.dispatchEvent(new CustomEvent('ws-sync', { detail: { key, data: next } }));
- }
- }, [key]);
+   if (typeof window !== 'undefined') {
+     localStorage.setItem(key, JSON.stringify(next));
+     // Always sync to shared cloud namespace so every browser sees the latest
+     sharedWrite(sharedNS(cell), next);
+     // Broadcast to other useWorkspace instances on the same page
+     window.dispatchEvent(new CustomEvent('ws-sync', { detail: { key, data: next } }));
+   }
+ }, [key, cell]);
 
  /**
  * All mutations go through this. Pushes a history snapshot before every

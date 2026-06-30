@@ -97,20 +97,86 @@ function headUnitLabel(unit: 'Cr' | 'Lakh', displayUnit: DisplayUnit): string {
   return displayUnit === 'lacs' ? 'Lacs' : 'Cr';
 }
 
-// ─── Print CSS injector ──────────────────────────────────────────────────────
-function PrintStyles() {
-  return (
-    <style dangerouslySetInnerHTML={{ __html: `
-      @media print {
-        body > *:not(#monthly-print-root) { display: none !important; }
-        #monthly-print-root { display: block !important; }
-        @page { size: A4 landscape; margin: 10mm; }
-        .no-print { display: none !important; }
-        table { font-size: 8pt !important; }
-        th, td { padding: 3px 5px !important; }
-      }
-    `}} />
+// ─── Print Overlay — portal directly into document.body ─────────────────────
+interface PrintOverlayProps {
+  report: YearlyReport;
+  selectedMonth: MonthIndex;
+  fyYear: number;
+  displayUnit: DisplayUnit;
+  allHeads: AnyHead[];
+  division: string;
+  onClose: () => void;
+}
+
+function PrintOverlay({ report, selectedMonth, fyYear, displayUnit, allHeads, division, onClose }: PrintOverlayProps) {
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+
+  useEffect(() => {
+    // Small delay lets React finish rendering the portal before opening print dialog
+    const t = setTimeout(() => { window.print(); }, 180);
+    const handleAfterPrint = () => { onCloseRef.current(); };
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('afterprint', handleAfterPrint);
+    };
+  }, []);
+
+  const content = (
+    <div id="monthly-print-root" style={{
+      position: 'fixed', inset: 0, background: 'white',
+      zIndex: 9999, overflow: 'auto', padding: '24px 20px',
+    }}>
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          body > *:not(#monthly-print-root) { display: none !important; }
+          #monthly-print-root {
+            position: static !important;
+            overflow: visible !important;
+            padding: 0 !important;
+          }
+          @page { size: A4 landscape; margin: 10mm; }
+          .mpr-no-print { display: none !important; }
+          table { font-size: 7.5pt !important; border-collapse: collapse !important; width: 100% !important; }
+          th, td { padding: 2px 4px !important; }
+        }
+      `}} />
+
+      <button
+        onClick={onClose}
+        className="mpr-no-print"
+        style={{
+          position: 'absolute', top: 12, right: 16,
+          background: '#374151', color: 'white', border: 'none',
+          borderRadius: 6, padding: '5px 14px', cursor: 'pointer', fontSize: 13,
+        }}
+      >
+        ✕ Close
+      </button>
+
+      <div style={{ textAlign: 'center', marginBottom: 14 }}>
+        <h2 style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', margin: 0 }}>
+          Statement Showing Originating Revenue over {division} Division
+        </h2>
+        <p style={{ fontSize: 11, color: '#6B7280', marginTop: 4, marginBottom: 0 }}>
+          During {MONTH_NAMES[selectedMonth - 1]} {fyYear} as Compared with{' '}
+          {MONTH_NAMES[selectedMonth - 1]} {fyYear - 1}
+          {displayUnit === 'lacs' && ' · Values in Lacs'}
+        </p>
+      </div>
+
+      <ComparativeTable
+        report={report}
+        selectedMonth={selectedMonth}
+        fyYear={fyYear}
+        displayUnit={displayUnit}
+        allHeads={allHeads}
+      />
+    </div>
   );
+
+  return createPortal(content, document.body);
 }
 
 // ─── Add Custom Head Modal ──────────────────────────────────────────────────
@@ -506,6 +572,7 @@ export function MonthlyReportWidget({ division = 'DELHI', isAdmin = false }: Mon
   const [showEntry, setShowEntry] = useState(false);
   const [showAddHead, setShowAddHead] = useState(false);
   const [displayUnit, setDisplayUnit] = useState<DisplayUnit>('cr');
+  const [showPrint, setShowPrint] = useState(false);
 
   const { report, loading, refresh } = useYearlyReport(division, fyYear);
   const fyOptions = [todayFy, todayFy - 1, todayFy - 2];
@@ -533,16 +600,12 @@ export function MonthlyReportWidget({ division = 'DELHI', isAdmin = false }: Mon
   ];
 
   const handlePrint = () => {
-    // Set a root id so print CSS can hide everything else
-    const widget = document.getElementById('monthly-report-widget');
-    if (widget) widget.id = 'monthly-print-root';
-    window.print();
-    if (widget) widget.id = 'monthly-report-widget';
+    // Only print when there is data for the selected month
+    if (report && report.months[selectedMonth]) setShowPrint(true);
   };
 
   return (
     <div id="monthly-report-widget" className="flex flex-col gap-4 w-full h-full min-h-0">
-      <PrintStyles />
 
       {/* ── Top bar ── */}
       <div className="flex flex-wrap items-center gap-2 no-print">
@@ -708,6 +771,19 @@ export function MonthlyReportWidget({ division = 'DELHI', isAdmin = false }: Mon
           existingCustom={report.customHeads ?? []}
           onClose={() => setShowAddHead(false)}
           onSaved={refresh}
+        />
+      )}
+
+      {/* ── Print Overlay (portal → body direct child, so print CSS works) ── */}
+      {showPrint && report && report.months[selectedMonth] && (
+        <PrintOverlay
+          report={report}
+          selectedMonth={selectedMonth}
+          fyYear={fyYear}
+          displayUnit={displayUnit}
+          allHeads={allHeads}
+          division={division}
+          onClose={() => setShowPrint(false)}
         />
       )}
     </div>
