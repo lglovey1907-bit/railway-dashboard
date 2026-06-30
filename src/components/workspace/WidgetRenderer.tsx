@@ -790,19 +790,27 @@ function ChecklistWidget({ widget, onUpdate, canManage }: {
  );
 }
 
-// ── Embed / Google Service Widget ──────────────────────────────────────────────
+// ── Embed / Google + Microsoft Service Widget ─────────────────────────────────
 const EMBED_SERVICE_TYPES = [
- { id: 'url',    label: 'URL',         icon: '🌐', hint: 'Any embeddable URL' },
- { id: 'gsheet', label: 'Google Sheet',icon: '📊', hint: 'Paste Google Sheet share URL' },
- { id: 'gdoc',   label: 'Google Doc',  icon: '📄', hint: 'Paste Google Doc share URL' },
- { id: 'gform',  label: 'Google Form', icon: '📝', hint: 'Paste Google Form URL' },
- { id: 'gdrive', label: 'Drive Folder',icon: '📁', hint: 'Paste Google Drive folder URL' },
+ // Generic
+ { id: 'url',      label: 'URL',          icon: '🌐', hint: 'Any embeddable page URL' },
+ // Google
+ { id: 'gsheet',   label: 'Google Sheet', icon: '📊', hint: 'Paste Google Sheets share URL' },
+ { id: 'gdoc',     label: 'Google Doc',   icon: '📄', hint: 'Paste Google Docs share URL' },
+ { id: 'gform',    label: 'Google Form',  icon: '📝', hint: 'Paste Google Forms URL' },
+ { id: 'gdrive',   label: 'Drive Folder', icon: '📁', hint: 'Paste Google Drive folder URL' },
+ // Microsoft
+ { id: 'excel',    label: 'Excel Online', icon: '📗', hint: 'Paste OneDrive/SharePoint Excel URL — or from Share → Embed, copy the iframe src' },
+ { id: 'word',     label: 'Word Online',  icon: '📘', hint: 'Paste OneDrive/SharePoint Word URL — or from Share → Embed, copy the iframe src' },
+ { id: 'ppt',      label: 'PowerPoint',   icon: '📙', hint: 'Paste OneDrive/SharePoint PPT URL — or from Share → Embed, copy the iframe src' },
+ { id: 'onedrive', label: 'OneDrive',     icon: '☁️',  hint: 'In OneDrive, open the folder → Share → Embed → copy the iframe src URL' },
 ] as const;
 type EmbedServiceType = typeof EMBED_SERVICE_TYPES[number]['id'];
 
 function toEmbedSrc(url: string, type: EmbedServiceType): string {
  if (!url) return '';
  try {
+ // ── Google ───────────────────────────────────────────────────────────────
  if (type === 'gsheet') {
  const m = url.match(/\/spreadsheets\/d\/([^/]+)/);
  if (m) return `https://docs.google.com/spreadsheets/d/${m[1]}/htmlview?widget=true&headers=false`;
@@ -818,6 +826,30 @@ function toEmbedSrc(url: string, type: EmbedServiceType): string {
  if (type === 'gdrive') {
  const m = url.match(/\/drive\/folders\/([^/?]+)/);
  if (m) return `https://drive.google.com/embeddedfolderview?id=${m[1]}#grid`;
+ }
+ // ── Microsoft ─────────────────────────────────────────────────────────────
+ if (type === 'excel' || type === 'word' || type === 'ppt') {
+ // Already an embed/viewer URL — use as-is
+ if (url.includes('officeapps.live.com') || url.includes('onedrive.live.com/embed') || url.includes('action=embedview')) return url;
+ // SharePoint URL: append embedview action
+ if (url.includes('sharepoint.com')) {
+ const base = url.split('?')[0];
+ return `${base}?action=embedview`;
+ }
+ // OneDrive personal sharing link (1drv.ms or onedrive.live.com)
+ // Wrap in Office Online viewer — works for publicly shared files
+ if (url.includes('1drv.ms') || url.includes('onedrive.live.com')) {
+ return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`;
+ }
+ // Direct .xlsx / .docx / .pptx URL
+ if (/\.(xlsx|xls|docx|doc|pptx|ppt)$/i.test(url)) {
+ return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`;
+ }
+ return url;
+ }
+ if (type === 'onedrive') {
+ // User should paste the embed src from OneDrive's Share → Embed dialog
+ return url;
  }
  } catch {}
  return url;
@@ -835,7 +867,7 @@ function EmbedWidget({ widget, onUpdate, canManage }: {
  if (editing && canManage) {
  return (
  <div className="space-y-3">
- <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-5">
+ <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4 lg:grid-cols-5">
  {EMBED_SERVICE_TYPES.map(et => (
  <button key={et.id} onClick={() => setSvcType(et.id)}
  className={`flex items-center gap-1.5 px-2.5 py-2 rounded-xl border text-left text-xs transition-all ${svcType === et.id ? 'bg-rail-50 border-rail-300 text-rail-700 font-semibold' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
