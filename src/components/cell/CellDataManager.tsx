@@ -103,9 +103,9 @@ function AddWidgetMenu({ sId, hook, cell, onClose }: { sId: string; hook: Return
  return (
  <>
  <Portal>
- <div className="fixed inset-0 z-[200]"onClick={onClose}/>
+ <div className="fixed inset-0 z-[2100]"onClick={onClose}/>
  <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
- className="fixed z-[201] bg-white border border-slate-200 rounded-2xl shadow-xl p-2 w-72"
+ className="fixed z-[2101] bg-white border border-slate-200 rounded-2xl shadow-xl p-2 w-72"
  style={{ top: '50%', left: '50%', transform: 'translate(-50%, -55%)' }}>
  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 px-3 py-2">Add to Section</p>
  {options.map(opt => (

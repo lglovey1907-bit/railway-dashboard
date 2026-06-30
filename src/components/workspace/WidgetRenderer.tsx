@@ -936,25 +936,57 @@ export function WidgetRenderer({
           <div className="flex flex-col items-center gap-2 py-6 text-center">
             <Table2 size={20} className="text-slate-300"/>
             <p className="text-xs font-semibold text-slate-500">No tables yet</p>
-            <p className="text-[10px] text-slate-400">Open "Tables & Data" below to create your first table</p>
+            <p className="text-[10px] text-slate-400">Open the Database panel to create your first table</p>
           </div>
         );
-        return (
-          <div className="space-y-2">
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Select table to display:</p>
-            <div className="space-y-1.5">
-              {available.map((t: any) => (
-                <button key={t.id} onClick={() => onUpdate({ tableId: t.id, title: t.name })}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 bg-slate-50 hover:bg-rail-50 border border-slate-200 hover:border-rail-300 rounded-xl text-left transition-all group">
-                  <Table2 size={14} className="text-rail-500 shrink-0"/>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-semibold text-slate-800 truncate">{t.name}</p>
-                    <p className="text-[10px] text-slate-400">{t.rows?.length ?? 0} rows · {t.fields?.length ?? 0} cols</p>
-                  </div>
-                  <span className="text-[10px] text-rail-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">Select →</span>
-                </button>
-              ))}
+        // Build section-grouped picker
+        const sections: any[] = workspaceHook.ws.sections ?? [];
+        // Map each table to the first section that contains it
+        const tableInSection = new Map<string, string>();
+        sections.forEach((sec: any) => {
+          (sec.widgets ?? []).forEach((w: any) => {
+            if (w.type === 'table' && w.tableId && !tableInSection.has(w.tableId))
+              tableInSection.set(w.tableId, sec.id);
+          });
+        });
+        // Group available tables by section
+        const grouped: { secId: string; secTitle: string; tables: any[] }[] = sections
+          .sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0))
+          .map((sec: any) => ({
+            secId: sec.id,
+            secTitle: sec.title || 'Untitled Section',
+            tables: available.filter((t: any) => tableInSection.get(t.id) === sec.id),
+          }))
+          .filter((g: any) => g.tables.length > 0);
+        const unassigned = available.filter((t: any) => !tableInSection.has(t.id));
+        if (unassigned.length > 0) grouped.push({ secId: '__none__', secTitle: 'No Section', tables: unassigned });
+
+        const TableBtn = ({ t }: { t: any }) => (
+          <button key={t.id} onClick={() => onUpdate({ tableId: t.id, title: t.name })}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 bg-slate-50 hover:bg-rail-50 border border-slate-200 hover:border-rail-300 rounded-xl text-left transition-all group">
+            <Table2 size={14} className="text-rail-500 shrink-0"/>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold text-slate-800 truncate">{t.name}</p>
+              <p className="text-[10px] text-slate-400">{t.rows?.length ?? 0} rows · {t.fields?.length ?? 0} cols</p>
             </div>
+            <span className="text-[10px] text-rail-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">Select →</span>
+          </button>
+        );
+
+        return (
+          <div className="space-y-3">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Select table to display:</p>
+            {grouped.length > 0 ? grouped.map(g => (
+              <div key={g.secId}>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-1 mb-1.5 flex items-center gap-1">
+                  <span className="inline-block w-2 h-2 rounded-sm bg-slate-300"/>
+                  {g.secTitle}
+                </p>
+                <div className="space-y-1.5 pl-2">
+                  {g.tables.map((t: any) => <TableBtn key={t.id} t={t}/>)}
+                </div>
+              </div>
+            )) : available.map((t: any) => <TableBtn key={t.id} t={t}/>)}
           </div>
         );
       }
