@@ -17,6 +17,7 @@ import { PageSheetLinkBar } from '@/components/sheets/PageSheetLinkBar';
 import { SheetViewBuilder } from '@/components/sheets/SheetViewBuilder';
 import { PowerBIEmbed } from '@/components/embeds/PowerBIEmbed';
 import { PoliciesWorkspace } from '@/components/policies/PoliciesWorkspace';
+import { WorkspaceBuilder } from '@/components/workspace/WorkspaceBuilder';
 import { OverviewWorkspace } from '@/components/overview/OverviewWorkspace';
 import {
  ChevronRight, ChevronDown, Train, Users, MonitorCheck,
@@ -376,14 +377,13 @@ function RevenueTab() {
 
 interface CustomTab { id: string; label: string; content: string; }
 
-function CustomTabContent({ tab, onUpdate, canEdit }: { tab: CustomTab; onUpdate: (c: string) => void; canEdit: boolean }) {
+function CustomTabContent({ tab }: { tab: CustomTab; onUpdate: (c: string) => void; canEdit: boolean }) {
+  // Each custom tab gets its own full workspace, scoped by tab.id
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-6" style={{ boxShadow: '0 1px 3px rgba(15,23,42,0.06)' }}>
-      <p className="text-sm font-bold text-slate-800 mb-4">{tab.label}</p>
-      <textarea value={tab.content} onChange={e => canEdit && onUpdate(e.target.value)}
-        readOnly={!canEdit} rows={10} placeholder={canEdit ? 'Add content…' : ''}
-        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 focus:outline-none focus:border-rail-400 resize-y"/>
-    </div>
+    <WorkspaceBuilder
+      cell={`dashboard_tab_${tab.id}`}
+      enterprise
+    />
   );
 }
 
