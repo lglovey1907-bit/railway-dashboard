@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutGrid, Table2, Plus, Settings2, Check, X, GripVertical,
-  ChevronDown, ChevronUp, Maximize2, Pin, Copy, Trash2,
+  ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Maximize2, Pin, Copy, Trash2,
   Palette, MoreHorizontal, Lock, Globe, Users, Building,
   Edit3, Star, Archive, RefreshCw, Database, ScanSearch, PanelRight,
 } from 'lucide-react';
@@ -504,11 +504,13 @@ function WorkspaceRow({
 }
 
 // ── Main WorkspaceBuilder ─────────────────────────────────────────────────────
-export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enterprise }: {
+export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enterprise, hideSidebar }: {
   cell: string;
   pendingWidget?: { type: WidgetType; title: string } | null;
   onPendingConsumed?: () => void;
   enterprise?: boolean;
+  /** Hide the left sidebar entirely (used for overview custom tabs) */
+  hideSidebar?: boolean;
 }) {
   const { user } = useAuthStore();
   const canManage = canManageCellStructure(user, cell);
@@ -538,6 +540,20 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
     window.addEventListener(STAFF_CHANGED_EVENT, reload);
     return () => window.removeEventListener(STAFF_CHANGED_EVENT, reload);
   }, [cell, enterprise]);
+
+  // Sidebar collapse toggle (cell workspaces only, not when hideSidebar)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (hideSidebar) return true;
+    if (typeof window === 'undefined') return false;
+    try { return JSON.parse(localStorage.getItem(`rly_sidebar_hidden_${cell}`) ?? 'false'); } catch { return false; }
+  });
+  const toggleSidebar = () => {
+    setSidebarCollapsed(v => {
+      const next = !v;
+      try { localStorage.setItem(`rly_sidebar_hidden_${cell}`, JSON.stringify(next)); } catch { /**/ }
+      return next;
+    });
+  };
 
   // Load window store
   useEffect(() => {
@@ -704,8 +720,9 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
     return (
       <div className="flex h-full overflow-hidden">
 
-        {/* ── LEFT SIDEBAR ──────────────────────────────────────────────── */}
-        <div className="w-[220px] bg-slate-900 flex flex-col shrink-0 border-r border-slate-800">
+        {/* ── LEFT SIDEBAR — hidden when hideSidebar, collapsible otherwise ── */}
+        {!hideSidebar && !sidebarCollapsed && (
+        <div className="relative w-[220px] bg-slate-900 flex flex-col shrink-0 border-r border-slate-800">
 
           {/* Cell identity */}
           <div className="px-4 py-4 border-b border-slate-800">
@@ -814,7 +831,28 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
           <div className="px-3 pb-4">
             <SearchTrigger cell={cell} tables={workspaceHook.ws.tables ?? []}/>
           </div>
+
+          {/* Collapse button — right edge of sidebar */}
+          <button
+            onClick={toggleSidebar}
+            title="Collapse sidebar"
+            className="absolute -right-3 top-1/2 -translate-y-1/2 z-10 w-6 h-12 bg-slate-800 border border-slate-700 rounded-r-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700 transition-all shadow-md">
+            <ChevronLeft size={13}/>
+          </button>
         </div>
+        )}
+
+        {/* Collapsed strip — expand button when sidebar is hidden (toggle only, not hideSidebar) */}
+        {!hideSidebar && sidebarCollapsed && (
+          <div className="w-7 bg-slate-900 border-r border-slate-800 flex items-center justify-center shrink-0">
+            <button
+              onClick={toggleSidebar}
+              title="Expand sidebar"
+              className="w-6 h-12 flex items-center justify-center text-slate-500 hover:text-white transition-colors">
+              <ChevronRight size={13}/>
+            </button>
+          </div>
+        )}
 
         {/* ── RIGHT CONTENT ──────────────────────────────────────────────── */}
         <div className="flex-1 flex flex-col overflow-hidden bg-slate-50">

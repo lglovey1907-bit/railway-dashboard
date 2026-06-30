@@ -383,6 +383,7 @@ function CustomTabContent({ tab }: { tab: CustomTab; onUpdate: (c: string) => vo
     <WorkspaceBuilder
       cell={`dashboard_tab_${tab.id}`}
       enterprise
+      hideSidebar
     />
   );
 }
