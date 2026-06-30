@@ -357,6 +357,9 @@ function WorkspaceRow({
         { type: 'embed' as WidgetType, label: 'Embed', icon: '🌐' },
         { type: 'announcements' as WidgetType, label: 'Notices', icon: '📢' },
         { type: 'activity' as WidgetType, label: 'Activity', icon: '⚡' },
+        { type: 'financial' as WidgetType, label: 'Revenue', icon: '💰' },
+        { type: 'monthly_report' as WidgetType, label: 'Monthly Stmt', icon: '📋' },
+        { type: 'database' as WidgetType, label: 'Database', icon: '🗄️' },
       ].map(({ type, label, icon }) => (
         <button key={type}
           onClick={() => { onAddWidget(colId, { type, title: label }); setPickCol(null); }}
