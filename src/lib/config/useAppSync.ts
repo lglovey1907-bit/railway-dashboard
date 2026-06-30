@@ -114,17 +114,17 @@ export function useAppSync(userId: string | undefined): SyncStatus {
         nsKey: NS.viewStore('sheet_nsg_category_wise'),
       });
 
-      // Google Sheet URLs + fields
+      // Google Sheet URLs + fields — nsKey = storageKey (matches useCloudConfig namespace)
       ['sheet_nsg_category_wise', 'sheet_policies_circulars_sop'].forEach(sk => {
         entries.push(
-          { lsKey: sk,                    nsKey: NS.pageSheetUrl(sk) },
-          { lsKey: `${sk}_fields_v2`,     nsKey: NS.pageSheetFields(sk) },
+          { lsKey: sk,                    nsKey: sk },
+          { lsKey: `${sk}_fields_v2`,     nsKey: `${sk}_fields_v2` },
         );
       });
 
-      // Power BI configs
+      // Power BI configs — nsKey = storageKey (matches useCloudConfig namespace)
       ['powerbi_revenue_prs', 'powerbi_revenue_uts', 'powerbi_revenue_footfall', 'powerbi_revenue_tc'].forEach(pk => {
-        entries.push({ lsKey: pk, nsKey: NS.powerBi(pk) });
+        entries.push({ lsKey: pk, nsKey: pk });
       });
 
       // Dashboard custom tabs
@@ -172,8 +172,10 @@ export function useAppSync(userId: string | undefined): SyncStatus {
           });
         } catch { /* ignore */ }
       }
-      // Overview DB views
-      entries.push({ lsKey: 'rly_dbviews_overview', nsKey: 'dbviews_overview' });
+      // Overview DB views (sourceKey = 'sheet_nsg_category_wise' for OverviewWorkspace)
+      entries.push({ lsKey: 'rly_dbviews_overview',                   nsKey: 'dbviews_overview' });
+      entries.push({ lsKey: 'rly_dbviews_sheet_nsg_category_wise',    nsKey: 'dbviews_sheet_nsg_category_wise' });
+      entries.push({ lsKey: 'rly_dbviews_sheet_policies_circulars_sop', nsKey: 'dbviews_sheet_policies_circulars_sop' });
 
       return entries;
     };
@@ -197,7 +199,18 @@ export function useAppSync(userId: string | undefined): SyncStatus {
           e.nsKey.startsWith('fin_') ||
           e.nsKey.startsWith('tab_access_') ||
           e.nsKey.startsWith('ws_dashboard_tab_') ||
-          e.nsKey.startsWith('dbviews_')
+          e.nsKey.startsWith('dbviews_') ||
+          // Power BI embed URLs — admin configures, all users see
+          e.nsKey.startsWith('powerbi_revenue_') ||
+          // Google Sheet URLs + field configs for Overview and Policies
+          e.nsKey === 'sheet_nsg_category_wise' ||
+          e.nsKey === 'sheet_nsg_category_wise_fields_v2' ||
+          e.nsKey === 'sheet_policies_circulars_sop' ||
+          e.nsKey === 'sheet_policies_circulars_sop_fields_v2' ||
+          // Custom tab list
+          e.nsKey === 'dashboard_custom_tabs' ||
+          // Policy workspace content
+          e.nsKey.startsWith('policy_ws_')
         ).map(e => e.nsKey);
         const userNsKeys = nsKeys.filter(k => !sharedNsKeys.includes(k));
 

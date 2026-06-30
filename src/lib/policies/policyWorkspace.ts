@@ -3,6 +3,7 @@
  * All data persisted in: localStorage (instant) + Upstash (cross-device)
  */
 import { syncedWrite, syncedRead, cloudWrite, cloudRead } from '@/lib/config/cloudSync';
+import { sharedWrite } from '@/lib/config/sharedSync';
 
 export const POLICY_SUBHEADS = [
   { id: 'commercial-circulars',  label: 'Commercial Circulars',  icon: 'FileText' },
@@ -148,6 +149,8 @@ export function savePolicyWorkspace(ws: PolicySubHeadWorkspace, userId?: string)
       console.warn('[policyWorkspace] cloud write failed:', e)
     );
   }
+  // Also write to shared namespace so all users get latest policy content
+  sharedWrite(ckKey(ws.subHeadId), next);
 }
 
 // ── Section mutations ─────────────────────────────────────────────────────────

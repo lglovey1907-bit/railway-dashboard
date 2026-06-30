@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { sharedWrite } from '@/lib/config/sharedSync';
 
 export interface PageField {
   id: string;
@@ -36,7 +37,10 @@ export function usePageFields(storageKey: string) {
   const persist = useCallback((next: PageField[]) => {
     setFields(next);
     if (typeof window !== 'undefined') {
-      localStorage.setItem(fieldsKey(storageKey), JSON.stringify(next));
+      const key = fieldsKey(storageKey);
+      localStorage.setItem(key, JSON.stringify(next));
+      // Push to shared namespace so all users get admin's field config
+      sharedWrite(key, next);
     }
   }, [storageKey]);
 
@@ -59,7 +63,9 @@ export function usePageFields(storageKey: string) {
       const merged = [...prev, ...newFields];
       // Save to localStorage
       if (typeof window !== 'undefined') {
-        localStorage.setItem(fieldsKey(storageKey), JSON.stringify(merged));
+        const key = fieldsKey(storageKey);
+        localStorage.setItem(key, JSON.stringify(merged));
+        sharedWrite(key, merged);
       }
       return merged;
     });

@@ -525,6 +525,9 @@ export default function DashboardHomePage() {
         cloudWrite(user!.id, 'dashboard_custom_tabs', customTabs)
           .catch(() => {/* ignore */});
       });
+      import('@/lib/config/sharedSync').then(({ sharedWrite }) => {
+        sharedWrite('dashboard_custom_tabs', customTabs);
+      });
     }
   }, [customTabs, user?.id]);
 

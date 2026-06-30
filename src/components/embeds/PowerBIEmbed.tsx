@@ -301,6 +301,8 @@ export function PowerBIEmbed({ storageKey, title, canEdit }: PowerBIEmbedProps) 
     setConfig(cfg);
     if (typeof window !== 'undefined') localStorage.setItem(storageKey, JSON.stringify(cfg));
     try { await cloud.set(cfg); } catch (e) { console.error('PowerBI cloud.set error:', e); }
+    // Write to shared namespace so all users see admin-configured Power BI URLs
+    import('@/lib/config/sharedSync').then(({ sharedWrite }) => { sharedWrite(storageKey, cfg); });
     setIsSaving(false);
     setModalOpen(false);
     setSavedOk(true);
@@ -311,6 +313,7 @@ export function PowerBIEmbed({ storageKey, title, canEdit }: PowerBIEmbedProps) 
     setConfig(null);
     if (typeof window !== 'undefined') localStorage.removeItem(storageKey);
     try { await cloud.set(null); } catch { /* ignore */ }
+    import('@/lib/config/sharedSync').then(({ sharedWrite }) => { sharedWrite(storageKey, null); });
     setModalOpen(false);
   }, [storageKey, cloud]);
 
