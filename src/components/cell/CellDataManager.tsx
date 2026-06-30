@@ -100,10 +100,20 @@ function AddWidgetMenu({ sId, hook, cell, onClose }: { sId: string; hook: Return
  { icon: BarChart2, label: 'KPI Metric', sub: 'A single key metric number', action: () => { hook.addKpiToSection(sId); onClose(); } },
  ];
 
+ // When CreateTableModal is open, unmount the picker — modal manages its own portal
+ if (showCreateTable) {
+ return (
+ <CreateTableModal
+ onClose={() => { setShowCreateTable(false); onClose(); }}
+ cell={cell}
+ onCreated={table => { hook.addTableToSection(sId, table); onClose(); }}/>
+ );
+ }
+
  return (
  <>
  <Portal>
- <div className="fixed inset-0 z-[2100]"onClick={onClose}/>
+ <div className="fixed inset-0 z-[2100]" onClick={onClose}/>
  <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
  className="fixed z-[2101] bg-white border border-slate-200 rounded-2xl shadow-xl p-2 w-72"
  style={{ top: '50%', left: '50%', transform: 'translate(-50%, -55%)' }}>
@@ -122,13 +132,6 @@ function AddWidgetMenu({ sId, hook, cell, onClose }: { sId: string; hook: Return
  ))}
  </motion.div>
  </Portal>
- <AnimatePresence>
- {showCreateTable && (
- <CreateTableModal onClose={() => { setShowCreateTable(false); onClose(); }}
- cell={cell}
- onCreated={table => { hook.addTableToSection(sId, table); onClose(); }}/>
- )}
- </AnimatePresence>
  </>
  );
 }

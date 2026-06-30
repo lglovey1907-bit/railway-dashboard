@@ -493,6 +493,43 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  const [globalWrap, setGlobalWrap] = useState(false);
  const [rowHeightMode, setRowHeightMode] = useState<'auto' | 'fixed'>('auto');
  const resizeRef = useRef<{ id: string; startX: number; startW: number } | null>(null);
+
+ // ── Column aggregation (Notion-style footer) ─────────────────────────────
+ type AggType = 'none'|'count'|'count_empty'|'count_values'|'count_unique'|'sum'|'avg'|'min'|'max';
+ const AGG_LABELS: Record<AggType, string> = {
+  none: 'Calculate', count: 'Count all', count_empty: 'Empty',
+  count_values: 'Not empty', count_unique: 'Unique', sum: 'Sum',
+  avg: 'Average', min: 'Min', max: 'Max',
+ };
+ const AGG_CYCLE: AggType[] = ['none','count','count_values','count_unique','sum','avg','min','max'];
+ const [colAgg, setColAgg] = useState<Record<string, AggType>>(() => {
+  try { return JSON.parse(localStorage.getItem(`rly_agg_${table.id}`) ?? '{}'); } catch { return {}; }
+ });
+ const [aggOpen, setAggOpen] = useState<string | null>(null);
+ const setFieldAgg = (fieldId: string, agg: AggType) => {
+  const next = { ...colAgg, [fieldId]: agg };
+  setColAgg(next);
+  localStorage.setItem(`rly_agg_${table.id}`, JSON.stringify(next));
+  setAggOpen(null);
+ };
+ const computeAgg = (fieldId: string, agg: AggType): string => {
+  if (agg === 'none') return '';
+  const vals = visibleRows.map(r => (fieldId === '__label__'
+   ? (table.values[`${r.id}:__label__`] ?? '')
+   : (table.values[`${r.id}:${fieldId}`] ?? '')));
+  const nums = vals.map(v => parseFloat(v)).filter(n => !isNaN(n));
+  switch (agg) {
+   case 'count':        return String(vals.length);
+   case 'count_empty':  return String(vals.filter(v => !v.trim()).length);
+   case 'count_values': return String(vals.filter(v => v.trim()).length);
+   case 'count_unique': return String(new Set(vals.filter(v => v.trim())).size);
+   case 'sum':          return nums.length ? nums.reduce((a,b) => a+b, 0).toFixed(2).replace(/\.?0+$/, '') : '—';
+   case 'avg':          return nums.length ? (nums.reduce((a,b) => a+b, 0)/nums.length).toFixed(2).replace(/\.?0+$/, '') : '—';
+   case 'min':          return nums.length ? String(Math.min(...nums)) : '—';
+   case 'max':          return nums.length ? String(Math.max(...nums)) : '—';
+   default: return '';
+  }
+ };
  const isLinked = table.dataSource === 'linked_sheet';
 
  // Ordered fields
@@ -817,6 +854,54 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  {!visibleRows.length && (
  <tr><td colSpan={orderedFields.length + 3} className="text-center text-slate-300 py-8 text-xs italic">{hasFilters ? 'No rows match the current filter' : 'No rows yet'}</td></tr>
  )}
+ {/* ── Aggregation footer row (Notion-style) ── */}
+ <tr className="border-t-2 border-slate-200 bg-slate-50/80">
+  <td className="w-7 px-1"/>
+  <td className="px-2 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap select-none">
+   Calculate
+  </td>
+  {orderedFields.map(field => {
+   const agg = (colAgg[field.id] ?? 'none') as Parameters<typeof computeAgg>[1];
+   const result = computeAgg(field.id, agg);
+   const isOpen = aggOpen === field.id;
+   return (
+    <td key={field.id} className="relative px-2 py-1 text-right">
+     <button
+      onClick={() => setAggOpen(isOpen ? null : field.id)}
+      className={`text-[10px] font-medium rounded px-1 py-0.5 transition-colors w-full text-right ${
+       agg === 'none'
+        ? 'text-slate-300 hover:text-indigo-500 hover:bg-indigo-50'
+        : 'text-indigo-600 hover:bg-indigo-50'
+      }`}
+     >
+      {agg === 'none' ? 'Calculate' : (
+       <span className="flex items-center justify-end gap-1">
+        <span className="text-slate-400 font-normal">{AGG_LABELS[agg]}</span>
+        <span className="font-semibold">{result}</span>
+       </span>
+      )}
+     </button>
+     {isOpen && (
+      <>
+       <div className="fixed inset-0 z-[2200]" onClick={() => setAggOpen(null)}/>
+       <div className="absolute right-0 bottom-full mb-1 z-[2201] bg-white border border-slate-200 rounded-xl shadow-xl py-1 w-36 text-left">
+        {AGG_CYCLE.map(opt => (
+         <button key={opt} onClick={() => setFieldAgg(field.id, opt)}
+          className={`w-full flex items-center justify-between px-3 py-1.5 text-xs hover:bg-indigo-50 transition-colors ${
+           agg === opt ? 'text-indigo-600 font-semibold' : 'text-slate-700'
+          }`}>
+          <span>{AGG_LABELS[opt]}</span>
+          {agg === opt && <span className="text-indigo-400">✓</span>}
+         </button>
+        ))}
+       </div>
+      </>
+     )}
+    </td>
+   );
+  })}
+  {canManage && !isLinked && <td/>}
+ </tr>
  </tbody>
  </table>
  </div>
