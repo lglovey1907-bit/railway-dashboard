@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Overview Page Access Control
-// Admin + Maintenance always have full view+edit access.
-// Additional users can be granted view or edit access here.
+// Tab Access Control — per-tab view/edit permissions
+// Admin + Maintenance always have full access.
+// Each tab stores its own config under rly_tab_access_<tabId>
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type ViewMode = 'all' | 'selected';
@@ -24,18 +24,22 @@ const DEFAULT: OverviewAccess = {
   editUserIds: [],
 };
 
-const KEY = 'rly_overview_access';
+function tabKey(tabId: string) { return `rly_tab_access_${tabId}`; }
 
-export function getOverviewAccess(): OverviewAccess {
+export function getTabAccess(tabId: string): OverviewAccess {
   if (typeof window === 'undefined') return DEFAULT;
-  try { return JSON.parse(localStorage.getItem(KEY) ?? 'null') ?? DEFAULT; } catch { return DEFAULT; }
+  try { return JSON.parse(localStorage.getItem(tabKey(tabId)) ?? 'null') ?? DEFAULT; } catch { return DEFAULT; }
 }
 
-export function saveOverviewAccess(a: OverviewAccess) {
-  try { localStorage.setItem(KEY, JSON.stringify(a)); } catch { /**/ }
+export function saveTabAccess(tabId: string, a: OverviewAccess) {
+  try { localStorage.setItem(tabKey(tabId), JSON.stringify(a)); } catch { /**/ }
 }
 
-export function canViewOverview(
+/** Backward-compatible wrappers for the Overview tab */
+export function getOverviewAccess(): OverviewAccess { return getTabAccess('overview'); }
+export function saveOverviewAccess(a: OverviewAccess) { saveTabAccess('overview', a); }
+
+export function canViewTab(
   user: { id: string; role: string } | null,
   access: OverviewAccess,
 ): boolean {
@@ -47,7 +51,7 @@ export function canViewOverview(
   return false;
 }
 
-export function canEditOverview(
+export function canEditTab(
   user: { id: string; role: string } | null,
   access: OverviewAccess,
 ): boolean {
@@ -55,3 +59,7 @@ export function canEditOverview(
   if (user.role === 'admin' || user.role === 'maintenance') return true;
   return access.editUserIds.includes(user.id);
 }
+
+/** Backward-compatible aliases */
+export const canViewOverview = canViewTab;
+export const canEditOverview = canEditTab;

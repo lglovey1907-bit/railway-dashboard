@@ -1,27 +1,19 @@
 'use client';
 // ─────────────────────────────────────────────────────────────────────────────
-// Overview Access Control Modal
-// Admin / Maintenance can configure who can View and Edit the Overview page.
+// Tab Access Control Modal
+// Admin / Maintenance can configure who can View and Edit any tab.
+// Reads users from localStorage (rly_staff_master) — no API required.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Shield, Eye, PencilLine, Users, Check, Loader2, AlertCircle } from 'lucide-react';
+import { X, Shield, Eye, PencilLine, Users, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
-  getOverviewAccess, saveOverviewAccess,
+  getTabAccess, saveTabAccess,
   type OverviewAccess, type ViewMode,
 } from '@/lib/overview/overviewAccess';
-
-interface UserRecord {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-  cell?: string;
-  designation?: string;
-  approved?: boolean;
-}
+import { getAllMasterStaff, type MasterStaffRecord } from '@/lib/staff/masterStaff';
 
 const ROLE_LABELS: Record<string, string> = {
   incharge:    'Cell In-Charge',
@@ -39,7 +31,7 @@ const ROLE_COLORS: Record<string, string> = {
 
 // ── Tiny chip ────────────────────────────────────────────────────────────────
 
-function UserChip({ u, onRemove }: { u: UserRecord; onRemove: () => void }) {
+function UserChip({ u, onRemove }: { u: MasterStaffRecord; onRemove: () => void }) {
   return (
     <span className="inline-flex items-center gap-1.5 pl-2 pr-1 py-0.5 rounded-full bg-rail-50 border border-rail-200 text-[11px] text-rail-800 font-medium">
       {u.name}
@@ -56,13 +48,12 @@ function UserChip({ u, onRemove }: { u: UserRecord; onRemove: () => void }) {
 // ── User picker dropdown ──────────────────────────────────────────────────────
 
 function UserPicker({
-  label, placeholder, selectedIds, allUsers, loading, onAdd,
+  label, placeholder, selectedIds, allUsers, onAdd,
 }: {
   label: string;
   placeholder: string;
   selectedIds: string[];
-  allUsers: UserRecord[];
-  loading: boolean;
+  allUsers: MasterStaffRecord[];
   onAdd: (id: string) => void;
 }) {
   const [search, setSearch] = useState('');
@@ -88,14 +79,10 @@ function UserPicker({
           onChange={e => { setSearch(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
-          placeholder={loading ? 'Loading users…' : placeholder}
-          disabled={loading}
+          placeholder={placeholder}
           className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-rail-400 pr-8"
         />
-        {loading
-          ? <Loader2 size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 animate-spin"/>
-          : <Users size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
-        }
+        <Users size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
       </div>
       {open && available.length > 0 && (
         <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 max-h-48 overflow-y-auto">
@@ -119,7 +106,7 @@ function UserPicker({
           ))}
         </div>
       )}
-      {open && !loading && available.length === 0 && search && (
+      {open && available.length === 0 && search && (
         <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 px-3 py-3 text-[11px] text-slate-400">
           No matching users
         </div>
@@ -130,25 +117,24 @@ function UserPicker({
 
 // ── Main modal ────────────────────────────────────────────────────────────────
 
-export function OverviewAccessModal({ onClose, onSave }: {
+export function OverviewAccessModal({ tabId, tabLabel, onClose, onSave }: {
+  tabId: string;
+  tabLabel: string;
   onClose: () => void;
   onSave: (access: OverviewAccess) => void;
 }) {
-  const [access, setAccess] = useState<OverviewAccess>(getOverviewAccess);
-  const [allUsers, setAllUsers] = useState<UserRecord[]>([]);
-  const [loadingUsers, setLoadingUsers] = useState(true);
-  const [userError, setUserError] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [access, setAccess] = useState<OverviewAccess>(() => getTabAccess(tabId));
+  const [allUsers, setAllUsers] = useState<MasterStaffRecord[]>([]);
   const [saved, setSaved] = useState(false);
 
-  // Fetch all users from API
+  // Mount guard for createPortal
+  useEffect(() => { setMounted(true); }, []);
+
+  // Load users from localStorage (rly_staff_master) — no API call needed
   useEffect(() => {
-    fetch('/api/users?all=true')
-      .then(r => r.json())
-      .then((data: UserRecord[]) => {
-        setAllUsers(Array.isArray(data) ? data.filter(u => u.approved !== false) : []);
-        setLoadingUsers(false);
-      })
-      .catch(() => { setUserError(true); setLoadingUsers(false); });
+    const staff = getAllMasterStaff();
+    setAllUsers(staff.filter(u => u.status === 'active' || u.status === 'pending'));
   }, []);
 
   const getUserById = (id: string) => allUsers.find(u => u.id === id);
@@ -174,7 +160,7 @@ export function OverviewAccessModal({ onClose, onSave }: {
   }));
 
   const handleSave = () => {
-    saveOverviewAccess(access);
+    saveTabAccess(tabId, access);
     onSave(access);
     setSaved(true);
     setTimeout(onClose, 700);
@@ -182,18 +168,24 @@ export function OverviewAccessModal({ onClose, onSave }: {
 
   const extraRoles = ['incharge', 'user'];
 
+  if (!mounted) return null;
+
   return createPortal(
-    <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4"
+    <div
+      className="fixed inset-0 z-[2000] flex items-center justify-center p-4"
       style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
-      onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden"
-        onClick={e => e.stopPropagation()}>
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
 
         {/* Header */}
         <div className="flex items-center gap-3 px-5 py-4 bg-slate-900 text-white">
           <Shield size={17} className="text-rail-400 shrink-0"/>
           <div>
-            <p className="font-bold text-sm">Overview Page — Access Control</p>
+            <p className="font-bold text-sm">"{tabLabel}" — Access Control</p>
             <p className="text-[10px] text-slate-400 mt-0.5">Admin and Maintenance always have full access</p>
           </div>
           <button onClick={onClose} className="ml-auto text-slate-400 hover:text-white"><X size={16}/></button>
@@ -248,41 +240,33 @@ export function OverviewAccessModal({ onClose, onSave }: {
                           'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all',
                           access.viewRoles.includes(role)
                             ? 'bg-rail-600 border-rail-600 text-white'
-                            : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300',
+                            : 'bg-white border-slate-200 text-slate-600 hover:border-rail-300',
                         )}>
                         {access.viewRoles.includes(role) && <Check size={10}/>}
-                        {ROLE_LABELS[role]}
+                        {ROLE_LABELS[role] ?? role}
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {/* Specific user picker */}
-                <div>
-                  {userError && (
-                    <div className="flex items-center gap-1.5 text-[11px] text-amber-600 mb-2">
-                      <AlertCircle size={11}/> Could not load users. Enter IDs manually or retry.
-                    </div>
-                  )}
-                  <UserPicker
-                    label="By Specific User"
-                    placeholder="Search by name, email or cell…"
-                    selectedIds={access.viewUserIds}
-                    allUsers={allUsers}
-                    loading={loadingUsers}
-                    onAdd={addViewUser}
-                  />
-                  {access.viewUserIds.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      {access.viewUserIds.map(id => {
-                        const u = getUserById(id);
-                        return u
-                          ? <UserChip key={id} u={u} onRemove={() => removeViewUser(id)}/>
-                          : <span key={id} className="text-[10px] text-slate-400 italic">{id}</span>;
-                      })}
-                    </div>
-                  )}
-                </div>
+                {/* User picker */}
+                <UserPicker
+                  label="Specific Users"
+                  placeholder="Search by name, email or cell…"
+                  selectedIds={access.viewUserIds}
+                  allUsers={allUsers}
+                  onAdd={addViewUser}
+                />
+                {access.viewUserIds.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {access.viewUserIds.map(id => {
+                      const u = getUserById(id);
+                      return u
+                        ? <UserChip key={id} u={u} onRemove={() => removeViewUser(id)}/>
+                        : <span key={id} className="text-[10px] text-slate-400 italic">{id}</span>;
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -292,23 +276,14 @@ export function OverviewAccessModal({ onClose, onSave }: {
             <div className="flex items-center gap-2">
               <PencilLine size={13} className="text-emerald-500"/>
               <p className="text-[11px] font-bold text-slate-700 uppercase tracking-widest">Who can Edit</p>
+              <span className="text-[9px] text-slate-400 ml-1">(beyond Admin + Maintenance)</span>
             </div>
-            <div className="border border-slate-200 rounded-xl p-4 space-y-3 bg-slate-50">
-              <div className="flex items-center gap-2 text-[11px] text-slate-500 bg-slate-100 rounded-lg px-3 py-2">
-                <Shield size={11} className="text-slate-400 shrink-0"/>
-                Admin and Maintenance always have edit access — add extra users below
-              </div>
-              {userError && (
-                <div className="flex items-center gap-1.5 text-[11px] text-amber-600">
-                  <AlertCircle size={11}/> Could not load users.
-                </div>
-              )}
+            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 space-y-3">
               <UserPicker
                 label="Additional Editors"
                 placeholder="Search by name, email or cell…"
                 selectedIds={access.editUserIds}
                 allUsers={allUsers}
-                loading={loadingUsers}
                 onAdd={addEditUser}
               />
               {access.editUserIds.length > 0 && (
@@ -323,11 +298,12 @@ export function OverviewAccessModal({ onClose, onSave }: {
               )}
             </div>
           </div>
+
         </div>
 
         {/* Footer */}
         <div className="px-5 py-4 border-t border-slate-100 flex items-center justify-between">
-          <p className="text-[10px] text-slate-400">Settings saved to this device and synced to all users</p>
+          <p className="text-[10px] text-slate-400">Settings saved locally on this device</p>
           <div className="flex gap-2">
             <button onClick={onClose}
               className="px-4 py-2 text-xs text-slate-500 hover:bg-slate-100 rounded-lg">Cancel</button>
