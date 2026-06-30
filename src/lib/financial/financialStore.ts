@@ -4,6 +4,7 @@
 // Persists under localStorage key: rly_financial_v1
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { sharedWrite, sharedRead } from '@/lib/config/sharedSync';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type {
@@ -405,3 +406,26 @@ export const useFinancialStore = create<FinancialState>()(
     { name: 'rly_financial_v1' },
   ),
 );
+
+// ── Shared cross-device sync ─────────────────────────────────────────────────
+// Subscribe to state changes and push to shared Upstash namespace.
+// All users pull from this shared key at login (via useSharedSync).
+if (typeof window !== 'undefined') {
+  useFinancialStore.subscribe(state => {
+    sharedWrite('financial_v1', {
+      financialYears: state.financialYears,
+      revenueHeads:   state.revenueHeads,
+      monthlyRecords: state.monthlyRecords,
+    });
+  });
+}
+
+/** Pull financial data from shared Upstash and hydrate the store. */
+export async function pullSharedFinancialData(): Promise<void> {
+  const cloud = await sharedRead('financial_v1');
+  if (!cloud || typeof cloud !== 'object') return;
+  const { financialYears, revenueHeads, monthlyRecords } = cloud as any;
+  if (financialYears && revenueHeads && monthlyRecords) {
+    useFinancialStore.setState({ financialYears, revenueHeads, monthlyRecords });
+  }
+}

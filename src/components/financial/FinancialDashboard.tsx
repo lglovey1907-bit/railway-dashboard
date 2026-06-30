@@ -12,7 +12,8 @@ import {
   Columns, X, Check,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useFinancialStore } from '@/lib/financial/financialStore';
+import { useFinancialStore, pullSharedFinancialData } from '@/lib/financial/financialStore';
+import { sharedWrite } from '@/lib/config/sharedSync';
 import type { FYMonth } from '@/lib/financial/types';
 import { FY_MONTHS, getCurrentFYMonth } from '@/lib/financial/types';
 import { buildCumulativeRows } from '@/lib/financial/calculations';
@@ -182,6 +183,15 @@ export function FinancialDashboard({
 }: Props) {
   const store = useFinancialStore();
 
+  // Pull shared financial data from cloud on mount (non-admin users see admin's data)
+  useEffect(() => {
+    pullSharedFinancialData();
+    // Also re-pull whenever the cloud sync completes (triggered after login sync)
+    const handler = () => pullSharedFinancialData();
+    window.addEventListener('rly_cloud_sync_complete', handler);
+    return () => window.removeEventListener('rly_cloud_sync_complete', handler);
+  }, []);
+
   // ── Financial year selection ──────────────────────────────────────────────
   const currentFY = store.getCurrentFY();
   const allFYs    = [...store.financialYears].sort((a, b) => b.startYear - a.startYear);
@@ -203,6 +213,7 @@ export function FinancialDashboard({
   const toggleUnit = () => setUnit(u => {
     const next: Unit = u === 'cr' ? 'lacs' : 'cr';
     lsSet('rly_fin_unit', next);
+    sharedWrite('fin_unit', next);
     return next;
   });
 
@@ -215,6 +226,7 @@ export function FinancialDashboard({
     setVisibleColsArr(prev => {
       const next = prev.includes(k) ? prev.filter(c => c !== k) : [...prev, k];
       lsSet('rly_fin_vis_cols', next);
+      sharedWrite('fin_vis_cols', next);
       return next;
     });
   };
@@ -229,6 +241,7 @@ export function FinancialDashboard({
     setColLabels(prev => {
       const next = { ...prev, [key]: label };
       lsSet('rly_fin_col_labels', next);
+      sharedWrite('fin_col_labels', next);
       return next;
     });
   };

@@ -17,6 +17,7 @@ import { POLICY_SUBHEADS } from '@/lib/policies/policyWorkspace';
 import { getAllCells } from '@/lib/cells/cellRegistry';
 
 const API = '/api/config';
+const SHARED_UID = '_shared_';
 
 async function fetchAll(userId: string, namespaces: string[]): Promise<Record<string, string | null>> {
   // Batch all reads in parallel
@@ -147,6 +148,33 @@ export function useAppSync(userId: string | undefined): SyncStatus {
         { lsKey: 'rly_user_requests',           nsKey: NS.staffRequests() },
       );
 
+      // ── Shared global content (same data for all users) ──────────────────
+      // Financial data
+      entries.push({ lsKey: 'rly_financial_v1',     nsKey: 'financial_v1' });
+      // Financial UI prefs
+      entries.push({ lsKey: 'rly_fin_unit',          nsKey: 'fin_unit' });
+      entries.push({ lsKey: 'rly_fin_vis_cols',      nsKey: 'fin_vis_cols' });
+      entries.push({ lsKey: 'rly_fin_col_labels',    nsKey: 'fin_col_labels' });
+      // Tab access configs
+      ['overview', 'revenue', 'policies'].forEach(tabId => {
+        entries.push({ lsKey: `rly_tab_access_${tabId}`, nsKey: `tab_access_${tabId}` });
+      });
+      // Custom tab workspaces + access (loaded by tab IDs from rly_dashboard_custom_tabs)
+      if (typeof window !== 'undefined') {
+        try {
+          const tabs: Array<{id: string}> = JSON.parse(localStorage.getItem('rly_dashboard_custom_tabs') ?? '[]');
+          tabs.forEach(tab => {
+            entries.push({
+              lsKey: `workspace_v2_dashboard_tab_${tab.id.replace(/[^a-zA-Z0-9]/g, '_')}`,
+              nsKey: `ws_dashboard_tab_${tab.id.replace(/[^a-zA-Z0-9]/g, '_')}`,
+            });
+            entries.push({ lsKey: `rly_tab_access_${tab.id}`, nsKey: `tab_access_${tab.id}` });
+          });
+        } catch { /* ignore */ }
+      }
+      // Overview DB views
+      entries.push({ lsKey: 'rly_dbviews_overview', nsKey: 'dbviews_overview' });
+
       return entries;
     };
 
@@ -163,12 +191,34 @@ export function useAppSync(userId: string | undefined): SyncStatus {
         }
 
         // Fetch all namespaces in parallel
-        return fetchAll(userId, nsKeys).then(results => {
+        // Split into per-user and shared namespaces
+        const sharedNsKeys = entries.filter(e =>
+          e.nsKey.startsWith('financial_v1') ||
+          e.nsKey.startsWith('fin_') ||
+          e.nsKey.startsWith('tab_access_') ||
+          e.nsKey.startsWith('ws_dashboard_tab_') ||
+          e.nsKey.startsWith('dbviews_')
+        ).map(e => e.nsKey);
+        const userNsKeys = nsKeys.filter(k => !sharedNsKeys.includes(k));
+
+        return Promise.all([
+          fetchAll(userId, userNsKeys),
+          sharedNsKeys.length > 0 ? fetchAll(SHARED_UID, sharedNsKeys) : Promise.resolve({}),
+        ]).then(([userResults, sharedResults]) => {
+          const results: Record<string, string> = { ...userResults, ...sharedResults };
           let synced = 0;
           if (typeof window !== 'undefined') {
             entries.forEach(({ lsKey, nsKey }) => {
               const cloudRaw = results[nsKey];
               if (!cloudRaw) return;
+
+              // Shared global content: always prefer cloud (it's the admin's canonical version)
+              const isSharedNs = sharedNsKeys.includes(nsKey);
+              if (isSharedNs) {
+                localStorage.setItem(lsKey, cloudRaw);
+                synced++;
+                return;
+              }
 
               const localRaw = localStorage.getItem(lsKey);
               try {

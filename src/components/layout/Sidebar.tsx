@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { getAllCells, type CellRecord, BUILTIN_CELLS } from '@/lib/cells/cellRegistry';
 import { useActiveCells } from '@/lib/cells/useCellList';
+import { OverviewAccessModal } from '@/components/overview/OverviewAccessModal';
 
 const ICON_MAP: Record<string, React.ElementType> = {
   ClipboardList, Users2, ShieldCheck, Scale, Megaphone, Ticket, BarChart3,
@@ -124,6 +125,7 @@ export function Sidebar() {
   const isUser     = user?.role === 'user';
 
   const handleLogout = () => { logout(); router.push('/login'); };
+  const [sidebarAccessModal, setSidebarAccessModal] = useState(false);
 
   const initials = user?.name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() ?? '??';
 
@@ -152,10 +154,36 @@ export function Sidebar() {
       {/* Workspace */}
       <div className="mb-3">
         <p className="section-label px-2 mb-1">Workspace</p>
-        {STATIC_TOP.map(item => (
-          <NavBtn key={item.href} href={item.href} label={item.label} icon={item.icon}
-            active={pathname === item.href} onClick={onLinkClick}/>
-        ))}
+        {STATIC_TOP.map(item => {
+          if (item.label === 'Overview' && isAdmin) {
+            const active = pathname === item.href;
+            return (
+              <div key={item.href} className="group/ovw relative flex items-center rounded-lg">
+                <Link href={item.href} onClick={onLinkClick}
+                  className={cn(
+                    'flex-1 flex items-center gap-2.5 px-3 py-2 text-[13px] transition-all duration-150 relative',
+                    active
+                      ? 'bg-rail-50 text-rail-700 font-semibold'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 font-medium'
+                  )}>
+                  {active && <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-rail-600 rounded-r-full"/>}
+                  <LayoutDashboard size={15} className={active ? 'text-rail-600' : 'text-slate-400'}/>
+                  <span className="truncate">Overview</span>
+                </Link>
+                <button
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setSidebarAccessModal(true); }}
+                  className="mr-1 p-1 rounded opacity-0 group-hover/ovw:opacity-100 hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-all"
+                  title="Access settings">
+                  <Settings size={12}/>
+                </button>
+              </div>
+            );
+          }
+          return (
+            <NavBtn key={item.href} href={item.href} label={item.label} icon={item.icon}
+              active={pathname === item.href} onClick={onLinkClick}/>
+          );
+        })}
       </div>
 
       {/* Cells */}
@@ -361,6 +389,14 @@ export function Sidebar() {
           </div>
         </div>
       </div>
+      {sidebarAccessModal && (
+        <OverviewAccessModal
+          tabId="overview"
+          tabLabel="Overview"
+          onClose={() => setSidebarAccessModal(false)}
+          onSave={() => setSidebarAccessModal(false)}
+        />
+      )}
     </>
   );
 }

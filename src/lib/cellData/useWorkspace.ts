@@ -8,6 +8,7 @@ import { makeField, makeRow, makeSection, makeTable, makeHistoryId, makeDraftTra
 import { fetchGoogleSheet } from '@/lib/sheets/googleSheets';
 import { logActivity, createTableMeta, touchTableMeta, createRowMeta, touchRowMeta, saveVersion } from './collaboration';
 import { cloudWrite, cloudRead } from '@/lib/config/cloudSync';
+import { sharedWrite, sharedRead } from '@/lib/config/sharedSync';
 
 function ck(rId: string, fId: string) { return `${rId}:${fId}`; }
 function gid(p: string) { return `${p}${Date.now()}${Math.floor(Math.random()*1000)}`; }
@@ -16,6 +17,12 @@ const MAX_HISTORY = 50;
 const TRASH_RETAIN_DAYS = 30;
 
 const EMPTY_WS = (cell: string): CellWorkspace => ({ cell, sections: [], tables: [], trash: [] });
+
+
+// Namespace for a given cell key (shared across all users)
+function sharedNS(cell: string) { return `ws_${cell.replace(/[^a-zA-Z0-9]/g, '_')}`; }
+// Dashboard tab cells that should sync globally
+const isDashboardTab = (cell: string) => cell.startsWith('dashboard_tab_');
 
 export function useWorkspace(cell: string, currentUser?: { id: string; name: string }) {
  const key = `workspace_v2_${cell.replace(/[^a-zA-Z0-9]/g, '_')}`;
@@ -70,6 +77,8 @@ export function useWorkspace(cell: string, currentUser?: { id: string; name: str
  const persist = useCallback((next: CellWorkspace) => {
  if (typeof window !== 'undefined') {
    localStorage.setItem(key, JSON.stringify(next));
+   // Push to shared cloud namespace for dashboard tabs (visible to all users)
+   if (isDashboardTab(cell)) sharedWrite(sharedNS(cell), next);
    // Broadcast to other useWorkspace instances on the same page
    window.dispatchEvent(new CustomEvent('ws-sync', { detail: { key, data: next } }));
  }

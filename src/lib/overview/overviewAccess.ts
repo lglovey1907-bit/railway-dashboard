@@ -1,3 +1,4 @@
+import { sharedWrite } from '@/lib/config/sharedSync';
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab Access Control — per-tab view/edit permissions
 // Admin + Maintenance always have full access.
@@ -33,6 +34,7 @@ export function getTabAccess(tabId: string): OverviewAccess {
 
 export function saveTabAccess(tabId: string, a: OverviewAccess) {
   try { localStorage.setItem(tabKey(tabId), JSON.stringify(a)); } catch { /**/ }
+  sharedWrite(`tab_access_${tabId}`, a);
 }
 
 /** Backward-compatible wrappers for the Overview tab */

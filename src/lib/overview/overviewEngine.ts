@@ -1,3 +1,4 @@
+import { sharedWrite } from '@/lib/config/sharedSync';
 /**
  * Overview Engine — dynamic KPIs, properties, views, filters, sorts
  * All driven from sheet data — no hardcoded fields (req 19)
@@ -139,6 +140,7 @@ function makeDefault(sourceKey: string): DBViewStore {
 export function saveDBViewStore(store: DBViewStore, userId?: string): void {
   const next = { ...store, updatedAt: new Date().toISOString() };
   if (typeof window !== 'undefined') localStorage.setItem(LS_KEY(store.sourceKey), JSON.stringify(next));
+  sharedWrite(`dbviews_${store.sourceKey.replace(/[^a-zA-Z0-9]/g, '_')}`, next);
   if (userId) {
     fetch('/api/config', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
