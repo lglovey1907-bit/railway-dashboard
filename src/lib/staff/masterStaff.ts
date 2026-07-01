@@ -206,6 +206,7 @@ export function deactivateMasterStaff(id: string, byId?: string, byName?: string
  localStorage.setItem('rly_staff_audit', JSON.stringify(audit.slice(-2000)));
  }
  notifyStaffChanged();
+ try { require('./staffDB').pushStatusToServer(id, 'inactive'); } catch { /* non-critical */ }
 }
 
 /** Restore inactive user back to active */
@@ -226,11 +227,74 @@ export function restoreMasterStaff(id: string, byId?: string, byName?: string): 
  localStorage.setItem('rly_staff_audit', JSON.stringify(audit.slice(-2000)));
  }
  notifyStaffChanged();
+ try { require('./staffDB').pushStatusToServer(id, 'active'); } catch { /* non-critical */ }
 }
 
 export const STAFF_CHANGED_EVENT = 'rly_staff_changed';
 export function notifyStaffChanged() {
  if (typeof window !== 'undefined') {
  window.dispatchEvent(new CustomEvent(STAFF_CHANGED_EVENT));
+ }
+}
+
+// ── Cross-device sync: pull staff + memberships from the server (KV) ─────────
+// Merges server-side records (written from any browser/device) into the local
+// rly_staff_master / rly_cell_memberships tables so signups, approvals, and
+// cell assignments made elsewhere become visible here too.
+async function pullStaffFromServer(): Promise<void> {
+ if (typeof window === 'undefined') return;
+ try {
+ const res = await fetch('/api/users?all=true');
+ if (!res.ok) return;
+ const records: any[] = await res.json();
+ if (!Array.isArray(records) || !records.length) return;
+
+ let changed = false;
+
+ // Merge staff records
+ const localStaff = safeGet<any[]>('rly_staff_master', []);
+ const staffById = new Map(localStaff.map(s => [s.id, s]));
+ for (const rec of records) {
+ const sr = rec?.staffRecord;
+ if (!sr?.id) continue;
+ const merged = { ...sr, status: rec.status ?? sr.status };
+ const existing = staffById.get(sr.id);
+ if (!existing || (merged.lastUpdatedAt ?? '') > (existing.lastUpdatedAt ?? '') || existing.status !== merged.status) {
+ staffById.set(sr.id, { ...existing, ...merged });
+ changed = true;
+ }
+ }
+ if (changed) localStorage.setItem('rly_staff_master', JSON.stringify(Array.from(staffById.values())));
+
+ // Merge cell memberships
+ const localMemberships = safeGet<any[]>('rly_cell_memberships', []);
+ const membershipById = new Map(localMemberships.map(m => [m.id, m]));
+ let membershipsChanged = false;
+ for (const rec of records) {
+ const list: any[] = Array.isArray(rec?.memberships) ? rec.memberships : [];
+ for (const m of list) {
+ if (!m?.id) continue;
+ const existing = membershipById.get(m.id);
+ if (!existing || JSON.stringify(existing) !== JSON.stringify(m)) {
+ membershipById.set(m.id, m);
+ membershipsChanged = true;
+ }
+ }
+ }
+ if (membershipsChanged) localStorage.setItem('rly_cell_memberships', JSON.stringify(Array.from(membershipById.values())));
+
+ if (changed || membershipsChanged) notifyStaffChanged();
+ } catch { /* ignore — offline or KV unavailable, local data remains authoritative */ }
+}
+
+// Auto-start a background poll (module-singleton) as soon as this module is
+// used in the browser, so every page that reads master staff data stays in
+// sync with approvals/edits made on other browsers/devices.
+if (typeof window !== 'undefined') {
+ const w = window as any;
+ if (!w.__rlyStaffSyncStarted) {
+ w.__rlyStaffSyncStarted = true;
+ pullStaffFromServer();
+ setInterval(pullStaffFromServer, 8000);
  }
 }

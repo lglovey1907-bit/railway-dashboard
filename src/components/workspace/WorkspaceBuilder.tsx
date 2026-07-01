@@ -25,7 +25,7 @@ import {
 } from '@/lib/workspace/layoutEngine';
 import {
   getWindowStore, saveWindowStore, createWindow, updateWindow, deleteWindow,
-  getVisibleWindows, getWindowLayout, saveWindowLayout,
+  getVisibleWindows, getWindowLayout, saveWindowLayout, canEditWindow,
   type CellWindowStore, type CellWindow, type WindowVisibility,
   WINDOW_ICONS, WINDOW_COLORS,
 } from '@/lib/workspace/windowsEngine';
@@ -67,7 +67,7 @@ const VIS_OPTIONS: { id: WindowVisibility; label: string; icon: React.ElementTyp
 
 function WindowFormModal({ open, onClose, onSave, initial, existingWindows, cell }: {
   open: boolean; onClose: () => void;
-  onSave: (label: string, icon: string, vis: WindowVisibility, roles: string[], cloneFrom: string, users: string[]) => void;
+  onSave: (label: string, icon: string, vis: WindowVisibility, roles: string[], cloneFrom: string, users: string[], editors: string[]) => void;
   initial?: Partial<CellWindow>; existingWindows: CellWindow[]; cell: string;
 }) {
   const [label, setLabel]       = useState(initial?.label ?? 'New Window');
@@ -77,9 +77,16 @@ function WindowFormModal({ open, onClose, onSave, initial, existingWindows, cell
   const [roles, setRoles]       = useState<string[]>(initial?.visibleToRoles ?? []);
   const [cloneFrom, setCloneFrom] = useState('');
   const [selectedUsers, setSelectedUsers] = useState<string[]>(initial?.visibleToUsers ?? []);
+  const [selectedEditors, setSelectedEditors] = useState<string[]>(initial?.editableByUsers ?? []);
   const [cellMembers, setCellMembers] = useState<MasterStaffRecord[]>([]);
   const [adminUsers, setAdminUsers] = useState<MasterStaffRecord[]>([]);
   const ALL_ROLES = ['admin', 'maintenance', 'incharge', 'user'];
+
+  // Cell members are needed for the Editors picker regardless of the chosen
+  // visibility mode, so load them independently of `vis`.
+  useEffect(() => {
+    setCellMembers(getStaffForCell(cell));
+  }, [cell]);
 
   useEffect(() => {
     if (vis === 'cell') {
@@ -91,7 +98,7 @@ function WindowFormModal({ open, onClose, onSave, initial, existingWindows, cell
     setSelectedUsers(initial?.visibleToUsers ?? []);
   }, [vis, cell, initial]);
 
-  const handleSave = () => { if (!label.trim()) return; onSave(label.trim(), icon, vis, roles, cloneFrom, selectedUsers); onClose(); };
+  const handleSave = () => { if (!label.trim()) return; onSave(label.trim(), icon, vis, roles, cloneFrom, selectedUsers, selectedEditors); onClose(); };
 
   return (
     <Modal open={open} onClose={onClose} maxWidth="max-w-md">
@@ -258,6 +265,50 @@ function WindowFormModal({ open, onClose, onSave, initial, existingWindows, cell
               </p>
             </div>
           )}
+        </div>
+
+        {/* Editors — who can edit this window's content, independent of who can view it */}
+        <div>
+          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-2">Who can edit this window?</label>
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+            <div className="flex items-center justify-between mb-2.5">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Select editors</p>
+              <button type="button"
+                onClick={() => setSelectedEditors(selectedEditors.length === cellMembers.length && cellMembers.length > 0 ? [] : cellMembers.map(s => s.id))}
+                className="text-[10px] font-semibold text-rail-600 hover:underline">
+                {selectedEditors.length === cellMembers.length && cellMembers.length > 0 ? 'Deselect All' : 'Select All'}
+              </button>
+            </div>
+            {cellMembers.length === 0 ? (
+              <p className="text-[10px] text-slate-400 text-center py-3">No members found in this cell</p>
+            ) : (
+              <div className="space-y-1 max-h-40 overflow-y-auto custom-scroll">
+                {cellMembers.map(member => {
+                  const initials = member.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+                  const checked = selectedEditors.includes(member.id);
+                  return (
+                    <label key={member.id}
+                      className={cn('flex items-center gap-2.5 px-2.5 py-2 rounded-lg cursor-pointer transition-colors',
+                        checked ? 'bg-emerald-50 border border-emerald-200' : 'hover:bg-white border border-transparent')}>
+                      <input type="checkbox" checked={checked}
+                        onChange={() => setSelectedEditors(u => checked ? u.filter(x => x !== member.id) : [...u, member.id])}
+                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-400 shrink-0"/>
+                      <div className="w-6 h-6 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center text-[9px] font-bold text-white shrink-0">
+                        {initials}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-slate-800 truncate">{member.name}</p>
+                        <p className="text-[9px] text-slate-400 truncate">{member.designation}{member.workingAs ? ` · ${member.workingAs}` : ''}</p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            <p className="text-[9px] text-slate-400 mt-2 italic">
+              {selectedEditors.length === 0 ? 'No selection = all cell members can edit (default)' : `${selectedEditors.length} editor${selectedEditors.length !== 1 ? 's' : ''} selected — only they (+ you) can add or change content`}
+            </p>
+          </div>
         </div>
 
         {/* Clone from */}
@@ -649,6 +700,9 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
 
   const visibleWindows = getVisibleWindows(winStore, user?.id ?? '', user?.role ?? 'user');
   const activeWin = winStore.windows.find(w => w.id === winStore.activeWindowId);
+  // Fine-grained content-edit permission: falls back to `canManage` (any cell
+  // member) unless the active window's creator restricted editing to specific people.
+  const canEditContent = canEditWindow(activeWin, user?.id, canManage);
 
   // ── Role gradient colours (sidebar avatars) ───────────────────────────────
   const SIDE_ROLE_COLORS: Record<string, string> = {
@@ -663,7 +717,7 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
   // ── Shared: rows canvas section ───────────────────────────────────────────
   const rowsCanvas = (
     <div className="space-y-3">
-      {isEditing && canManage && (
+      {isEditing && canEditContent && (
         <div className="flex items-center gap-2 bg-rail-50 border border-rail-200 rounded-xl px-4 py-2.5">
           <LayoutGrid size={13} className="text-rail-600 shrink-0"/>
           <p className="text-xs text-rail-700 flex-1">Edit mode — drag widgets between columns, use the column buttons to change layout</p>
@@ -672,7 +726,7 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
       {layout.rows.map((row, rowIdx) => (
         <WorkspaceRow
           key={row.id} row={row} rowIdx={rowIdx} totalRows={layout.rows.length}
-          cell={cell} canManage={canManage} isEditing={isEditing} layout={layout}
+          cell={cell} canManage={canEditContent} isEditing={isEditing} layout={layout}
           userId={user?.id} userName={user?.name} workspaceHook={workspaceHook}
           onUpdate={patch => commitLayout(updateRow(layout, row.id, patch))}
           onRemove={() => commitLayout(removeRow(layout, row.id))}
@@ -693,7 +747,7 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
           onResizeCol={(colId, pct) => commitLayout(resizeRowColumn(layout, row.id, colId, pct))}
         />
       ))}
-      {canManage && (
+      {canEditContent && (
         <button onClick={() => commitLayout(addRow(layout))}
           className={cn('w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-dashed transition-all text-sm font-medium',
             isEditing
@@ -712,8 +766,8 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
         <WindowFormModal
           open={showCreateWin} onClose={() => setShowCreateWin(false)}
           existingWindows={winStore.windows} cell={cell}
-          onSave={(label, icon, vis, roles, cloneFrom, users) => {
-            const next = createWindow(winStore, label, icon, vis, user?.id ?? '', user?.name ?? 'User', roles, users.length > 0 ? users : undefined, cloneFrom || undefined);
+          onSave={(label, icon, vis, roles, cloneFrom, users, editors) => {
+            const next = createWindow(winStore, label, icon, vis, user?.id ?? '', user?.name ?? 'User', roles, users.length > 0 ? users : undefined, cloneFrom || undefined, editors.length > 0 ? editors : undefined);
             commitStore(next);
           }}
         />
@@ -722,8 +776,8 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
         <WindowFormModal
           open={!!editingWin} onClose={() => setEditingWin(null)}
           initial={editingWin} existingWindows={winStore.windows} cell={cell}
-          onSave={(label, icon, vis, roles, _cloneFrom, users) => {
-            commitStore(updateWindow(winStore, editingWin.id, { label, icon, visibility: vis, visibleToRoles: roles, visibleToUsers: users.length > 0 ? users : undefined }));
+          onSave={(label, icon, vis, roles, _cloneFrom, users, editors) => {
+            commitStore(updateWindow(winStore, editingWin.id, { label, icon, visibility: vis, visibleToRoles: roles, visibleToUsers: users.length > 0 ? users : undefined, editableByUsers: editors.length > 0 ? editors : undefined }));
           }}
         />
       )}
@@ -811,7 +865,7 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
                     open={openMenu === win.id} onClose={() => setOpenMenu(null)}
                     onRename={() => setEditingWin(win)}
                     onDuplicate={() => {
-                      const next = createWindow(winStore, win.label + ' (copy)', win.icon ?? '📋', win.visibility, user?.id ?? '', user?.name ?? 'User', win.visibleToRoles, win.visibleToUsers, win.id);
+                      const next = createWindow(winStore, win.label + ' (copy)', win.icon ?? '📋', win.visibility, user?.id ?? '', user?.name ?? 'User', win.visibleToRoles, win.visibleToUsers, win.id, win.editableByUsers);
                       commitStore(next);
                     }}
                     onDelete={() => setDeleteTargetWin(win)}
@@ -939,14 +993,14 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
                   </>
                 )}
               </div>
-              {canManage && (
+              {canEditContent && (
                 <button onClick={() => setIsEditing(e => !e)}
                   className={cn('flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all',
                     isEditing ? 'bg-rail-600 border-rail-600 text-white' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300')}>
                   {isEditing ? <><Check size={11}/> Done</> : <><Settings2 size={11}/> Edit</>}
                 </button>
               )}
-              {canManage && (
+              {canEditContent && (
                 <button onClick={() => commitLayout(addRow(layout))}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-rail-600 hover:bg-rail-700 text-white text-xs font-bold rounded-lg transition-all shadow-sm">
                   <Plus size={12}/> Add block
@@ -978,7 +1032,7 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
                   <p className="text-base font-bold text-slate-800">{activeWin?.label ?? 'Workspace'}</p>
                   <p className="text-xs text-slate-400 mt-1.5">This window is empty. Choose a block to get started.</p>
                 </div>
-                {canManage && (
+                {canEditContent && (
                   <div className="grid grid-cols-3 gap-2.5 w-[420px]">
                     {([
                       { type: 'database'     as WidgetType, emoji: '📊', label: 'Database',          desc: 'Structured table view' },
@@ -1073,7 +1127,7 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
                   open={openMenu === win.id} onClose={() => setOpenMenu(null)}
                   onRename={() => setEditingWin(win)}
                   onDuplicate={() => {
-                    const next = createWindow(winStore, win.label + ' (copy)', win.icon ?? '📋', win.visibility, user?.id ?? '', user?.name ?? 'User', win.visibleToRoles, win.visibleToUsers, win.id);
+                    const next = createWindow(winStore, win.label + ' (copy)', win.icon ?? '📋', win.visibility, user?.id ?? '', user?.name ?? 'User', win.visibleToRoles, win.visibleToUsers, win.id, win.editableByUsers);
                     commitStore(next);
                   }}
                   onDelete={() => setDeleteTargetWin(win)}
@@ -1135,7 +1189,7 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
                 </>
               )}
             </div>
-            {canManage && (
+            {canEditContent && (
               <button onClick={() => setIsEditing(e => !e)}
                 className={cn('flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all',
                   isEditing ? 'bg-rail-600 border-rail-600 text-white' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300')}>
@@ -1147,7 +1201,7 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
       </div>
 
       {/* ── Edit mode banner ─────────────────────────────────────────────── */}
-      {isEditing && canManage && (
+      {isEditing && canEditContent && (
         <div className="flex items-center gap-2 bg-rail-50 border border-rail-200 rounded-xl px-4 py-2.5">
           <LayoutGrid size={13} className="text-rail-600 shrink-0"/>
           <p className="text-xs text-rail-700 flex-1">
@@ -1161,7 +1215,7 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
         {layout.rows.map((row, rowIdx) => (
           <WorkspaceRow
             key={row.id} row={row} rowIdx={rowIdx} totalRows={layout.rows.length}
-            cell={cell} canManage={canManage} isEditing={isEditing} layout={layout}
+            cell={cell} canManage={canEditContent} isEditing={isEditing} layout={layout}
             userId={user?.id} userName={user?.name} workspaceHook={workspaceHook}
             onUpdate={patch => commitLayout(updateRow(layout, row.id, patch))}
             onRemove={() => commitLayout(removeRow(layout, row.id))}
@@ -1185,7 +1239,7 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
       </div>
 
       {/* ── Add Row ──────────────────────────────────────────────────────── */}
-      {canManage && (
+      {canEditContent && (
         <button onClick={() => commitLayout(addRow(layout))}
           className={cn('w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-dashed transition-all text-sm font-medium',
             isEditing
@@ -1218,8 +1272,8 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
           <WindowFormModal
             open={showCreateWin} onClose={() => setShowCreateWin(false)}
             existingWindows={winStore.windows} cell={cell}
-            onSave={(label, icon, vis, roles, cloneFrom, users) => {
-              const next = createWindow(winStore, label, icon, vis, user?.id ?? '', user?.name ?? 'User', roles, users.length > 0 ? users : undefined, cloneFrom || undefined);
+            onSave={(label, icon, vis, roles, cloneFrom, users, editors) => {
+              const next = createWindow(winStore, label, icon, vis, user?.id ?? '', user?.name ?? 'User', roles, users.length > 0 ? users : undefined, cloneFrom || undefined, editors.length > 0 ? editors : undefined);
               commitStore(next);
             }}
           />
@@ -1228,8 +1282,8 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
           <WindowFormModal
             open={!!editingWin} onClose={() => setEditingWin(null)}
             initial={editingWin} existingWindows={winStore.windows} cell={cell}
-            onSave={(label, icon, vis, roles, _cloneFrom, users) => {
-              commitStore(updateWindow(winStore, editingWin.id, { label, icon, visibility: vis, visibleToRoles: roles, visibleToUsers: users.length > 0 ? users : undefined }));
+            onSave={(label, icon, vis, roles, _cloneFrom, users, editors) => {
+              commitStore(updateWindow(winStore, editingWin.id, { label, icon, visibility: vis, visibleToRoles: roles, visibleToUsers: users.length > 0 ? users : undefined, editableByUsers: editors.length > 0 ? editors : undefined }));
             }}
           />
         )}

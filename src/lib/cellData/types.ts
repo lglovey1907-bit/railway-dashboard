@@ -69,6 +69,8 @@ export interface TableDef {
  rows: RowDef[];
  values: Record<string, string>; // key: `rowId:fieldId`
  nominatedUserIds: string[];
+ viewerIds?: string[]; // staff granted read-only (view) access to this whole table
+ editorIds?: string[]; // staff granted edit access to this whole table (in addition to nominatedUserIds/data-entry)
  ownerCell: string; // NEW: originating cell — always the owner
  dataSource: 'manual' | 'linked_sheet';
  sheet?: SheetConnection;
@@ -189,8 +191,27 @@ export function canFill(
  if (canManage) return true;
  if (!userId) return false;
  return table.nominatedUserIds.includes(userId)
+ || (table.editorIds ?? []).includes(userId)
  || row.nominatedUserIds.includes(userId)
  || field.nominatedUserIds.includes(userId);
+}
+
+/** Whether a user can open/view a table (read-only if not also an editor). */
+export function canViewTable(userId: string | undefined, canManage: boolean, table: TableDef): boolean {
+ if (canManage) return true;
+ if (!userId) return false;
+ const viewers = table.viewerIds ?? [];
+ const editors = table.editorIds ?? [];
+ // No viewers/editors configured → table is open to everyone in the cell (legacy behaviour)
+ if (viewers.length === 0 && editors.length === 0 && table.nominatedUserIds.length === 0) return true;
+ return viewers.includes(userId) || editors.includes(userId) || table.nominatedUserIds.includes(userId);
+}
+
+/** Whether a user can edit a table's structure/values at the whole-table level. */
+export function canEditTable(userId: string | undefined, canManage: boolean, table: TableDef): boolean {
+ if (canManage) return true;
+ if (!userId) return false;
+ return (table.editorIds ?? []).includes(userId) || table.nominatedUserIds.includes(userId);
 }
 
 export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
@@ -217,12 +238,15 @@ export function makeRow(order = 0): RowDef {
 export function makeSection(title = 'New Section'): Section {
  return { id: genId('s'), title, collapsed: false, widgets: [], order: 0 };
 }
-export function makeTable(name: string, cols: number, rows: number, firstColLabel = 'Label', ownerCell = ''): TableDef {
+export function makeTable(
+ name: string, cols: number, rows: number, firstColLabel = 'Label', ownerCell = '',
+ viewerIds: string[] = [], editorIds: string[] = [],
+): TableDef {
  const fields = Array.from({ length: cols }, (_, i) => makeField(`Column ${i + 1}`));
  const rowDefs = Array.from({ length: rows }, (_, i) => makeRow(i));
  return {
  id: genId('t'), name, firstColLabel, ownerCell, fields, rows: rowDefs,
- values: {}, nominatedUserIds: [], dataSource: 'manual',
+ values: {}, nominatedUserIds: [], viewerIds, editorIds, dataSource: 'manual',
  sortField: undefined, sortDir: undefined, filters: {}, columnOrder: fields.map(f => f.id),
  };
 }

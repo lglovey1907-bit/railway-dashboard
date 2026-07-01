@@ -92,6 +92,11 @@ export function setUserStatus(employeeId: string, status: UserStatus): void {
  const all = getUserStatusOverrides();
  all[employeeId] = status;
  if (typeof window !== 'undefined') localStorage.setItem(USER_STATUS_KEY, JSON.stringify(all));
+ // Best-effort sync to server so the status change is visible on other devices/browsers
+ try {
+ const { pushStatusToServer } = require('./staffDB');
+ pushStatusToServer(employeeId, status);
+ } catch { /* non-critical */ }
 }
 
 export function getUserStatus(employeeId: string, defaultStatus: UserStatus = 'active'): UserStatus {

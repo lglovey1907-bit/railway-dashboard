@@ -6,7 +6,9 @@ import { useEffect } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import { useWorkspace } from '@/lib/cellData/useWorkspace';
 import { canManageCellStructure } from '@/lib/cellData/useCellDataStructure';
+import { canViewTable } from '@/lib/cellData/types';
 import { TableEngine, CreateTableModal } from './TableEngine';
+import { getStaffForCell } from '@/lib/staff/masterStaff';
 import type { Section, Widget, TableWidget, TextWidget, KpiWidget } from '@/lib/cellData/types';
 import {
  LayoutGrid, Plus, Trash2, ChevronDown, ChevronRight, X,
@@ -106,6 +108,7 @@ function AddWidgetMenu({ sId, hook, cell, onClose }: { sId: string; hook: Return
  <CreateTableModal
  onClose={() => { setShowCreateTable(false); onClose(); }}
  cell={cell}
+ cellStaff={getStaffForCell(cell)}
  onCreated={table => { hook.addTableToSection(sId, table); onClose(); }}/>
  );
  }
@@ -177,6 +180,7 @@ function SectionBlock({ section, hook, isFirst, isLast, canManage, cell, userId,
  {widget.type === 'table' && (() => {
  const table = hook.ws.tables.find(t => t.id === (widget as TableWidget).tableId);
  if (!table) return null;
+ if (!canViewTable(userId, canManage, table)) return null; // hidden — user is not a nominated viewer/editor
  return (
  <div>
  <div className="flex items-center justify-between mb-2">

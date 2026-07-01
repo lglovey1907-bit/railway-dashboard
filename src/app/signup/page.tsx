@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { registerEmployee } from '@/lib/staff/staffDB';
 import { registerUserPassword, generateDefaultPassword } from '@/lib/auth/passwordStore';
 import { getActiveCells } from '@/lib/cells/cellRegistry';
+import { sendOtpEmail } from '@/lib/auth/emailOtp';
 
 // Cells loaded dynamically from registry
 function getCells() {
@@ -58,18 +59,27 @@ export default function SignupPage() {
   const [copied, setCopied]       = useState(false);
   const [cells, setCells]         = useState<string[]>([]);
   const [approvalStatus, setApprovalStatus] = useState<'pending' | 'approved'>('pending');
+  const [otpEmailed, setOtpEmailed] = useState(false);
 
   useEffect(() => { setCells(getCells()); }, []);
 
   // Poll for admin approval every 5 seconds while on the pending step
   useEffect(() => {
     if (step !== 'pending' || !userId) return;
-    const check = () => {
+    const check = async () => {
       try {
         const staffList: any[] = JSON.parse(localStorage.getItem('rly_staff_master') ?? '[]');
         const overrides: Record<string, string> = JSON.parse(localStorage.getItem('rly_user_status_overrides') ?? '{}');
         const member = staffList.find((s: any) => s.id === userId);
-        const status = overrides[userId] ?? member?.status ?? 'pending';
+        let status = overrides[userId] ?? member?.status ?? 'pending';
+        // Also check the server — approval may have happened from a different browser/device.
+        try {
+          const res = await fetch(`/api/users?email=${encodeURIComponent(form.email.trim())}`);
+          if (res.ok) {
+            const remote = await res.json();
+            if (remote?.status) status = remote.status;
+          }
+        } catch { /* ignore — fall back to local status */ }
         if (status === 'active' || status === 'approved') {
           setApprovalStatus('approved');
         }
@@ -78,7 +88,7 @@ export default function SignupPage() {
     check(); // immediate check on mount
     const interval = setInterval(check, 5000);
     return () => clearInterval(interval);
-  }, [step, userId]);
+  }, [step, userId, form.email]);
 
   // OTP countdown timer
   useEffect(() => {
@@ -113,12 +123,13 @@ export default function SignupPage() {
     if (!validate()) return;
     setSubmitting(true);
     await new Promise(r => setTimeout(r, 800));
-    // Generate OTP (6 digits) — in production this would be emailed
+    // Generate OTP (6 digits) and email it to the applicant
     const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
     setOtpSent(generatedOtp);
     setOtpTimer(300); // 5 minute expiry
     setSubmitting(false);
     setStep('otp');
+    sendOtpEmail(form.email.trim(), generatedOtp, 'signup').then(setOtpEmailed);
   };
 
   const handleVerifyOtp = async () => {
@@ -180,7 +191,8 @@ export default function SignupPage() {
   const resendOtp = () => {
     const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
     setOtpSent(newOtp); setOtpTimer(300); setOtpError('');
-    // In production: re-send email
+    setOtpEmailed(false);
+    sendOtpEmail(form.email.trim(), newOtp, 'signup').then(setOtpEmailed);
   };
 
   const copyPwd = () => { navigator.clipboard.writeText(generatedPwd); setCopied(true); setTimeout(() => setCopied(false), 2000); };
@@ -275,12 +287,19 @@ export default function SignupPage() {
             <h2 className="text-white text-xl font-bold mb-2">Verify Your Email</h2>
             <p className="text-white/40 text-sm mb-1">OTP sent to <span className="text-white/70 font-medium">{form.email}</span></p>
 
-            {/* Development helper — show OTP on screen since we have no email service */}
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-2.5 mb-6 text-left">
-              <p className="text-amber-400 text-[11px] font-bold uppercase tracking-wider mb-1">Development Mode</p>
-              <p className="text-amber-300/80 text-xs">OTP (would be emailed in production): <span className="font-mono font-bold text-amber-300">{otpSent}</span></p>
-              <p className="text-amber-300/50 text-[10px] mt-0.5">Expires in {Math.floor(otpTimer/60)}:{String(otpTimer%60).padStart(2,'0')}</p>
-            </div>
+            {otpEmailed ? (
+              <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-2.5 mb-6 text-left">
+                <p className="text-emerald-300/80 text-xs">A verification code has been emailed to your registered address.</p>
+                <p className="text-emerald-300/50 text-[10px] mt-0.5">Expires in {Math.floor(otpTimer/60)}:{String(otpTimer%60).padStart(2,'0')}</p>
+              </div>
+            ) : (
+              /* Fallback when SMTP isn't configured — show OTP on screen */
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-2.5 mb-6 text-left">
+                <p className="text-amber-400 text-[11px] font-bold uppercase tracking-wider mb-1">Email delivery not configured</p>
+                <p className="text-amber-300/80 text-xs">Your OTP: <span className="font-mono font-bold text-amber-300">{otpSent}</span></p>
+                <p className="text-amber-300/50 text-[10px] mt-0.5">Expires in {Math.floor(otpTimer/60)}:{String(otpTimer%60).padStart(2,'0')}</p>
+              </div>
+            )}
 
             <div className="mb-4 text-left">
               <label className={labelCls}>Enter 6-digit OTP</label>

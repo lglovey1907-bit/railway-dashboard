@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { useAuthStore } from '@/store/authStore';
 import { KeyRound, Lock, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getUserPassword, setUserPassword, clearMustChangePassword } from '@/lib/auth/passwordStore';
 
 function strength(pwd: string): { score: number; label: string; color: string } {
  let score = 0;
@@ -32,7 +33,11 @@ export function ChangePasswordGate({ onComplete }: { onComplete: () => void }) {
  const handleSubmit = async (e: React.FormEvent) => {
  e.preventDefault();
  setError('');
+ if (!user?.email) { setError('Session error — please sign in again'); return; }
+ const userEmail = user.email.toLowerCase();
+ const storedPwd = getUserPassword(userEmail);
  if (!current.trim()) { setError('Enter your current (temporary) password'); return; }
+ if (storedPwd !== null && current !== storedPwd) { setError('Current password is incorrect'); return; }
  if (next.length < 8) { setError('New password must be at least 8 characters'); return; }
  if (s.score < 3) { setError('Choose a stronger password (mix upper/lowercase, numbers, symbols)'); return; }
  if (next !== confirm) { setError('Passwords do not match'); return; }
@@ -40,7 +45,27 @@ export function ChangePasswordGate({ onComplete }: { onComplete: () => void }) {
 
  setSubmitting(true);
  await new Promise(r => setTimeout(r, 900));
+
+ // Persist the new password locally so subsequent logins accept it
+ // and the "must change password" gate does not re-trigger.
+ setUserPassword(userEmail, next);
+ clearMustChangePassword(userEmail);
  updateUser({ mustChangePassword: false });
+
+ // Sync the new password + cleared flag to the server (KV) so other
+ // browsers/devices pick it up immediately — retry to survive transient failures.
+ (async () => {
+   const body = JSON.stringify({ email: userEmail, password: next, mustChange: false });
+   for (let i = 0; i < 4; i++) {
+     try {
+       const r = await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+       const d = await r.json();
+       if (d?.ok) break;
+     } catch { /* retry */ }
+     if (i < 3) await new Promise(res => setTimeout(res, 1000 * (i + 1)));
+   }
+ })();
+
  setSubmitting(false);
  onComplete();
  };

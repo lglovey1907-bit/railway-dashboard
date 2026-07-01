@@ -67,6 +67,7 @@ function makeShim(table: TableDef): ReturnType<typeof useWorkspace> {
  addTableToSection: () => {}, addTextToSection: () => {}, addKpiToSection: () => {},
  removeWidget: () => {}, updateWidget: () => {},
  updateTable: () => {}, setFirstColLabel: () => {}, setTableNominees: () => {},
+ setTableViewers: () => {}, setTableEditors: () => {},
  setSort: () => {}, setFilter: () => {}, clearFilter: () => {},
  addColumn: () => {}, removeColumn: () => {}, updateColumn: () => {},
  moveColumn: () => {}, setColumnNominees: () => {},

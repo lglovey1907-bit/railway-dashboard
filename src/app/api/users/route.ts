@@ -26,6 +26,7 @@ const KEY = (email: string) => `rly:user:${email.toLowerCase().trim()}`;
 export interface ServerUserRecord {
   email:        string;
   staffRecord?: Record<string, unknown>;  // mirrors rly_staff_master entry
+  memberships?: Record<string, unknown>[]; // mirrors rly_cell_memberships entries for this employee
   password?:    string;                   // hashed? no — same as localStorage (plain text for now)
   mustChange?:  boolean;
   status?:      string;                   // active | pending | inactive | …
@@ -124,6 +125,7 @@ export async function POST(req: NextRequest) {
     // Deep-merge only defined fields
     const merged: ServerUserRecord = { ...existing };
     if (body.staffRecord !== undefined) merged.staffRecord = body.staffRecord;
+    if (body.memberships !== undefined) merged.memberships = body.memberships;
     if (body.password    !== undefined) merged.password    = body.password;
     if (body.mustChange  !== undefined) merged.mustChange  = body.mustChange;
     if (body.status      !== undefined) merged.status      = body.status;

@@ -15,11 +15,13 @@ import { cn } from '@/lib/utils';
 import type { TableDef, FieldDef, RowDef, FieldType, DropdownOption } from '@/lib/cellData/types';
 import { FIELD_TYPE_LABELS, validateValue, evalFormula, canFill, makeTable } from '@/lib/cellData/types';
 import { mockUsers } from '@/lib/data/mockData';
+import { getStaffForCell, STAFF_CHANGED_EVENT, type MasterStaffRecord } from '@/lib/staff/masterStaff';
 import type { useWorkspace } from '@/lib/cellData/useWorkspace';
 import { CollaborationPanel } from './CollaborationPanel';
 import { ActivityLogModal, LastEditedBadge } from './ActivityLog';
 
 type Hook = ReturnType<typeof useWorkspace>;
+type StaffOption = MasterStaffRecord | (typeof mockUsers)[number];
 
 function Portal({ children }: { children: React.ReactNode }) {
  const [m, setM] = useState(false);
@@ -73,7 +75,7 @@ function ConfirmDialog({ title, message, onConfirm, onCancel, danger = true }: {
 
 // ── Nominee picker ─────────────────────────────────────────────────────────────
 function NomineePickerModal({ title, current, cellStaff, onClose, onSave }: {
- title: string; current: string[]; cellStaff: typeof mockUsers; onClose: () => void; onSave: (ids: string[]) => void;
+ title: string; current: string[]; cellStaff: StaffOption[]; onClose: () => void; onSave: (ids: string[]) => void;
 }) {
  const [sel, setSel] = useState(current);
  const toggle = (id: string) => setSel(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
@@ -116,7 +118,7 @@ function NomineePickerModal({ title, current, cellStaff, onClose, onSave }: {
 
 // ── Column settings panel ──────────────────────────────────────────────────────
 function ColSettingsModal({ field, tableId, hook, cellStaff, onClose }: {
- field: FieldDef; tableId: string; hook: Hook; cellStaff: typeof mockUsers; onClose: () => void;
+ field: FieldDef; tableId: string; hook: Hook; cellStaff: StaffOption[]; onClose: () => void;
 }) {
  const [label, setLabel] = useState(field.label);
  const [type, setType] = useState<FieldType>(field.type);
@@ -422,14 +424,22 @@ function CellEditor({ value, field, onSave, onCancel }: {
 }
 
 // ── Create Table modal (exported for CellDataManager) ─────────────────────────
-export function CreateTableModal({ onClose, onCreated, cell = '' }: {
- onClose: () => void; onCreated: (t: TableDef) => void; cell?: string;
+export function CreateTableModal({ onClose, onCreated, cell = '', cellStaff = [] }: {
+ onClose: () => void; onCreated: (t: TableDef) => void; cell?: string; cellStaff?: StaffOption[];
 }) {
  const [name, setName] = useState('');
  const [firstCol, setFirstCol] = useState('Label');
  const [cols, setCols] = useState(3);
  const [rows, setRows] = useState(4);
- const create = () => { if (!name.trim()) return; onCreated(makeTable(name.trim(), cols, rows, firstCol.trim() || 'Label', cell)); onClose(); };
+ const [viewerIds, setViewerIds] = useState<string[]>([]);
+ const [editorIds, setEditorIds] = useState<string[]>([]);
+ const [showViewerPicker, setShowViewerPicker] = useState(false);
+ const [showEditorPicker, setShowEditorPicker] = useState(false);
+ const create = () => {
+ if (!name.trim()) return;
+ onCreated(makeTable(name.trim(), cols, rows, firstCol.trim() || 'Label', cell, viewerIds, editorIds));
+ onClose();
+ };
  return (
  <Portal>
  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -461,6 +471,22 @@ export function CreateTableModal({ onClose, onCreated, cell = '' }: {
  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-400"/>
  </div>
  </div>
+ <div className="border-t border-slate-100 pt-3">
+ <p className="text-xs text-slate-500 font-medium mb-2">Who can access this table? <span className="text-slate-300 font-normal">(optional — leave blank for everyone in the cell)</span></p>
+ <div className="grid grid-cols-2 gap-2">
+ <button type="button"onClick={() => setShowViewerPicker(true)}
+ className="flex items-center justify-between px-3 py-2 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-left transition-all">
+ <span className="flex items-center gap-1.5 text-xs text-slate-700"><Users size={12} className="text-blue-500"/> Viewers</span>
+ {viewerIds.length > 0 && <span className="text-[10px] bg-blue-100 text-blue-700 rounded-full px-1.5">{viewerIds.length}</span>}
+ </button>
+ <button type="button"onClick={() => setShowEditorPicker(true)}
+ className="flex items-center justify-between px-3 py-2 rounded-lg border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 text-left transition-all">
+ <span className="flex items-center gap-1.5 text-xs text-slate-700"><Users size={12} className="text-emerald-500"/> Editors</span>
+ {editorIds.length > 0 && <span className="text-[10px] bg-emerald-100 text-emerald-700 rounded-full px-1.5">{editorIds.length}</span>}
+ </button>
+ </div>
+ <p className="text-[10px] text-slate-400 mt-1.5">Viewers can open and read the table. Editors can also add/change data. You can select multiple people for each.</p>
+ </div>
  </div>
  <div className="flex justify-end gap-2">
  <button onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-100 rounded-xl">Cancel</button>
@@ -468,6 +494,16 @@ export function CreateTableModal({ onClose, onCreated, cell = '' }: {
  </div>
  </motion.div>
  </motion.div>
+ <AnimatePresence>
+ {showViewerPicker && (
+ <NomineePickerModal title="Who can view this table"current={viewerIds} cellStaff={cellStaff}
+ onClose={() => setShowViewerPicker(false)} onSave={setViewerIds}/>
+ )}
+ {showEditorPicker && (
+ <NomineePickerModal title="Who can edit this table"current={editorIds} cellStaff={cellStaff}
+ onClose={() => setShowEditorPicker(false)} onSave={setEditorIds}/>
+ )}
+ </AnimatePresence>
  </Portal>
  );
 }
@@ -476,7 +512,13 @@ export function CreateTableModal({ onClose, onCreated, cell = '' }: {
 export function TableEngine({ table, hook, cell, canManage, userId, userName }: {
  table: TableDef; hook: Hook; cell: string; canManage: boolean; userId?: string; userName?: string;
 }) {
- const cellStaff = mockUsers.filter(u => u.cell === cell);
+ const [cellStaff, setCellStaff] = useState<MasterStaffRecord[]>(() => getStaffForCell(cell));
+ useEffect(() => {
+ const reload = () => setCellStaff(getStaffForCell(cell));
+ reload();
+ window.addEventListener(STAFF_CHANGED_EVENT, reload);
+ return () => window.removeEventListener(STAFF_CHANGED_EVENT, reload);
+ }, [cell]);
  const [editing, setEditing] = useState<{ rId: string; fId: string } | null>(null);
  const [editFirstCol, setEditFirstCol] = useState<string | null>(null);
  const [colSettings, setColSettings] = useState<string | null>(null); // fieldId
@@ -484,6 +526,8 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  const [filterDraft, setFilterDraft] = useState('');
  const [showSheet, setShowSheet] = useState(false);
  const [showTableNominees, setShowTableNominees] = useState(false);
+ const [showTableViewers, setShowTableViewers] = useState(false);
+ const [showTableEditors, setShowTableEditors] = useState(false);
  const [showCollab, setShowCollab] = useState(false);
  const [showHistory, setShowHistory] = useState(false);
  const [showRowNominees, setShowRowNominees] = useState<string | null>(null); // rowId
@@ -672,6 +716,12 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  {canManage && <>
  <button onClick={() => setShowTableNominees(true)} title="Table-level access"className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-blue-100 text-slate-400 hover:text-blue-600 text-[10px]">
  <Users size={12}/> Access{table.nominatedUserIds.length > 0 && <span className="bg-blue-100 text-blue-700 rounded-full px-1 ml-0.5">{table.nominatedUserIds.length}</span>}
+ </button>
+ <button onClick={() => setShowTableViewers(true)} title="Choose who can view this table"className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-blue-100 text-slate-400 hover:text-blue-600 text-[10px]">
+ <Users size={12}/> Viewers{(table.viewerIds?.length ?? 0) > 0 && <span className="bg-blue-100 text-blue-700 rounded-full px-1 ml-0.5">{table.viewerIds!.length}</span>}
+ </button>
+ <button onClick={() => setShowTableEditors(true)} title="Choose who can edit this table"className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-emerald-100 text-slate-400 hover:text-emerald-600 text-[10px]">
+ <Users size={12}/> Editors{(table.editorIds?.length ?? 0) > 0 && <span className="bg-emerald-100 text-emerald-700 rounded-full px-1 ml-0.5">{table.editorIds!.length}</span>}
  </button>
  <button onClick={() => setShowSheet(true)} className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-emerald-100 text-slate-400 hover:text-emerald-600 text-[10px]">
  <FileSpreadsheet size={12}/> {isLinked ? 'Sheet' : 'Connect Sheet'}
@@ -932,6 +982,8 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  {showSheet && <SheetModal table={table} hook={hook} onClose={() => setShowSheet(false)}/>}
  {colSettings && <ColSettingsModal field={orderedFields.find(f => f.id === colSettings)!} tableId={table.id} hook={hook} cellStaff={cellStaff} onClose={() => setColSettings(null)}/>}
  {showTableNominees && <NomineePickerModal title="Whole-table access"current={table.nominatedUserIds} cellStaff={cellStaff} onClose={() => setShowTableNominees(false)} onSave={ids => hook.setTableNominees(table.id, ids)}/>}
+ {showTableViewers && <NomineePickerModal title="Who can view this table"current={table.viewerIds ?? []} cellStaff={cellStaff} onClose={() => setShowTableViewers(false)} onSave={ids => hook.setTableViewers(table.id, ids)}/>}
+ {showTableEditors && <NomineePickerModal title="Who can edit this table"current={table.editorIds ?? []} cellStaff={cellStaff} onClose={() => setShowTableEditors(false)} onSave={ids => hook.setTableEditors(table.id, ids)}/>}
  {showRowNominees && <NomineePickerModal title={`Row:"${table.values[`${showRowNominees}:__label__`] ?? 'this row'}"`} current={table.rows.find(r => r.id === showRowNominees)?.nominatedUserIds ?? []} cellStaff={cellStaff} onClose={() => setShowRowNominees(null)} onSave={ids => hook.setRowNominees(table.id, showRowNominees, ids)}/>}
  {showCollab && (
  <CollaborationPanel table={table} cell={cell} userId={userId} userName={userName} canManage={canManage}

@@ -445,6 +445,14 @@ export function useWorkspace(cell: string, currentUser?: { id: string; name: str
  commit(w => ({ ...w, tables: w.tables.map(t => t.id !== tId ? t : { ...t, nominatedUserIds: ids }) }), 'Set table nominees');
  }, [commit]);
 
+ const setTableViewers = useCallback((tId: string, ids: string[]) => {
+ commit(w => ({ ...w, tables: w.tables.map(t => t.id !== tId ? t : { ...t, viewerIds: ids }) }), 'Set table viewers');
+ }, [commit]);
+
+ const setTableEditors = useCallback((tId: string, ids: string[]) => {
+ commit(w => ({ ...w, tables: w.tables.map(t => t.id !== tId ? t : { ...t, editorIds: ids }) }), 'Set table editors');
+ }, [commit]);
+
  const setSort = useCallback((tId: string, fieldId: string) => {
  setWs(prev => {
  const next = { ...prev, tables: prev.tables.map(t => {
@@ -602,7 +610,7 @@ export function useWorkspace(cell: string, currentUser?: { id: string; name: str
  // widgets
  addTableToSection, addTextToSection, addKpiToSection, removeWidget, updateWidget,
  // table
- updateTable, setFirstColLabel, setTableNominees, setSort, setFilter, clearFilter,
+ updateTable, setFirstColLabel, setTableNominees, setTableViewers, setTableEditors, setSort, setFilter, clearFilter,
  // columns
  addColumn, removeColumn, updateColumn, moveColumn, setColumnNominees,
  // rows

@@ -28,6 +28,46 @@ function safeGet<T>(key: string, fallback: T): T {
  try { return JSON.parse(localStorage.getItem(key) ?? 'null') ?? fallback; } catch { return fallback; }
 }
 
+// ── Cross-device sync ─────────────────────────────────────────────────────────
+// Pushes a staff member's record + cell memberships + status to the server
+// (Vercel KV via /api/users) so approvals/edits made in one browser become
+// visible in any other browser/device. Best-effort, retried, non-blocking.
+export function pushEmployeeToServer(employeeId: string): void {
+ if (typeof window === 'undefined') return;
+ const staff = getStaffById(employeeId);
+ if (!staff?.email) return;
+ const memberships = getMembershipsForEmployee(employeeId);
+ (async () => {
+ const body = JSON.stringify({ email: staff.email, staffRecord: staff, memberships, status: staff.status });
+ for (let i = 0; i < 4; i++) {
+ try {
+ const r = await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+ const d = await r.json();
+ if (d?.ok) break;
+ } catch { /* retry */ }
+ if (i < 3) await new Promise(res => setTimeout(res, 1000 * (i + 1)));
+ }
+ })();
+}
+
+/** Push just a status override change (e.g. from rly_user_status_overrides) for an employee, keyed by email. */
+export function pushStatusToServer(employeeId: string, status: string): void {
+ if (typeof window === 'undefined') return;
+ const staff = getStaffById(employeeId);
+ if (!staff?.email) return;
+ (async () => {
+ const body = JSON.stringify({ email: staff.email, status });
+ for (let i = 0; i < 4; i++) {
+ try {
+ const r = await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+ const d = await r.json();
+ if (d?.ok) break;
+ } catch { /* retry */ }
+ if (i < 3) await new Promise(res => setTimeout(res, 1000 * (i + 1)));
+ }
+ })();
+}
+
 export function getAllStaff(): StaffMember[] { return safeGet<StaffMember[]>(STAFF_KEY, []); }
 export function getStaffById(id: string): StaffMember | null { return getAllStaff().find(s => s.id === id) ?? null; }
 export function getStaffByEmail(email: string): StaffMember | null { return getAllStaff().find(s => s.email.toLowerCase() === email.toLowerCase()) ?? null; }
@@ -50,6 +90,7 @@ export function registerEmployee(data: {
  if (!existing.find(s => s.id === data.id)) saveStaff([...existing, staff]);
  const membership = addCellMembership(data.id, data.cell, 'viewer');
  addAudit(data.id, 'Employee registered', undefined, undefined, `Applied for ${data.cell}`);
+ pushEmployeeToServer(data.id);
  return { staff, membership };
 }
 
@@ -57,7 +98,9 @@ export function updateStaffRecord(id: string, patch: Partial<Omit<StaffMember, '
  const all = getAllStaff(); const idx = all.findIndex(s => s.id === id);
  if (idx < 0) return null;
  all[idx] = { ...all[idx], ...patch, lastUpdatedAt: new Date().toISOString() };
- saveStaff(all); return all[idx];
+ saveStaff(all);
+ pushEmployeeToServer(id);
+ return all[idx];
 }
 
 export function getAllMemberships(): CellMembership[] { return safeGet<CellMembership[]>(MEMBER_KEY, []); }
@@ -83,6 +126,7 @@ export function approveMembership(membershipId: string, approverId: string, appr
  const staffAll = getAllStaff(); const sIdx = staffAll.findIndex(s => s.id === all[idx].employeeId);
  if (sIdx >= 0 && staffAll[sIdx].status === 'pending') { staffAll[sIdx] = { ...staffAll[sIdx], status: 'approved', lastUpdatedAt: now }; saveStaff(staffAll); }
  addAudit(all[idx].employeeId, `Approved for ${all[idx].cellName}`, approverId, approverName);
+ pushEmployeeToServer(all[idx].employeeId);
  return all[idx];
 }
 
@@ -91,6 +135,7 @@ export function rejectMembership(membershipId: string, approverId: string, appro
  all[idx] = { ...all[idx], approvalStatus: 'rejected', approvedBy: approverId, approvedByName: approverName, approvedAt: new Date().toISOString(), rejectedReason: reason };
  saveMemberships(all);
  addAudit(all[idx].employeeId, `Rejected from ${all[idx].cellName}`, approverId, approverName, reason);
+ pushEmployeeToServer(all[idx].employeeId);
  return all[idx];
 }
 

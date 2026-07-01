@@ -226,6 +226,9 @@ export default function LoginPage() {
  {showPwd ? <EyeOff size={14}/> : <Eye size={14}/>}
  </button>
  </div>
+ <div className="flex justify-end mt-1.5">
+ <a href="/forgot-password" className="text-rail-400 hover:text-rail-300 text-[11px] transition-colors">Forgot password?</a>
+ </div>
  </div>
 
  {(error || localError) && (
