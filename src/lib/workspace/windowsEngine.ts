@@ -5,6 +5,7 @@
  * Windows have visibility/permission settings.
  */
 import { getRowLayout, saveRowLayout, type RowBasedLayout } from './layoutEngine';
+import { sharedRead, sharedWrite } from '@/lib/config/sharedSync';
 
 export type WindowVisibility = 'personal' | 'cell' | 'role' | 'admin' | 'public';
 
@@ -67,9 +68,39 @@ export function getWindowStore(cell: string, userId = 'system', userName = 'Syst
   return store;
 }
 
+function windowLayoutCell(cell: string, windowId: string) {
+  return `${cell}__win__${windowId}`;
+}
+
+function rowStorageKey(cell: string) {
+  return `rly_rowlayout_${cell.replace(/[^a-zA-Z0-9]/g, '_')}`;
+}
+
+export async function loadWindowStoreFromCloud(cell: string): Promise<CellWindowStore | null> {
+  try {
+    const raw = await sharedRead(WIN_KEY(cell));
+    if (!raw) return null;
+    return raw as CellWindowStore;
+  } catch {
+    return null;
+  }
+}
+
+export async function loadWindowLayoutFromCloud(cell: string, windowId: string): Promise<RowBasedLayout | null> {
+  try {
+    const raw = await sharedRead(rowStorageKey(windowLayoutCell(cell, windowId)));
+    if (!raw) return null;
+    return raw as RowBasedLayout;
+  } catch {
+    return null;
+  }
+}
+
 export function saveWindowStore(store: CellWindowStore): void {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(WIN_KEY(store.cell), JSON.stringify(store));
+  const key = WIN_KEY(store.cell);
+  localStorage.setItem(key, JSON.stringify(store));
+  sharedWrite(key, store);
 }
 
 export function createWindow(
@@ -144,12 +175,12 @@ export function getVisibleWindows(
 
 /** Get the RowBasedLayout for a specific window */
 export function getWindowLayout(cell: string, windowId: string): RowBasedLayout {
-  return getRowLayout(WIN_LAYOUT_KEY(cell, windowId));
+  return getRowLayout(windowLayoutCell(cell, windowId));
 }
 
 /** Save the RowBasedLayout for a specific window */
 export function saveWindowLayout(cell: string, windowId: string, layout: RowBasedLayout): void {
-  saveRowLayout({ ...layout, cell: WIN_LAYOUT_KEY(cell, windowId) });
+  saveRowLayout({ ...layout, cell: windowLayoutCell(cell, windowId) });
 }
 
 export const WINDOW_ICONS = ['🏠','📊','📋','📁','👥','🔍','📈','💼','📌','🗂️','⚡','🎯','📝','🔔','🗓️'];

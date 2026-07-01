@@ -61,15 +61,39 @@ export function useWorkspace(cell: string, currentUser?: { id: string; name: str
      const raw = localStorage.getItem(key);
      if (raw) setWs(applyWsData(JSON.parse(raw)));
    } catch { /* ignore */ }
-   // Phase 2: cloud read (authoritative — ensures cross-browser sync on page load)
-   sharedRead(sharedNS(cell)).then(cloudData => {
-     if (!cloudData) return;
+ }, [key, cell]);
+
+ // ── Cross-browser refresh ─────────────────────────────────────────────────
+ useEffect(() => {
+   if (typeof window === 'undefined') return;
+
+   let cancelled = false;
+   const refresh = async () => {
      try {
+       const cloudData = await sharedRead(sharedNS(cell));
+       if (cancelled || !cloudData) return;
        const normalized = applyWsData(cloudData as CellWorkspace);
+       const serialised = JSON.stringify(normalized);
+       if (localStorage.getItem(key) === serialised) return;
+       localStorage.setItem(key, serialised);
        setWs(normalized);
-       localStorage.setItem(key, JSON.stringify(normalized));
-     } catch { /* ignore */ }
-   }).catch(() => { /* silent */ });
+       window.dispatchEvent(new CustomEvent('ws-sync', { detail: { key, data: normalized } }));
+     } catch { /* silent */ }
+   };
+
+   refresh();
+   const timer = window.setInterval(refresh, 8000);
+   const onFocus = () => { void refresh(); };
+   const onVisibility = () => { if (!document.hidden) void refresh(); };
+   window.addEventListener('focus', onFocus);
+   document.addEventListener('visibilitychange', onVisibility);
+
+   return () => {
+     cancelled = true;
+     clearInterval(timer);
+     window.removeEventListener('focus', onFocus);
+     document.removeEventListener('visibilitychange', onVisibility);
+   };
  }, [key, cell]);
 
  // Sync from other useWorkspace instances on the same page (e.g. DatabasePeekModal ↔ canvas)

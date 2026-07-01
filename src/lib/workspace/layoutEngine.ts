@@ -1,4 +1,5 @@
 import { syncedSave, syncedLoad, newerWins, NS } from '@/lib/config/SyncManager';
+import { sharedWrite } from '@/lib/config/sharedSync';
 // ─────────────────────────────────────────────────────────────────────────────
 // Workspace Layout Engine
 // Persists per-cell layouts in localStorage under rly_layout_[cell]
@@ -464,7 +465,11 @@ function makeDefaultRowLayout(cell: string): RowBasedLayout {
 export function saveRowLayout(layout: RowBasedLayout): void {
   if (typeof window === 'undefined') return;
   const nextRow = { ...layout, updatedAt: new Date().toISOString() };
-  if (typeof window !== 'undefined') localStorage.setItem(ROW_KEY(layout.cell), JSON.stringify(nextRow));
+  if (typeof window !== 'undefined') {
+    const key = ROW_KEY(layout.cell);
+    localStorage.setItem(key, JSON.stringify(nextRow));
+    sharedWrite(key, nextRow);
+  }
 }
 
 // Row mutations

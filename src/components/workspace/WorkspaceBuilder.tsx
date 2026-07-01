@@ -15,6 +15,7 @@ import { canManageCellStructure } from '@/lib/cellData/useCellDataStructure';
 import { useWorkspace } from '@/lib/cellData/useWorkspace';
 import { WidgetRenderer } from './WidgetRenderer';
 import { CellDataManager } from '@/components/cell/CellDataManager';
+import { loadWindowLayoutFromCloud, loadWindowStoreFromCloud } from '@/lib/workspace/windowsEngine';
 import {
   getRowLayout, saveRowLayout, addRow, removeRow, moveRow, updateRow,
   setRowColumns, addWidgetToRow, removeWidgetFromRow, updateWidgetInRow,
@@ -560,6 +561,40 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
     const store = getWindowStore(cell, user?.id ?? 'system', user?.name ?? 'System');
     setWinStore(store);
   }, [cell, user?.id]);
+
+  // Shared-cloud rehydration keeps separate browsers aligned on the same cell.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const cloudStore = await loadWindowStoreFromCloud(cell);
+        if (cancelled || !cloudStore) return;
+        saveWindowStore(cloudStore);
+        setWinStore(cloudStore);
+
+        const cloudLayout = await loadWindowLayoutFromCloud(cell, cloudStore.activeWindowId);
+        if (cancelled || !cloudLayout) return;
+        saveWindowLayout(cell, cloudStore.activeWindowId, cloudLayout);
+        setLayout(cloudLayout);
+      } catch { /* silent */ }
+    };
+
+    refresh();
+    const timer = window.setInterval(refresh, 8000);
+    const onFocus = () => { void refresh(); };
+    const onVisibility = () => { if (!document.hidden) void refresh(); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [cell]);
 
   // Load layout for active window
   useEffect(() => {
