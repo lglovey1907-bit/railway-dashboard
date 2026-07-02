@@ -103,8 +103,14 @@ export function useSharedPush(role: string | undefined) {
       });
     } catch { /* ignore */ }
 
-    // ── Cell registry (which cells are active/created) ──────────────────────
-    push('rly_cell_registry', 'cell_registry');
+    // NOTE: the cell registry (`rly_cell_registry` / `cell_registry`) is
+    // intentionally NOT backfilled here. Every mutation in cellRegistry.ts
+    // (createCell/updateCell/setCellStatus/archiveCell) already syncs
+    // straight to the shared cloud store the moment it happens. Blindly
+    // re-pushing this admin's local snapshot on every dashboard load would
+    // race with other admins' sessions and could overwrite a newer cell
+    // (e.g. one just created on another device) with this browser's stale
+    // local copy.
 
   }, [role]);
 }

@@ -19,6 +19,21 @@ function getCells() {
   try { return getActiveCells().map(c => c.name); } catch { return ['Planning','Manpower Planning','Commercial Control','Ticket Checking','UTS PRS']; }
 }
 
+// Signup is unauthenticated and never runs the dashboard's useAppSync hook,
+// so a fresh browser here has no cloud-synced localStorage yet. Fetch the
+// shared cell registry directly from the cloud so newly created cells show
+// up in the "Working Cell" dropdown immediately, on any device.
+async function fetchCloudCellNames(): Promise<string[] | null> {
+  try {
+    const r = await fetch('/api/config?userId=_shared_&namespace=cell_registry', { cache: 'no-store' });
+    if (!r.ok) return null;
+    const d = await r.json();
+    if (!d.value) return null;
+    const cloudCells: Array<{ name: string; status: string }> = JSON.parse(d.value);
+    return cloudCells.filter(c => c.status === 'active').map(c => c.name);
+  } catch { return null; }
+}
+
 const WORKING_AS_OPTIONS = [
   'CMI','COS','OS','Dealer',
 ];
@@ -61,7 +76,15 @@ export default function SignupPage() {
   const [approvalStatus, setApprovalStatus] = useState<'pending' | 'approved'>('pending');
   const [otpEmailed, setOtpEmailed] = useState(false);
 
-  useEffect(() => { setCells(getCells()); }, []);
+  useEffect(() => {
+    // Show local/builtin cells instantly, then upgrade to the authoritative
+    // cloud list (includes any cells created on other devices) as soon as
+    // it arrives.
+    setCells(getCells());
+    fetchCloudCellNames().then(names => {
+      if (names && names.length) setCells(names);
+    });
+  }, []);
 
   // Poll for admin approval every 5 seconds while on the pending step
   useEffect(() => {
