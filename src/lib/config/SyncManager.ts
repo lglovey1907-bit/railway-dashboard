@@ -16,6 +16,14 @@
 
 const API_BASE = '/api/config';
 
+/**
+ * Shared "user" id used for organization-wide config that must be identical
+ * for every user on every device (e.g. the cell registry, custom tabs,
+ * financial data). Anything saved under this id is visible to ALL users,
+ * not just the device/user that wrote it.
+ */
+export const SHARED_UID = '_shared_';
+
 // ── Low-level Upstash REST calls ─────────────────────────────────────────────
 async function upstashGet(userId: string, ns: string): Promise<string | null> {
   try {

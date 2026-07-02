@@ -12,12 +12,11 @@
  * syncedSave() fires a background Upstash write on every mutation.
  */
 import { useEffect, useRef, useState } from 'react';
-import { NS } from './SyncManager';
+import { NS, SHARED_UID } from './SyncManager';
 import { POLICY_SUBHEADS } from '@/lib/policies/policyWorkspace';
 import { getAllCells } from '@/lib/cells/cellRegistry';
 
 const API = '/api/config';
-const SHARED_UID = '_shared_';
 
 async function fetchAll(userId: string, namespaces: string[]): Promise<Record<string, string | null>> {
   // Batch all reads in parallel

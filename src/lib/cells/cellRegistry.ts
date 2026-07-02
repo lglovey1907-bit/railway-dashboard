@@ -1,4 +1,4 @@
-import { syncedSave, NS } from '@/lib/config/SyncManager';
+import { syncedSave, NS, SHARED_UID } from '@/lib/config/SyncManager';
 // ─────────────────────────────────────────────────────────────────────────────
 // Cell Registry — Dynamic Cell Management System
 // ─────────────────────────────────────────────────────────────────────────────
@@ -79,7 +79,11 @@ export function getCellBySlug(slug: string): CellRecord | null {
 }
 
 function saveCells(cells: CellRecord[]) {
- if (typeof window !== 'undefined') localStorage.setItem(REGISTRY_KEY, JSON.stringify(cells));
+ // Cell registry is shared, org-wide config: write to localStorage instantly
+ // AND push to Upstash under the shared namespace so every device/user sees
+ // newly created cells immediately, and so the data survives redeploys
+ // (a fresh page load re-hydrates from the cloud value via useAppSync).
+ syncedSave(REGISTRY_KEY, NS.cellRegistry(), SHARED_UID, cells);
 }
 
 export function createCell(
@@ -94,7 +98,11 @@ export function createCell(
  slug, description: data.description.trim(),
  headDesignation: data.headDesignation.trim(),
  iconKey: data.iconKey || 'Folder',
- status: 'active', isBuiltin: false,
+ // Newly created cells are treated exactly like built-in cells from here on:
+ // they are permanent (cannot be archived/deleted — see archiveCell()) and
+ // are synced to the shared cloud registry above, so they persist across
+ // redeploys and are visible on every device for every user.
+ status: 'active', isBuiltin: true,
  createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
  order: maxOrder + 1, createdBy, updatedBy: createdBy,
  };
