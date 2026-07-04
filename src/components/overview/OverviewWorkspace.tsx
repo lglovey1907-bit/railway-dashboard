@@ -796,6 +796,23 @@ function RecordDetail({ row, allRows, rowIndex, props, mode, canEdit, onClose, o
             className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors">
             <Printer size={14}/>
           </button>
+          {/* Open this station's Handout tab */}
+          <button
+            title="Open Handout for this station"
+            onClick={() => {
+              const codeCol = props.find(p =>
+                p.column.toLowerCase().includes('code') || p.label.toLowerCase().includes('code')
+              );
+              const stationCode = codeCol
+                ? String(row[codeCol.column] ?? '').trim()
+                : String(row[props[0]?.column ?? ''] ?? '').trim();
+              if (stationCode) {
+                window.dispatchEvent(new CustomEvent('handout_open', { detail: { stationCode } }));
+              }
+            }}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors">
+            📋 Handout
+          </button>
           {canEdit && (
             <button onClick={() => setEditMode(e => !e)}
               className={cn('px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors',

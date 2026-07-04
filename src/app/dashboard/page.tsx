@@ -20,6 +20,7 @@ import { PoliciesWorkspace } from '@/components/policies/PoliciesWorkspace';
 import { WorkspaceBuilder } from '@/components/workspace/WorkspaceBuilder';
 import { OverviewWorkspace } from '@/components/overview/OverviewWorkspace';
 import { OverviewAccessModal } from '@/components/overview/OverviewAccessModal';
+import { HandoutDirectoryTab } from '@/components/handout/HandoutDirectoryTab';
 import {
   getTabAccess, saveTabAccess, canViewTab, canEditTab,
   type OverviewAccess,
@@ -28,7 +29,7 @@ import {
  ChevronRight, ChevronDown, Train, Users, MonitorCheck,
  Link2, Edit3, Save, X, ExternalLink, UserCircle,
  FileText, Search, BookOpen, AlertCircle, MoreHorizontal, Plus,
- LayoutDashboard, TrendingUp, Trash2, Lock, Settings,
+ LayoutDashboard, TrendingUp, Trash2, Lock, Settings, ClipboardList,
 } from 'lucide-react';
 
 // ─── Category colour map ──────────────────────────────────────────────────────
@@ -509,15 +510,29 @@ export default function DashboardHomePage() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [renameTarget, setRenameTarget] = useState<CustomTab | null>(null);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  // Station code pre-selected when navigating from Overview → Handout tab
+  const [handoutCode, setHandoutCode] = useState<string | undefined>();
   // True after the first cloud read completes (either direct sharedRead or useAppSync event).
   // Used to guard the persist effect from overwriting cloud data with the initial empty state.
   const tabsSynced = useRef(false);
 
   const BUILTIN_TABS: { id: string; label: string; icon: React.ElementType }[] = [
-    { id: 'overview',  label: 'Overview',                icon: LayoutDashboard },
-    { id: 'revenue',   label: 'Revenue',                 icon: TrendingUp },
+    { id: 'overview',  label: 'Overview',                   icon: LayoutDashboard },
+    { id: 'revenue',   label: 'Revenue',                    icon: TrendingUp },
     { id: 'policies',  label: 'Policies / Circulars / SOP', icon: FileText },
+    { id: 'handout',   label: 'Handout',                    icon: ClipboardList },
   ];
+
+  // ── Listen for "open handout for station" event from Overview ──────────────
+  useEffect(() => {
+    const handler = (e: CustomEvent<{ stationCode: string }>) => {
+      setHandoutCode(e.detail.stationCode);
+      setActiveTab('handout');
+      setActiveCustomTab(null);
+    };
+    window.addEventListener('handout_open', handler as EventListener);
+    return () => window.removeEventListener('handout_open', handler as EventListener);
+  }, []);
 
   // ── Cloud sync for custom tabs ─────────────────────────────────────────────
   // Fetches tabs from Upstash on mount AND listens for useAppSync to complete.
@@ -703,6 +718,9 @@ export default function DashboardHomePage() {
           )}
           {activeTab === 'revenue'   && !activeCustomTab && <RevenueTab />}
           {activeTab === 'policies'  && !activeCustomTab && <PoliciesWorkspace />}
+          {activeTab === 'handout'   && !activeCustomTab && (
+            <HandoutDirectoryTab initialCode={handoutCode}/>
+          )}
           {activeCustomTab && (
             canViewTab(user, getAccess(activeCustomTab.id))
               ? <CustomTabContent

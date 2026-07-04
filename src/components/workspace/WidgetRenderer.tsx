@@ -7,7 +7,7 @@ import {
   Globe, TrendingUp, ExternalLink, Edit3, Check, X, ChevronRight,
   Database, Bot, BookOpen, CheckSquare, Plus, Trash2, Settings2,
   ChevronDown, TrendingDown, Target, Layers, Filter,
-  FolderOpen, Settings,
+  FolderOpen, Settings, Printer, Download, FileDown,
 } from 'lucide-react';
 import type { KpiSource, KpiAggregation, KpiCombineMode } from '@/lib/workspace/layoutEngine';
 import type { TableDef } from '@/lib/cellData/types';
@@ -945,10 +945,13 @@ type CounterHead = {
   name: string; total: string;
   M: string; E: string; N: string;
   mpSanctioned: string; mpOnRoll: string; mpActual: string;
+  extraFields: { key: string; value: string }[];
 };
 type CommercialItem = { name: string; earning: string; status: string };
 type HD = {
-  stationCode: string; stationName: string; category: string; date: string; division: string;
+  stationCode: string; stationName: string; category: string;
+  state: string; section: string; cmi: string;
+  date: string; division: string;
   /** [3×4]  rows: UTS/PRS/Total  ×  cols: Outward/Inward/PF/Total */
   ff: string[][];
   platforms: string; fob: string; waitingRooms: string;
@@ -965,10 +968,13 @@ type HD = {
 };
 const mkCH = (name = ''): CounterHead => ({
   name, total: '', M: '', E: '', N: '', mpSanctioned: '', mpOnRoll: '', mpActual: '',
+  extraFields: [],
 });
 const mkCI = (name = ''): CommercialItem => ({ name, earning: '', status: '' });
 const mkHD = (): HD => ({
-  stationCode: '', stationName: '', category: '', date: '', division: '',
+  stationCode: '', stationName: '', category: '',
+  state: '', section: '', cmi: '',
+  date: '', division: 'Delhi Division',
   ff: [['','','',''],['','','',''],['','','','']],
   platforms: '', fob: '', waitingRooms: '',
   trains: [['','','',''],['','','',''],['','','','']],
@@ -979,6 +985,12 @@ const mkHD = (): HD => ({
   stationEarning: [['','',''],['','',''],['','','']],
   earningBifurcation: '',
 });
+
+// ── helper: find matching column in a SheetRow by keyword ────────────────────
+function findCol(headers: string[], keyword: string): string {
+  const kw = keyword.toLowerCase();
+  return headers.find(h => h.toLowerCase().includes(kw)) ?? '';
+}
 
 function HandoutWidget({ widget, onUpdate, canManage }: {
   widget: LayoutWidget; onUpdate: (p: Partial<LayoutWidget>) => void; canManage: boolean;
@@ -992,16 +1004,149 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
       ...base, ...s,
       ff:             (Array.isArray(s.ff) && s.ff.length === 3 && s.ff[0]?.length === 4) ? s.ff : base.ff,
       trains:         (Array.isArray(s.trains) && s.trains.length === 3) ? s.trains : base.trains,
-      counterHeads:   Array.isArray(s.counterHeads) ? s.counterHeads : base.counterHeads,
+      counterHeads:   Array.isArray(s.counterHeads)
+        ? s.counterHeads.map((ch: CounterHead) => ({ ...mkCH(ch.name), ...ch, extraFields: Array.isArray(ch.extraFields) ? ch.extraFields : [] }))
+        : base.counterHeads,
       commercial:     Array.isArray(s.commercial)   ? s.commercial   : base.commercial,
       primes:         Array.isArray(s.primes)        ? s.primes        : base.primes,
       stationEarning: Array.isArray(s.stationEarning) ? s.stationEarning : base.stationEarning,
     };
   });
 
-  const save   = () => { onUpdate({ handoutData: d } as any); setEditing(false); };
+  // ── Overview rows for autocomplete (from cached sheet in localStorage) ─────
+  const [ovRows,    setOvRows]    = useState<Record<string,string>[]>([]);
+  const [ovHeaders, setOvHeaders] = useState<string[]>([]);
+  const [sugg,      setSugg]      = useState<Record<string,string>[]>([]);
+  const [suggField, setSuggField] = useState<'code'|'name'|null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = localStorage.getItem('sheet_nsg_category_wise_cache');
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed?.rows?.length) {
+        setOvRows(parsed.rows);
+        setOvHeaders(parsed.headers ?? []);
+      }
+    } catch { /* ignore */ }
+  }, [editing]);
+
+  const colCode = useMemo(() => findCol(ovHeaders, 'code'),     [ovHeaders]);
+  const colName = useMemo(() => findCol(ovHeaders, 'name'),     [ovHeaders]);
+  const colCat  = useMemo(() => findCol(ovHeaders, 'categor'),  [ovHeaders]);
+  const colState= useMemo(() => findCol(ovHeaders, 'state'),    [ovHeaders]);
+  const colSec  = useMemo(() => findCol(ovHeaders, 'section'),  [ovHeaders]);
+  const colCMI  = useMemo(() => findCol(ovHeaders, 'cmi'),      [ovHeaders]);
+
+  const searchRows = (field: 'code'|'name', query: string) => {
+    if (!query || query.length < 1) return [];
+    const q = query.toLowerCase();
+    const col = field === 'code' ? colCode : colName;
+    if (!col) return [];
+    return ovRows.filter(r => String(r[col] ?? '').toLowerCase().includes(q)).slice(0, 6);
+  };
+
+  const applyRow = (row: Record<string,string>) => {
+    setD(p => ({
+      ...p,
+      stationCode: colCode  ? String(row[colCode]  ?? p.stationCode)  : p.stationCode,
+      stationName: colName  ? String(row[colName]  ?? p.stationName)  : p.stationName,
+      category:    colCat   ? String(row[colCat]   ?? p.category)     : p.category,
+      state:       colState ? String(row[colState] ?? p.state)        : p.state,
+      section:     colSec   ? String(row[colSec]   ?? p.section)      : p.section,
+      cmi:         colCMI   ? String(row[colCMI]   ?? p.cmi)          : p.cmi,
+    }));
+    setSugg([]);
+    setSuggField(null);
+  };
+
+  // ── Save — persist to widget + global localStorage/KV store ───────────────
+  const save = () => {
+    onUpdate({ handoutData: d } as any);
+    // Global store: keyed by station code so HandoutDirectoryTab can find it
+    if (d.stationCode) {
+      const key = `rly_handout_${d.stationCode.toUpperCase().trim()}`;
+      try { localStorage.setItem(key, JSON.stringify(d)); } catch { /* ignore */ }
+      import('@/lib/config/sharedSync').then(({ sharedWrite }) => {
+        sharedWrite(`handout_${d.stationCode.toUpperCase().trim()}`, d);
+      }).catch(() => {});
+    }
+    setEditing(false);
+  };
   const cancel = () => { setD((widget as any).handoutData ?? mkHD()); setEditing(false); };
   const upd    = (patch: Partial<HD>) => setD(p => ({ ...p, ...patch }));
+
+  // ── Print / Export ────────────────────────────────────────────────────────
+  const handlePrint = () => {
+    const win = window.open('', '_blank', 'width=900,height=700');
+    if (!win) return;
+    const html = document.getElementById('handout-print-root')?.innerHTML ?? '';
+    win.document.write(`<!DOCTYPE html><html><head><title>Handout - ${d.stationName || d.stationCode}</title>
+<style>
+  body{font-family:Arial,sans-serif;font-size:11px;padding:20px;color:#1e293b;}
+  h1{font-size:16px;margin:0 0 4px;}
+  h2{font-size:12px;font-weight:bold;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;}
+  table{border-collapse:collapse;width:100%;margin-bottom:8px;}
+  th{background:#d97706;color:#fff;padding:4px 6px;border:1px solid #b45309;font-size:10px;}
+  td{padding:4px 6px;border:1px solid #d1d5db;font-size:10px;}
+  .header{background:#d97706;color:#fff;padding:10px 14px;border-radius:8px;margin-bottom:12px;}
+  .header h1{color:#fff;} .header p{color:#fde68a;margin:2px 0;font-size:10px;}
+  .section{margin-bottom:10px;}
+  .counters{display:flex;border:1px solid #d1d5db;border-radius:6px;overflow:hidden;margin-bottom:10px;}
+  .ch{flex:1;padding:6px 8px;border-right:1px solid #d1d5db;}
+  .ch:last-child{border-right:none;}
+  .ch-name{font-weight:bold;color:#b45309;font-size:10px;}
+  @media print{body{padding:10px;}button{display:none;}}
+</style></head><body>
+<div class="header"><h1>${d.stationName}${d.stationCode?` (${d.stationCode})`:''}</h1>
+<p>${[d.category,d.state,d.section].filter(Boolean).join(' · ')}</p>
+<p>${d.division}${d.date?` · As on ${d.date}`:''}</p></div>
+${html}
+<script>window.onload=()=>{window.print();window.close();}</script>
+</body></html>`);
+    win.document.close();
+  };
+
+  const handleExportCSV = () => {
+    const rows: string[][] = [
+      ['Station Handout', d.stationName, d.stationCode],
+      ['Category', d.category, 'State', d.state, 'Section', d.section, 'CMI', d.cmi],
+      ['Division', d.division, 'As on', d.date],
+      [],
+      ['--- FOOTFALL ---'],
+      ['Type', 'Outward', 'Inward', 'PF', 'Total'],
+      ['UTS', ...d.ff[0]], ['PRS', ...d.ff[1]], ['Total', ...d.ff[2]],
+      [],
+      ['--- TRAINS ---'],
+      ['Type', 'Orig', 'Term', 'Passing', 'Total'],
+      ['Mail/Exp', ...d.trains[0]], ['Passenger', ...d.trains[1]], ['Total', ...d.trains[2]],
+      [],
+      ['--- COUNTERS ---'],
+      ['Head','Total','M','E','N','MP-Sanctioned','MP-OnRoll','MP-Actual'],
+      ...d.counterHeads.map(ch=>[ch.name,ch.total,ch.M,ch.E,ch.N,ch.mpSanctioned,ch.mpOnRoll,ch.mpActual]),
+      [],
+      ['--- COMMERCIAL EARNINGS (₹ lakhs PA) ---'],
+      ['Item','Earning','Status'],
+      ...d.commercial.map(ci=>[ci.name,ci.earning,ci.status]),
+      [],
+      ['--- PRIMES ---'],
+      ['Type','Tickets/day','Passengers/day','Earning/day'],
+      ...d.primes.map((row,i)=>[['UTS','PRS','Total'][i],...row]),
+      [],
+      ['--- STATION EARNING ---'],
+      ...d.stationEarning.map((row,i)=>[['UTS','PRS','Total'][i],...row]),
+      [],
+      ['--- EARNING BIFURCATION ---'],
+      [d.earningBifurcation],
+    ];
+    const csv = rows.map(r => r.map(c => `"${String(c??'').replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `handout_${d.stationCode||'station'}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const updFF  = (r: number, c: number, v: string) => setD(p => { const a = p.ff.map(x=>[...x]); a[r][c]=v; return {...p, ff: a}; });
   const updTr  = (r: number, c: number, v: string) => setD(p => { const a = p.trains.map(x=>[...x]); a[r][c]=v; return {...p, trains: a}; });
@@ -1012,6 +1157,13 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
     setD(p => { const a=[...p.counterHeads]; a[i]={...a[i],...patch}; return {...p, counterHeads: a}; });
   const addCH  = () => setD(p => ({...p, counterHeads: [...p.counterHeads, mkCH()]}));
   const rmCH   = (i: number) => setD(p => ({...p, counterHeads: p.counterHeads.filter((_,j)=>j!==i)}));
+
+  const addCHExtra = (i: number) =>
+    setD(p => { const a=[...p.counterHeads]; a[i]={...a[i], extraFields:[...a[i].extraFields, {key:'',value:''}]}; return {...p, counterHeads: a}; });
+  const updCHExtra = (i: number, fi: number, field: 'key'|'value', val: string) =>
+    setD(p => { const a=[...p.counterHeads]; const ef=[...a[i].extraFields]; ef[fi]={...ef[fi],[field]:val}; a[i]={...a[i],extraFields:ef}; return {...p, counterHeads: a}; });
+  const rmCHExtra  = (i: number, fi: number) =>
+    setD(p => { const a=[...p.counterHeads]; a[i]={...a[i], extraFields:a[i].extraFields.filter((_,j)=>j!==fi)}; return {...p, counterHeads: a}; });
 
   const updCI  = (i: number, patch: Partial<CommercialItem>) =>
     setD(p => { const a=[...p.commercial]; a[i]={...a[i],...patch}; return {...p, commercial: a}; });
@@ -1049,20 +1201,99 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
       <div>
         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Station Info</p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {([
-            ['Station Code', 'stationCode', d.stationCode],
-            ['Station Name', 'stationName', d.stationName],
-            ['Category',     'category',    d.category],
-            ['Date (As on)', 'date',        d.date],
-            ['Division',     'division',    d.division],
-          ] as [string, keyof HD, string][]).map(([lbl,key,val]) => (
-            <label key={lbl} className="flex flex-col gap-0.5">
-              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">{lbl}</span>
-              <input value={val} onChange={e=>upd({[key]:e.target.value} as Partial<HD>)}
-                className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
-            </label>
-          ))}
+
+          {/* Station Code — autocomplete */}
+          <label className="flex flex-col gap-0.5 relative">
+            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Station Code</span>
+            <input value={d.stationCode}
+              onChange={e => { upd({stationCode:e.target.value}); setSugg(searchRows('code',e.target.value)); setSuggField('code'); }}
+              onBlur={() => setTimeout(()=>setSugg([]),200)}
+              placeholder="e.g. NDLS"
+              className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
+            {suggField==='code' && sugg.length>0 && (
+              <div className="absolute top-full left-0 z-50 w-full bg-white border border-amber-200 rounded-lg shadow-lg overflow-hidden">
+                {sugg.map((r,i)=>(
+                  <button key={i} onMouseDown={()=>applyRow(r)}
+                    className="w-full text-left px-3 py-1.5 text-[10px] hover:bg-amber-50 border-b border-amber-100 last:border-0">
+                    <span className="font-bold text-amber-700">{colCode?String(r[colCode]??''):''}</span>
+                    {colName&&r[colName]&&<span className="ml-1 text-slate-500">{String(r[colName])}</span>}
+                    {colCat&&r[colCat]&&<span className="ml-1 text-[9px] text-slate-400">({String(r[colCat])})</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </label>
+
+          {/* Station Name — autocomplete */}
+          <label className="flex flex-col gap-0.5 relative">
+            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Station Name</span>
+            <input value={d.stationName}
+              onChange={e => { upd({stationName:e.target.value}); setSugg(searchRows('name',e.target.value)); setSuggField('name'); }}
+              onBlur={() => setTimeout(()=>setSugg([]),200)}
+              placeholder="e.g. New Delhi"
+              className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
+            {suggField==='name' && sugg.length>0 && (
+              <div className="absolute top-full left-0 z-50 w-full bg-white border border-amber-200 rounded-lg shadow-lg overflow-hidden">
+                {sugg.map((r,i)=>(
+                  <button key={i} onMouseDown={()=>applyRow(r)}
+                    className="w-full text-left px-3 py-1.5 text-[10px] hover:bg-amber-50 border-b border-amber-100 last:border-0">
+                    <span className="font-bold text-amber-700">{colName?String(r[colName]??''):''}</span>
+                    {colCode&&r[colCode]&&<span className="ml-1 text-slate-500">({String(r[colCode])})</span>}
+                    {colCat&&r[colCat]&&<span className="ml-1 text-[9px] text-slate-400">{String(r[colCat])}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </label>
+
+          {/* Category */}
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Category</span>
+            <input value={d.category} onChange={e=>upd({category:e.target.value})} placeholder="e.g. NSG-1"
+              className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
+          </label>
+
+          {/* State */}
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">State</span>
+            <input value={d.state} onChange={e=>upd({state:e.target.value})} placeholder="e.g. Delhi"
+              className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
+          </label>
+
+          {/* Section */}
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Section</span>
+            <input value={d.section} onChange={e=>upd({section:e.target.value})} placeholder="e.g. DLI-NDLS"
+              className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
+          </label>
+
+          {/* CMI */}
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">CMI</span>
+            <input value={d.cmi} onChange={e=>upd({cmi:e.target.value})} placeholder="CMI name"
+              className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
+          </label>
+
+          {/* Date — date picker */}
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Date (As on)</span>
+            <input type="date" value={d.date} onChange={e=>upd({date:e.target.value})}
+              className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
+          </label>
+
+          {/* Division — pre-filled */}
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Division</span>
+            <input value={d.division} onChange={e=>upd({division:e.target.value})} placeholder="Delhi Division"
+              className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
+          </label>
+
         </div>
+        {ovRows.length > 0 && (
+          <p className="text-[9px] text-slate-400 mt-1">
+            💡 Start typing a station code or name to auto-fill from Overview data ({ovRows.length} stations loaded)
+          </p>
+        )}
       </div>
 
       {/* ② Footfall */}
@@ -1180,6 +1411,26 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
                   ))}
                 </div>
               </div>
+              {/* Extra Fields */}
+              {ch.extraFields.length > 0 && (
+                <div className="border-t border-amber-200 pt-1 space-y-1">
+                  {ch.extraFields.map((ef,fi)=>(
+                    <div key={fi} className="flex gap-1 items-center">
+                      <input value={ef.key} onChange={e=>updCHExtra(i,fi,'key',e.target.value)}
+                        placeholder="Label"
+                        className="w-[45%] text-[9px] bg-amber-50 border border-amber-200 rounded px-1 py-0.5 focus:outline-none"/>
+                      <input value={ef.value} onChange={e=>updCHExtra(i,fi,'value',e.target.value)}
+                        placeholder="Value"
+                        className="flex-1 text-[9px] bg-amber-50 border border-amber-200 rounded px-1 py-0.5 focus:outline-none"/>
+                      <button onClick={()=>rmCHExtra(i,fi)} className="text-slate-300 hover:text-red-400 shrink-0"><X size={8}/></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button onClick={()=>addCHExtra(i)}
+                className="w-full mt-1 text-[9px] text-amber-600 hover:text-amber-700 py-0.5 rounded border border-dashed border-amber-300 hover:border-amber-400">
+                + Add Field
+              </button>
             </div>
           ))}
         </div>
@@ -1276,8 +1527,8 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
           className="w-full bg-amber-50 border border-amber-200 rounded px-2 py-1.5 text-xs font-mono resize-none focus:outline-none focus:border-amber-400"/>
       </div>
 
-      {/* Save / Cancel */}
-      <div className="flex gap-2 pt-2 border-t border-amber-200">
+      {/* Save / Cancel / Export */}
+      <div className="flex flex-wrap gap-2 pt-2 border-t border-amber-200">
         <button onClick={save}
           className="flex items-center gap-1.5 px-4 py-1.5 text-xs bg-amber-600 text-white rounded-lg hover:bg-amber-700">
           <Check size={11}/> Save Handout
@@ -1285,6 +1536,16 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
         <button onClick={cancel} className="px-4 py-1.5 text-xs text-slate-500 hover:bg-slate-100 rounded-lg">
           Cancel
         </button>
+        <div className="ml-auto flex gap-2">
+          <button onClick={handlePrint}
+            className="flex items-center gap-1 px-3 py-1.5 text-xs text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50">
+            <Printer size={11}/> Print / PDF
+          </button>
+          <button onClick={handleExportCSV}
+            className="flex items-center gap-1 px-3 py-1.5 text-xs text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50">
+            <Download size={11}/> CSV / Excel
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1310,21 +1571,33 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
     <div className="space-y-3">
       {/* Header */}
       <div className="bg-amber-600 text-white rounded-xl px-4 py-3 flex items-start justify-between">
-        <div>
+        <div className="min-w-0 flex-1">
           <p className="font-bold text-base leading-tight">
             {d.stationName}{d.stationCode ? ` (${d.stationCode})` : ''}
           </p>
-          {(d.category || d.division) && (
-            <p className="text-amber-100 text-xs mt-0.5">{[d.category, d.division].filter(Boolean).join(' · ')}</p>
+          {(d.category || d.state || d.section || d.cmi || d.division) && (
+            <p className="text-amber-100 text-xs mt-0.5">
+              {[d.category, d.state, d.section, d.cmi ? `CMI: ${d.cmi}` : '', d.division].filter(Boolean).join(' · ')}
+            </p>
           )}
           {d.date && <p className="text-amber-200 text-[10px] mt-0.5">As on {d.date}</p>}
         </div>
-        {canManage && (
-          <button onClick={()=>setEditing(true)}
-            className="p-1.5 rounded-lg bg-amber-700/50 hover:bg-amber-700 text-amber-100 hover:text-white transition-colors shrink-0 ml-3">
-            <Edit3 size={12}/>
+        <div className="flex items-center gap-1 shrink-0 ml-3">
+          <button onClick={handlePrint} title="Print / Save as PDF"
+            className="p-1.5 rounded-lg bg-amber-700/50 hover:bg-amber-700 text-amber-100 hover:text-white transition-colors">
+            <Printer size={12}/>
           </button>
-        )}
+          <button onClick={handleExportCSV} title="Export as CSV"
+            className="p-1.5 rounded-lg bg-amber-700/50 hover:bg-amber-700 text-amber-100 hover:text-white transition-colors">
+            <Download size={12}/>
+          </button>
+          {canManage && (
+            <button onClick={()=>setEditing(true)}
+              className="p-1.5 rounded-lg bg-amber-700/50 hover:bg-amber-700 text-amber-100 hover:text-white transition-colors">
+              <Edit3 size={12}/>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Footfall */}
@@ -1396,6 +1669,17 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
                       {ch.mpSanctioned && <p className="text-[9px] text-slate-500 leading-snug">S: <span className="font-semibold text-slate-700">{ch.mpSanctioned}</span></p>}
                       {ch.mpOnRoll     && <p className="text-[9px] text-slate-500 leading-snug">OR: <span className="font-semibold text-slate-700">{ch.mpOnRoll}</span></p>}
                       {ch.mpActual     && <p className="text-[9px] text-slate-500 leading-snug">AW: <span className="font-semibold text-slate-700">{ch.mpActual}</span></p>}
+                    </div>
+                  )}
+                  {/* Extra fields */}
+                  {Array.isArray(ch.extraFields) && ch.extraFields.filter(ef=>ef.key||ef.value).length > 0 && (
+                    <div className="mt-1 pt-1 border-t border-amber-100">
+                      {ch.extraFields.filter(ef=>ef.key||ef.value).map((ef,fi)=>(
+                        <p key={fi} className="text-[9px] text-slate-500 leading-snug">
+                          {ef.key && <span className="font-medium text-slate-600">{ef.key}: </span>}
+                          <span className="font-semibold text-slate-700">{ef.value}</span>
+                        </p>
+                      ))}
                     </div>
                   )}
                 </div>
