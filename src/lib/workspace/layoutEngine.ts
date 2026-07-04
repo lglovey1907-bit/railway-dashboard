@@ -14,7 +14,8 @@ export type WidgetType =
  // Enterprise new types
  | 'database' | 'ai_assistant' | 'knowledge_base' | 'task_manager'
  | 'financial'
- | 'monthly_report';
+ | 'monthly_report'
+ | 'handout';
 
 /** A single data source for an advanced KPI card */
 export type KpiAggregation = 'count' | 'sum' | 'avg' | 'min' | 'max' | 'unique';
