@@ -855,6 +855,539 @@ function toEmbedSrc(url: string, type: EmbedServiceType): string {
  return url;
 }
 
+// ── Toggle Widget ─────────────────────────────────────────────────────────────
+// Defined OUTSIDE WidgetRenderer so React sees a stable component reference.
+// (Defining it inside the switch case creates a new type on every render → state reset.)
+function ToggleWidget({ widget, onUpdate, canManage }: {
+  widget: LayoutWidget; onUpdate: (p: Partial<LayoutWidget>) => void; canManage: boolean;
+}) {
+  const [open, setOpen] = useState<boolean>((widget as any).toggleOpen ?? true);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<string>((widget as any).richText ?? '');
+
+  const handleToggle = () => {
+    const next = !open;
+    setOpen(next);
+    onUpdate({ toggleOpen: next } as any);
+  };
+
+  const save = () => {
+    onUpdate({ richText: draft } as any);
+    setEditing(false);
+  };
+
+  return (
+    <div>
+      <button
+        onClick={handleToggle}
+        className="flex items-center gap-2 text-sm font-semibold text-slate-800 w-full text-left hover:bg-slate-50 rounded-lg px-2 py-1.5 -mx-2"
+      >
+        <ChevronRight
+          size={14}
+          className={`text-slate-400 transition-transform ${open ? 'rotate-90' : ''}`}
+        />
+        {widget.title}
+      </button>
+
+      {open && (
+        <div className="pl-5 mt-1.5">
+          {editing ? (
+            <div className="space-y-2">
+              <textarea
+                autoFocus
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                rows={4}
+                className="w-full text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-rail-400 resize-y"
+                placeholder="Add toggle content…"
+              />
+              <div className="flex gap-1.5">
+                <button onClick={save}
+                  className="flex items-center gap-1 px-3 py-1 text-xs bg-rail-600 text-white rounded-lg hover:bg-rail-700">
+                  <Check size={10}/> Save
+                </button>
+                <button onClick={() => { setDraft((widget as any).richText ?? ''); setEditing(false); }}
+                  className="px-3 py-1 text-xs text-slate-500 hover:bg-slate-100 rounded-lg">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="group/toggle relative">
+              {(widget as any).richText ? (
+                <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap pr-6">
+                  {(widget as any).richText}
+                </p>
+              ) : canManage ? (
+                <p className="text-sm text-slate-300 italic">Click the pencil to add content</p>
+              ) : (
+                <p className="text-sm text-slate-400 italic">No content added yet</p>
+              )}
+              {canManage && (
+                <button
+                  onClick={() => { setDraft((widget as any).richText ?? ''); setEditing(true); }}
+                  className="absolute top-0 right-0 opacity-0 group-hover/toggle:opacity-100 transition-opacity p-1 rounded hover:bg-slate-100 text-slate-300 hover:text-slate-600"
+                >
+                  <Edit3 size={11} />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Handout Widget ────────────────────────────────────────────────────────────
+// Railway Station Information Handout Card
+// Mirrors the MDNR format: header, footfall, infrastructure, trains,
+// counters, manpower, sanitation, commercial earnings, and PRIMES data.
+type HD = {
+  stationCode: string; stationName: string; category: string; date: string; division: string;
+  /** [4 rows × 3 cols] rows: Outward / Inward / Platform / Total; cols: UTS / PRS / Total */
+  ff: string[][];
+  platforms: string; fob: string; wrL: string; wrG: string;
+  /** [3 rows × 4 cols] rows: Mail/Exp / Passenger / Total; cols: Orig / Term / Passing / Total */
+  trains: string[][];
+  cntTotal: string; cntM: string; cntE: string; cntN: string;
+  mpOnRoll: string; mpSanctioned: string;
+  sanBlocks: string; sanOdf: string; sanSk: string;
+  comPay: string; comPark: string; comCat: string; comPub: string; comAtm: string; comTot: string;
+  /** [3 rows × 3 cols] rows: UTS / PRS / Total; cols: Tickets/day / Pax/day / Earning/day */
+  primes: string[][];
+};
+const mkHD = (): HD => ({
+  stationCode: '', stationName: '', category: '', date: '', division: '',
+  ff:     [['','',''],['','',''],['','',''],['','','']],
+  platforms: '', fob: '', wrL: '', wrG: '',
+  trains: [['','','',''],['','','',''],['','','','']],
+  cntTotal: '', cntM: '', cntE: '', cntN: '',
+  mpOnRoll: '', mpSanctioned: '',
+  sanBlocks: '', sanOdf: '', sanSk: '',
+  comPay: '', comPark: '', comCat: '', comPub: '', comAtm: '', comTot: '',
+  primes: [['','',''],['','',''],['','','']],
+});
+
+function HandoutWidget({ widget, onUpdate, canManage }: {
+  widget: LayoutWidget; onUpdate: (p: Partial<LayoutWidget>) => void; canManage: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [d, setD] = useState<HD>(() => (widget as any).handoutData ?? mkHD());
+
+  const save   = () => { onUpdate({ handoutData: d } as any); setEditing(false); };
+  const cancel = () => { setD((widget as any).handoutData ?? mkHD()); setEditing(false); };
+  const upd    = (patch: Partial<HD>) => setD(prev => ({ ...prev, ...patch }));
+
+  const updFF = (r: number, c: number, v: string) => setD(prev => {
+    const ff = prev.ff.map(row => [...row]) as string[][];
+    ff[r][c] = v; return { ...prev, ff };
+  });
+  const updTr = (r: number, c: number, v: string) => setD(prev => {
+    const t = prev.trains.map(row => [...row]) as string[][];
+    t[r][c] = v; return { ...prev, trains: t };
+  });
+  const updPr = (r: number, c: number, v: string) => setD(prev => {
+    const p = prev.primes.map(row => [...row]) as string[][];
+    p[r][c] = v; return { ...prev, primes: p };
+  });
+
+  const FF_ROWS = ['Outward', 'Inward', 'Platform', 'Total'];
+  const TR_ROWS = ['Mail / Exp', 'Passenger', 'Total'];
+  const TR_COLS = ['Orig.', 'Term.', 'Passing', 'Total'];
+  const PR_ROWS = ['UTS', 'PRS', 'Total'];
+  const PR_COLS = ['Tickets/day', 'Pax/day', 'Earning/day (₹)'];
+
+  /** Amber table header row */
+  const TH = ({ cols }: { cols: string[] }) => (
+    <tr className="bg-amber-600 text-white">
+      {cols.map((c, i) => (
+        <th key={i} className="px-2 py-1 text-[10px] font-bold border border-amber-500 text-center">{c}</th>
+      ))}
+    </tr>
+  );
+  /** Table data row */
+  const TRow = ({ label, cells, hi }: { label: string; cells: string[]; hi?: boolean }) => (
+    <tr className={hi ? 'bg-amber-50 font-semibold' : 'hover:bg-amber-50/40'}>
+      <td className="px-2 py-1 text-[10px] border border-amber-200 font-medium text-slate-700 whitespace-nowrap">{label}</td>
+      {cells.map((c, i) => (
+        <td key={i} className="px-2 py-1 text-[10px] text-center border border-amber-200 text-slate-700">{c || '—'}</td>
+      ))}
+    </tr>
+  );
+  /** Tiny cell input for edit-mode tables */
+  const CellInp = ({ val, onChange }: { val: string; onChange: (v: string) => void }) => (
+    <input value={val} onChange={e => onChange(e.target.value)}
+      className="w-full bg-amber-50 border border-amber-200 rounded px-1 py-0.5 text-[10px] text-center focus:outline-none focus:border-amber-400"/>
+  );
+
+  // ── Edit mode ──────────────────────────────────────────────────────────────
+  if (editing && canManage) return (
+    <div className="space-y-4 text-xs">
+      {/* Header fields */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        {([
+          ['Station Code',  d.stationCode,     (v: string) => upd({ stationCode: v })],
+          ['Station Name',  d.stationName,     (v: string) => upd({ stationName: v })],
+          ['Category',      d.category,        (v: string) => upd({ category: v })],
+          ['Date (As on)',  d.date,            (v: string) => upd({ date: v })],
+          ['Division',      d.division,        (v: string) => upd({ division: v })],
+        ] as [string, string, (v: string) => void][]).map(([lbl, val, cb]) => (
+          <label key={lbl} className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">{lbl}</span>
+            <input value={val} onChange={e => cb(e.target.value)}
+              className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
+          </label>
+        ))}
+      </div>
+
+      {/* Footfall table */}
+      <div>
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Footfall / Day</p>
+        <div className="overflow-x-auto">
+          <table className="text-[10px] w-full border-collapse">
+            <thead>
+              <tr className="bg-amber-100">
+                <th className="px-2 py-1 border border-amber-200 text-left">Direction</th>
+                {['UTS', 'PRS', 'Total'].map(h => <th key={h} className="px-2 py-1 border border-amber-200 text-center">{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {FF_ROWS.map((row, r) => (
+                <tr key={row}>
+                  <td className="px-2 py-0.5 border border-amber-200 font-medium whitespace-nowrap">{row}</td>
+                  {[0,1,2].map(c => <td key={c} className="px-1 py-0.5 border border-amber-200"><CellInp val={d.ff[r][c]} onChange={v => updFF(r, c, v)}/></td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Infrastructure */}
+      <div>
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Infrastructure</p>
+        <div className="grid grid-cols-2 gap-2">
+          {([
+            ['Platforms (e.g. 2 — P1:260m, P2:230m)', d.platforms, (v:string)=>upd({platforms:v})],
+            ['FOB (e.g. 1 — L:12m)',                  d.fob,       (v:string)=>upd({fob:v})],
+            ['Waiting Room – Ladies',                   d.wrL,       (v:string)=>upd({wrL:v})],
+            ['Waiting Room – Gents',                    d.wrG,       (v:string)=>upd({wrG:v})],
+          ] as [string, string, (v:string)=>void][]).map(([lbl, val, cb]) => (
+            <label key={lbl} className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-semibold text-slate-500">{lbl}</span>
+              <input value={val} onChange={e => cb(e.target.value)}
+                className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Trains table */}
+      <div>
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Trains / Day</p>
+        <div className="overflow-x-auto">
+          <table className="text-[10px] w-full border-collapse">
+            <thead>
+              <tr className="bg-amber-100">
+                <th className="px-2 py-1 border border-amber-200 text-left">Type</th>
+                {TR_COLS.map(h => <th key={h} className="px-2 py-1 border border-amber-200 text-center">{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {TR_ROWS.map((row, r) => (
+                <tr key={row}>
+                  <td className="px-2 py-0.5 border border-amber-200 font-medium whitespace-nowrap">{row}</td>
+                  {[0,1,2,3].map(c => <td key={c} className="px-1 py-0.5 border border-amber-200"><CellInp val={d.trains[r][c]} onChange={v => updTr(r, c, v)}/></td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Counters */}
+      <div>
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Counters</p>
+        <div className="grid grid-cols-2 gap-2">
+          {([
+            ['Total Counters',               d.cntTotal, (v:string)=>upd({cntTotal:v})],
+            ['Morning shift (M) – nos.',     d.cntM,     (v:string)=>upd({cntM:v})],
+            ['Evening shift (E) – nos.',     d.cntE,     (v:string)=>upd({cntE:v})],
+            ['Night shift (N) – nos.',       d.cntN,     (v:string)=>upd({cntN:v})],
+          ] as [string, string, (v:string)=>void][]).map(([lbl, val, cb]) => (
+            <label key={lbl} className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-semibold text-slate-500">{lbl}</span>
+              <input value={val} onChange={e => cb(e.target.value)} placeholder="e.g. 1, 2"
+                className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Manpower */}
+      <div>
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Manpower</p>
+        <div className="grid grid-cols-2 gap-2">
+          {([
+            ['On-roll',    d.mpOnRoll,      (v:string)=>upd({mpOnRoll:v})],
+            ['Sanctioned', d.mpSanctioned,  (v:string)=>upd({mpSanctioned:v})],
+          ] as [string, string, (v:string)=>void][]).map(([lbl, val, cb]) => (
+            <label key={lbl} className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-semibold text-slate-500">{lbl}</span>
+              <input value={val} onChange={e => cb(e.target.value)}
+                className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Sanitation */}
+      <div>
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Sanitation</p>
+        <div className="grid grid-cols-3 gap-2">
+          {([
+            ['Toilet Blocks',       d.sanBlocks, (v:string)=>upd({sanBlocks:v})],
+            ['ODF Status',          d.sanOdf,    (v:string)=>upd({sanOdf:v})],
+            ['Safai Karamchari',    d.sanSk,     (v:string)=>upd({sanSk:v})],
+          ] as [string, string, (v:string)=>void][]).map(([lbl, val, cb]) => (
+            <label key={lbl} className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-semibold text-slate-500">{lbl}</span>
+              <input value={val} onChange={e => cb(e.target.value)}
+                className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Commercial */}
+      <div>
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Commercial Earnings (₹ / month)</p>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {([
+            ['Pay & Use Toilets', d.comPay,  (v:string)=>upd({comPay:v})],
+            ['Parking',           d.comPark, (v:string)=>upd({comPark:v})],
+            ['Catering',          d.comCat,  (v:string)=>upd({comCat:v})],
+            ['Publicity',         d.comPub,  (v:string)=>upd({comPub:v})],
+            ['ATM',               d.comAtm,  (v:string)=>upd({comAtm:v})],
+            ['Total',             d.comTot,  (v:string)=>upd({comTot:v})],
+          ] as [string, string, (v:string)=>void][]).map(([lbl, val, cb]) => (
+            <label key={lbl} className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-semibold text-slate-500">{lbl}</span>
+              <input value={val} onChange={e => cb(e.target.value)}
+                className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* PRIMES table */}
+      <div>
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">PRIMES Data / Day</p>
+        <div className="overflow-x-auto">
+          <table className="text-[10px] w-full border-collapse">
+            <thead>
+              <tr className="bg-amber-100">
+                <th className="px-2 py-1 border border-amber-200"/>
+                {PR_COLS.map(h => <th key={h} className="px-2 py-1 border border-amber-200 text-center">{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {PR_ROWS.map((row, r) => (
+                <tr key={row}>
+                  <td className="px-2 py-0.5 border border-amber-200 font-medium">{row}</td>
+                  {[0,1,2].map(c => <td key={c} className="px-1 py-0.5 border border-amber-200"><CellInp val={d.primes[r][c]} onChange={v => updPr(r, c, v)}/></td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Save / Cancel */}
+      <div className="flex gap-2 pt-2 border-t border-amber-200">
+        <button onClick={save}
+          className="flex items-center gap-1.5 px-4 py-1.5 text-xs bg-amber-600 text-white rounded-lg hover:bg-amber-700">
+          <Check size={11}/> Save Handout
+        </button>
+        <button onClick={cancel} className="px-4 py-1.5 text-xs text-slate-500 hover:bg-slate-100 rounded-lg">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+
+  // ── View mode ──────────────────────────────────────────────────────────────
+  const hasData = !!(d.stationName || d.stationCode);
+
+  if (!hasData && canManage) return (
+    <div className="text-center py-8 space-y-3">
+      <p className="text-4xl">🗂️</p>
+      <p className="text-slate-300 text-sm italic">No station data yet</p>
+      <button onClick={() => setEditing(true)}
+        className="px-4 py-2 text-xs bg-amber-600 text-white rounded-lg hover:bg-amber-700">
+        Fill Station Data
+      </button>
+    </div>
+  );
+
+  if (!hasData) return (
+    <p className="text-xs text-slate-300 italic text-center py-4">No station data</p>
+  );
+
+  return (
+    <div className="space-y-3">
+      {/* Header */}
+      <div className="bg-amber-600 text-white rounded-xl px-4 py-3 flex items-start justify-between">
+        <div>
+          <p className="font-bold text-base leading-tight">
+            {d.stationName}{d.stationCode ? ` (${d.stationCode})` : ''}
+          </p>
+          {(d.category || d.division) && (
+            <p className="text-amber-100 text-xs mt-0.5">
+              {[d.category, d.division].filter(Boolean).join(' · ')}
+            </p>
+          )}
+          {d.date && <p className="text-amber-200 text-[10px] mt-0.5">As on {d.date}</p>}
+        </div>
+        {canManage && (
+          <button onClick={() => setEditing(true)}
+            className="p-1.5 rounded-lg bg-amber-700/50 hover:bg-amber-700 text-amber-100 hover:text-white transition-colors shrink-0 ml-3">
+            <Edit3 size={12}/>
+          </button>
+        )}
+      </div>
+
+      {/* Footfall */}
+      {d.ff.some(row => row.some(v => v)) && (
+        <div>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Footfall / Day</p>
+          <div className="overflow-x-auto rounded-lg border border-amber-200">
+            <table className="text-[10px] w-full border-collapse">
+              <thead><TH cols={['', 'UTS', 'PRS', 'Total']}/></thead>
+              <tbody>{FF_ROWS.map((r, i) => <TRow key={r} label={r} cells={d.ff[i]} hi={i === 3}/>)}</tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Infrastructure */}
+      {(d.platforms || d.fob || d.wrL || d.wrG) && (
+        <div>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Infrastructure</p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {[['Platforms', d.platforms], ['FOB', d.fob], ['WR – Ladies', d.wrL], ['WR – Gents', d.wrG]]
+              .filter(([, v]) => v).map(([l, v]) => (
+                <div key={l} className="bg-slate-50 rounded-lg px-2.5 py-1.5 text-[11px]">
+                  <span className="text-slate-400">{l}: </span>
+                  <span className="font-semibold text-slate-700">{v}</span>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
+      {/* Trains */}
+      {d.trains.some(row => row.some(v => v)) && (
+        <div>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Trains / Day</p>
+          <div className="overflow-x-auto rounded-lg border border-amber-200">
+            <table className="text-[10px] w-full border-collapse">
+              <thead><TH cols={['', ...TR_COLS]}/></thead>
+              <tbody>{TR_ROWS.map((r, i) => <TRow key={r} label={r} cells={d.trains[i]} hi={i === 2}/>)}</tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Counters */}
+      {(d.cntTotal || d.cntM || d.cntE || d.cntN) && (
+        <div>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Counters</p>
+          <div className="bg-slate-50 rounded-lg px-3 py-2 text-[11px] space-y-0.5">
+            {d.cntTotal && <p><span className="text-slate-400">Total: </span><span className="font-semibold">{d.cntTotal}</span></p>}
+            {d.cntM     && <p><span className="text-slate-400">M (Morning): </span><span className="font-semibold">{d.cntM}</span></p>}
+            {d.cntE     && <p><span className="text-slate-400">E (Evening): </span><span className="font-semibold">{d.cntE}</span></p>}
+            {d.cntN     && <p><span className="text-slate-400">N (Night): </span><span className="font-semibold">{d.cntN}</span></p>}
+          </div>
+        </div>
+      )}
+
+      {/* Manpower */}
+      {(d.mpOnRoll || d.mpSanctioned) && (
+        <div>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Manpower</p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {[['On-roll', d.mpOnRoll], ['Sanctioned', d.mpSanctioned]]
+              .filter(([, v]) => v).map(([l, v]) => (
+                <div key={l} className="bg-slate-50 rounded-lg px-2.5 py-1.5 text-[11px]">
+                  <span className="text-slate-400">{l}: </span>
+                  <span className="font-semibold text-slate-700">{v}</span>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
+      {/* Sanitation */}
+      {(d.sanBlocks || d.sanOdf || d.sanSk) && (
+        <div>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Sanitation</p>
+          <div className="grid grid-cols-3 gap-1.5">
+            {[['Blocks', d.sanBlocks], ['ODF', d.sanOdf], ['SK Staff', d.sanSk]]
+              .filter(([, v]) => v).map(([l, v]) => (
+                <div key={l} className="bg-slate-50 rounded-lg px-2.5 py-1.5 text-[11px] text-center">
+                  <p className="text-slate-400">{l}</p>
+                  <p className="font-semibold text-slate-700">{v}</p>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
+      {/* Commercial earnings */}
+      {(d.comPay || d.comPark || d.comCat || d.comPub || d.comAtm || d.comTot) && (
+        <div>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Commercial Earnings (₹ / month)</p>
+          <div className="rounded-lg border border-amber-200 overflow-hidden">
+            <table className="text-[10px] w-full border-collapse">
+              <tbody>
+                {[['Pay & Use Toilets', d.comPay], ['Parking', d.comPark],
+                  ['Catering', d.comCat], ['Publicity', d.comPub], ['ATM', d.comAtm]]
+                  .filter(([, v]) => v).map(([l, v]) => (
+                    <tr key={l} className="hover:bg-amber-50/40">
+                      <td className="px-2.5 py-1 border border-amber-200 text-slate-600">{l}</td>
+                      <td className="px-2.5 py-1 border border-amber-200 text-right font-medium">₹ {v}</td>
+                    </tr>
+                  ))}
+                {d.comTot && (
+                  <tr className="bg-amber-50 font-semibold">
+                    <td className="px-2.5 py-1 border border-amber-200 text-slate-700">Total</td>
+                    <td className="px-2.5 py-1 border border-amber-200 text-right text-amber-700">₹ {d.comTot}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* PRIMES */}
+      {d.primes.some(row => row.some(v => v)) && (
+        <div>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">PRIMES Data / Day</p>
+          <div className="overflow-x-auto rounded-lg border border-amber-200">
+            <table className="text-[10px] w-full border-collapse">
+              <thead><TH cols={['', ...PR_COLS]}/></thead>
+              <tbody>{PR_ROWS.map((r, i) => <TRow key={r} label={r} cells={d.primes[i]} hi={i === 2}/>)}</tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EmbedWidget({ widget, onUpdate, canManage }: {
  widget: LayoutWidget; onUpdate: (p: Partial<LayoutWidget>) => void; canManage: boolean;
 }) {
@@ -1216,21 +1749,8 @@ export function WidgetRenderer({
     case 'callout':
       return <CalloutWidget widget={widget} onUpdate={onUpdate} canManage={canManage}/>;
 
-    case 'toggle': {
-      const ToggleW = () => {
-        const [open, setOpen] = React.useState<boolean>((widget as any).toggleOpen ?? true);
-        return (
-          <div>
-            <button onClick={() => setOpen(o => !o)} className="flex items-center gap-2 text-sm font-semibold text-slate-800 w-full text-left hover:bg-slate-50 rounded-lg px-2 py-1.5 -mx-2">
-              <ChevronRight size={14} className={`text-slate-400 transition-transform \${open ? 'rotate-90' : ''}`}/>
-              {widget.title}
-            </button>
-            {open && <div className="pl-5 mt-1.5 text-sm text-slate-600 leading-relaxed">{(widget as any).richText || <span className="text-slate-300 italic">Click ⚙ Edit to add content</span>}</div>}
-          </div>
-        );
-      };
-      return <ToggleW/>;
-    }
+    case 'toggle':
+      return <ToggleWidget widget={widget} onUpdate={onUpdate} canManage={canManage}/>;
 
     case 'checklist':
       return <ChecklistWidget widget={widget} onUpdate={onUpdate} canManage={canManage}/>;
@@ -1321,6 +1841,9 @@ export function WidgetRenderer({
           isAdmin={canManage}
         />
       );
+
+    case 'handout':
+      return <HandoutWidget widget={widget} onUpdate={onUpdate} canManage={canManage}/>;
 
  default:
  return <p className="text-xs text-slate-300 italic">Unknown widget type: {widget.type}</p>;

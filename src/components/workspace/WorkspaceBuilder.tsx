@@ -366,6 +366,33 @@ function WindowMenu({ win, btnRef, open, onClose, onRename, onDuplicate, onDelet
 }
 
 // ── Workspace Row ─────────────────────────────────────────────────────────────
+// ── Block picker data ─────────────────────────────────────────────────────────
+const BLOCK_TEMPLATES: { type: WidgetType; label: string; icon: string; desc: string }[] = [
+  { type: 'financial',     label: 'Revenue Dashboard',  icon: '💰', desc: 'Financial performance overview' },
+  { type: 'monthly_report',label: 'Monthly Statement',  icon: '📋', desc: 'Revenue comparative report' },
+  { type: 'handout',       label: 'Station Handout',    icon: '🗂️', desc: 'Station info card — footfall, trains, commercial' },
+];
+
+const BLOCK_FUNCTIONS: { type: WidgetType; label: string; icon: string; desc: string }[] = [
+  { type: 'table',          label: 'Table',        icon: '📊', desc: 'Workspace data table' },
+  { type: 'kpi',            label: 'KPI',          icon: '📈', desc: 'Key performance indicator card' },
+  { type: 'text',           label: 'Text',         icon: '📝', desc: 'Rich text content' },
+  { type: 'heading',        label: 'Heading',      icon: '📌', desc: 'Section heading' },
+  { type: 'callout',        label: 'Callout',      icon: '💡', desc: 'Highlighted callout box' },
+  { type: 'divider',        label: 'Divider',      icon: '➖', desc: 'Horizontal rule' },
+  { type: 'toggle',         label: 'Toggle',       icon: '▶',  desc: 'Collapsible content block' },
+  { type: 'checklist',      label: 'Checklist',    icon: '✅', desc: 'To-do checklist' },
+  { type: 'staff',          label: 'Staff',        icon: '👥', desc: 'Staff roster' },
+  { type: 'approval_queue', label: 'Approvals',    icon: '🔔', desc: 'Approval queue' },
+  { type: 'google_links',   label: 'Links',        icon: '🔗', desc: 'Links repository' },
+  { type: 'google_sheet',   label: 'Google Sheet', icon: '📗', desc: 'Embed a Google Sheet' },
+  { type: 'powerbi',        label: 'Power BI',     icon: '📉', desc: 'Power BI dashboard' },
+  { type: 'embed',          label: 'Embed',        icon: '🌐', desc: 'Any URL embed' },
+  { type: 'announcements',  label: 'Notices',      icon: '📢', desc: 'Announcements board' },
+  { type: 'activity',       label: 'Activity',     icon: '⚡', desc: 'Activity feed' },
+  { type: 'database',       label: 'Database',     icon: '🗄️', desc: 'Database view' },
+];
+
 function WorkspaceRow({
   row, rowIdx, totalRows, cell, canManage, isEditing,
   userId, userName, workspaceHook, layout,
@@ -388,6 +415,7 @@ function WorkspaceRow({
 }) {
   const [hovering, setHovering] = useState(false);
   const [pickCol, setPickCol]   = useState<string | null>(null);
+  const [pickerQuery, setPickerQuery] = useState('');
 
   // ── Double-click rename state ─────────────────────────────────────────────
   const [editingTitle, setEditingTitle] = useState<string | null>(null); // widget.id being renamed
@@ -442,38 +470,111 @@ function WorkspaceRow({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [colPreviewing, row.columns]);
 
-  // Widget type picker for column
-  const WidgetTypePicker = ({ colId }: { colId: string }) => (
-    <div className="grid grid-cols-2 gap-1.5 p-2 max-h-60 overflow-y-auto">
-      {[
-        { type: 'table' as WidgetType, label: 'Table', icon: '📊' },
-        { type: 'kpi' as WidgetType, label: 'KPI', icon: '📈' },
-        { type: 'text' as WidgetType, label: 'Text', icon: '📝' },
-        { type: 'heading' as WidgetType, label: 'Heading', icon: '📌' },
-        { type: 'callout' as WidgetType, label: 'Callout', icon: '💡' },
-        { type: 'divider' as WidgetType, label: 'Divider', icon: '➖' },
-        { type: 'toggle' as WidgetType, label: 'Toggle', icon: '▶' },
-        { type: 'checklist' as WidgetType, label: 'Checklist', icon: '✅' },
-        { type: 'staff' as WidgetType, label: 'Staff', icon: '👥' },
-        { type: 'approval_queue' as WidgetType, label: 'Approvals', icon: '🔔' },
-        { type: 'google_links' as WidgetType, label: 'Links', icon: '🔗' },
-        { type: 'google_sheet' as WidgetType, label: 'Gsheet', icon: '📋' },
-        { type: 'powerbi' as WidgetType, label: 'Power BI', icon: '📉' },
-        { type: 'embed' as WidgetType, label: 'Embed', icon: '🌐' },
-        { type: 'announcements' as WidgetType, label: 'Notices', icon: '📢' },
-        { type: 'activity' as WidgetType, label: 'Activity', icon: '⚡' },
-        { type: 'financial' as WidgetType, label: 'Revenue', icon: '💰' },
-        { type: 'monthly_report' as WidgetType, label: 'Monthly Stmt', icon: '📋' },
-        { type: 'database' as WidgetType, label: 'Database', icon: '🗄️' },
-      ].map(({ type, label, icon }) => (
-        <button key={type}
-          onClick={() => { onAddWidget(colId, { type, title: label }); setPickCol(null); }}
-          className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-rail-50 hover:border-rail-200 border border-transparent text-xs text-slate-600 font-medium text-left">
-          <span>{icon}</span> {label}
-        </button>
-      ))}
-    </div>
-  );
+  // ── Block picker (Templates / Functions) ─────────────────────────────────
+  // Query state lives in WorkspaceRow so it persists while the picker is open.
+  // The inner const is re-created each render but has no local state — all data
+  // comes from the outer closure, so re-renders are safe.
+  const BlockPickerContent = ({ colId }: { colId: string }) => {
+    const lower          = pickerQuery.toLowerCase().trim();
+    const isTemplateOnly = lower.startsWith('/t-');
+    const isFunctionOnly = lower.startsWith('/f-');
+    const searchTerm     = lower.replace(/^\/[tf]-/, '').trim();
+
+    const filter = (items: typeof BLOCK_TEMPLATES) =>
+      searchTerm
+        ? items.filter(b => b.label.toLowerCase().includes(searchTerm) || b.desc.toLowerCase().includes(searchTerm))
+        : items;
+
+    const templates = !isFunctionOnly ? filter(BLOCK_TEMPLATES) : [];
+    const functions  = !isTemplateOnly ? filter(BLOCK_FUNCTIONS)  : [];
+    const isEmpty    = templates.length === 0 && functions.length === 0;
+
+    const add = (type: WidgetType, label: string) => {
+      onAddWidget(colId, { type, title: label });
+      setPickCol(null);
+      setPickerQuery('');
+    };
+
+    return (
+      <div className="flex flex-col" style={{ maxHeight: 400 }}>
+        {/* Search / slash filter */}
+        <div className="px-2 pt-2 pb-1.5 border-b border-slate-100">
+          <div className="relative">
+            <input
+              autoFocus
+              value={pickerQuery}
+              onChange={e => setPickerQuery(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Escape') { setPickCol(null); setPickerQuery(''); } }}
+              placeholder="Search or /t- templates, /f- functions…"
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-rail-400"
+            />
+            {pickerQuery && (
+              <button onClick={() => setPickerQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-600 p-0.5">
+                <X size={11}/>
+              </button>
+            )}
+          </div>
+          <div className="flex gap-1 mt-1.5">
+            <button
+              onClick={() => setPickerQuery('/t-')}
+              className={`px-1.5 py-0.5 rounded text-[10px] font-medium border transition-all ${isTemplateOnly ? 'bg-amber-50 border-amber-300 text-amber-700' : 'border-slate-200 text-slate-400 hover:border-slate-300'}`}>
+              /t-&nbsp;Templates
+            </button>
+            <button
+              onClick={() => setPickerQuery('/f-')}
+              className={`px-1.5 py-0.5 rounded text-[10px] font-medium border transition-all ${isFunctionOnly ? 'bg-rail-50 border-rail-300 text-rail-700' : 'border-slate-200 text-slate-400 hover:border-slate-300'}`}>
+              /f-&nbsp;Functions
+            </button>
+          </div>
+        </div>
+
+        {/* Block list */}
+        <div className="overflow-y-auto p-2 space-y-2">
+          {/* Templates section */}
+          {templates.length > 0 && (
+            <div>
+              <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider px-1 mb-1">⭐ Templates</p>
+              <div className="space-y-0.5">
+                {templates.map(b => (
+                  <button key={b.type} onClick={() => add(b.type, b.label)}
+                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-amber-50 border border-transparent hover:border-amber-200 text-left w-full transition-all group">
+                    <span className="text-base shrink-0">{b.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-slate-700 group-hover:text-amber-700">{b.label}</p>
+                      <p className="text-[10px] text-slate-400 truncate">{b.desc}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {templates.length > 0 && functions.length > 0 && <div className="border-t border-slate-100"/>}
+
+          {/* Functions section */}
+          {functions.length > 0 && (
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1 mb-1">⚡ Functions</p>
+              <div className="grid grid-cols-2 gap-0.5">
+                {functions.map(b => (
+                  <button key={b.type} onClick={() => add(b.type, b.label)}
+                    className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-rail-50 border border-transparent hover:border-rail-200 text-left transition-all">
+                    <span className="text-sm shrink-0">{b.icon}</span>
+                    <span className="text-xs text-slate-600 font-medium">{b.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {isEmpty && (
+            <p className="text-xs text-slate-300 italic text-center py-4">No blocks match</p>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className={cn('relative group/row border border-slate-200 rounded-xl overflow-visible bg-white transition-all', isEditing && 'border-slate-300')}
@@ -589,7 +690,7 @@ function WorkspaceRow({
                         <p className="text-xs font-bold text-slate-600">Add block</p>
                         <button onClick={() => setPickCol(null)} className="text-slate-400 hover:text-slate-600"><X size={12}/></button>
                       </div>
-                      <WidgetTypePicker colId={col.id}/>
+                      <BlockPickerContent colId={col.id}/>
                     </div>
                   ) : (
                     <button onClick={() => setPickCol(col.id)}
@@ -1128,8 +1229,9 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
                   <div className="grid grid-cols-3 gap-2.5 w-[420px]">
                     {([
                       { type: 'database'     as WidgetType, emoji: '📊', label: 'Database',          desc: 'Structured table view' },
-                      { type: 'financial'    as WidgetType, emoji: '💰', label: 'Revenue Dashboard',  desc: 'Financial performance' },
-      { type: 'monthly_report' as WidgetType, emoji: '📋', label: 'Monthly Statement', desc: 'Revenue comparative' },
+                      { type: 'financial'     as WidgetType, emoji: '💰', label: 'Revenue Dashboard',  desc: 'Financial performance' },
+                      { type: 'monthly_report' as WidgetType, emoji: '📋', label: 'Monthly Statement', desc: 'Revenue comparative' },
+                      { type: 'handout'        as WidgetType, emoji: '🗂️', label: 'Station Handout',   desc: 'Station info card' },
                       { type: 'task_manager' as WidgetType, emoji: '✅', label: 'Tasks',             desc: 'Track action items' },
                       { type: 'ai_assistant' as WidgetType, emoji: '🤖', label: 'AI Assistant',      desc: 'Chat with AI' },
                       { type: 'knowledge_base' as WidgetType, emoji: '📚', label: 'Knowledge',       desc: 'Docs & SOPs' },
