@@ -55,6 +55,7 @@ import {
   updateSyncInterval, applyFilters, syncViewFields, updateViewFields,
   type ViewStore, type View,
 } from '@/lib/views/viewEngine';
+import { sharedRead } from '@/lib/config/sharedSync';
 
 // ─── Station detail card — reads from page-level consolidated sheet ──────────
 function StationDetailCard({
@@ -508,6 +509,9 @@ export default function DashboardHomePage() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [renameTarget, setRenameTarget] = useState<CustomTab | null>(null);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  // True after the first cloud read completes (either direct sharedRead or useAppSync event).
+  // Used to guard the persist effect from overwriting cloud data with the initial empty state.
+  const tabsSynced = useRef(false);
 
   const BUILTIN_TABS: { id: string; label: string; icon: React.ElementType }[] = [
     { id: 'overview',  label: 'Overview',                icon: LayoutDashboard },
@@ -515,12 +519,47 @@ export default function DashboardHomePage() {
     { id: 'policies',  label: 'Policies / Circulars / SOP', icon: FileText },
   ];
 
+  // ── Cloud sync for custom tabs ─────────────────────────────────────────────
+  // Fetches tabs from Upstash on mount AND listens for useAppSync to complete.
+  // This ensures tabs created on another browser/device are visible immediately.
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('rly_dashboard_custom_tabs', JSON.stringify(customTabs));
-    }
-    // Sync custom tabs to Upstash
-    if (user?.id && customTabs.length > 0) {
+    if (typeof window === 'undefined') return;
+
+    // Direct cloud read — populates state on first render without waiting for
+    // the full useAppSync bulk-fetch to complete.
+    sharedRead('dashboard_custom_tabs').then((cloudData) => {
+      tabsSynced.current = true;
+      if (!cloudData) return;
+      const tabs = Array.isArray(cloudData) ? (cloudData as CustomTab[]) : [];
+      if (tabs.length > 0) {
+        localStorage.setItem('rly_dashboard_custom_tabs', JSON.stringify(tabs));
+        setCustomTabs(tabs);
+      }
+    }).catch(() => { tabsSynced.current = true; });
+
+    // Also listen for useAppSync completion — it bulk-fetches all namespaces
+    // (including dashboard_custom_tabs) and writes them to localStorage.
+    const handleSyncComplete = () => {
+      tabsSynced.current = true;
+      try {
+        const fresh = JSON.parse(localStorage.getItem('rly_dashboard_custom_tabs') ?? '[]');
+        if (Array.isArray(fresh)) setCustomTabs(fresh);
+      } catch { /* ignore */ }
+    };
+    window.addEventListener('rly_cloud_sync_complete', handleSyncComplete);
+    return () => window.removeEventListener('rly_cloud_sync_complete', handleSyncComplete);
+  }, []);
+
+  // ── Persist custom tabs mutations to localStorage + Upstash ───────────────
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    // Guard: do NOT write empty state to localStorage before cloud sync completes.
+    // On a fresh browser, customTabs starts as [] while Upstash may have real tabs.
+    // Writing [] here would overwrite what useAppSync is about to populate.
+    if (!tabsSynced.current && customTabs.length === 0) return;
+    localStorage.setItem('rly_dashboard_custom_tabs', JSON.stringify(customTabs));
+    // Sync to Upstash — only when tabs exist OR sync has confirmed cloud is empty
+    if (user?.id && (customTabs.length > 0 || tabsSynced.current)) {
       import('@/lib/config/cloudSync').then(({ cloudWrite }) => {
         cloudWrite(user!.id, 'dashboard_custom_tabs', customTabs)
           .catch(() => {/* ignore */});
@@ -529,7 +568,8 @@ export default function DashboardHomePage() {
         sharedWrite('dashboard_custom_tabs', customTabs);
       });
     }
-  }, [customTabs, user?.id]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customTabs]);
 
   const addTab = (label: string) => {
     const newTab: CustomTab = { id: `ct_${Date.now()}`, label, content: '' };
