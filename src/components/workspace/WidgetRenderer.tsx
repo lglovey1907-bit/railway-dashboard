@@ -940,123 +940,147 @@ function ToggleWidget({ widget, onUpdate, canManage }: {
 }
 
 // ── Handout Widget ────────────────────────────────────────────────────────────
-// Railway Station Information Handout Card
-// Mirrors the MDNR format: header, footfall, infrastructure, trains,
-// counters, manpower, sanitation, commercial earnings, and PRIMES data.
+// Railway Station Information Handout Card — MDNR format
+type CounterHead = {
+  name: string; total: string;
+  M: string; E: string; N: string;
+  mpSanctioned: string; mpOnRoll: string; mpActual: string;
+};
+type CommercialItem = { name: string; earning: string; status: string };
 type HD = {
   stationCode: string; stationName: string; category: string; date: string; division: string;
-  /** [4 rows × 3 cols] rows: Outward / Inward / Platform / Total; cols: UTS / PRS / Total */
+  /** [3×4]  rows: UTS/PRS/Total  ×  cols: Outward/Inward/PF/Total */
   ff: string[][];
-  platforms: string; fob: string; wrL: string; wrG: string;
-  /** [3 rows × 4 cols] rows: Mail/Exp / Passenger / Total; cols: Orig / Term / Passing / Total */
+  platforms: string; fob: string; waitingRooms: string;
+  /** [3×4]  rows: Mail_Exp/Passenger/Total  ×  cols: Orig/Term/Passing/Total */
   trains: string[][];
-  cntTotal: string; cntM: string; cntE: string; cntN: string;
-  mpOnRoll: string; mpSanctioned: string;
-  sanBlocks: string; sanOdf: string; sanSk: string;
-  comPay: string; comPark: string; comCat: string; comPub: string; comAtm: string; comTot: string;
-  /** [3 rows × 3 cols] rows: UTS / PRS / Total; cols: Tickets/day / Pax/day / Earning/day */
+  counterHeads: CounterHead[];
+  sanitation: string;
+  commercial: CommercialItem[];
+  /** [3×3]  rows: UTS/PRS/Total  ×  cols: Tickets/day, Pax/day, Earning/day */
   primes: string[][];
+  /** same shape — Counter/Station Earning */
+  stationEarning: string[][];
+  earningBifurcation: string;
 };
+const mkCH = (name = ''): CounterHead => ({
+  name, total: '', M: '', E: '', N: '', mpSanctioned: '', mpOnRoll: '', mpActual: '',
+});
+const mkCI = (name = ''): CommercialItem => ({ name, earning: '', status: '' });
 const mkHD = (): HD => ({
   stationCode: '', stationName: '', category: '', date: '', division: '',
-  ff:     [['','',''],['','',''],['','',''],['','','']],
-  platforms: '', fob: '', wrL: '', wrG: '',
+  ff: [['','','',''],['','','',''],['','','','']],
+  platforms: '', fob: '', waitingRooms: '',
   trains: [['','','',''],['','','',''],['','','','']],
-  cntTotal: '', cntM: '', cntE: '', cntN: '',
-  mpOnRoll: '', mpSanctioned: '',
-  sanBlocks: '', sanOdf: '', sanSk: '',
-  comPay: '', comPark: '', comCat: '', comPub: '', comAtm: '', comTot: '',
-  primes: [['','',''],['','',''],['','','']],
+  counterHeads: ['UTS','STBA','ATVM','PRS','Enquiry','Announcement'].map(mkCH),
+  sanitation: '',
+  commercial: ['Pay & Use Toilet','Parking','Catering','Publicity','ATM'].map(mkCI),
+  primes:         [['','',''],['','',''],['','','']],
+  stationEarning: [['','',''],['','',''],['','','']],
+  earningBifurcation: '',
 });
 
 function HandoutWidget({ widget, onUpdate, canManage }: {
   widget: LayoutWidget; onUpdate: (p: Partial<LayoutWidget>) => void; canManage: boolean;
 }) {
   const [editing, setEditing] = useState(false);
-  const [d, setD] = useState<HD>(() => (widget as any).handoutData ?? mkHD());
+  const [d, setD] = useState<HD>(() => {
+    const s = (widget as any).handoutData;
+    if (!s) return mkHD();
+    const base = mkHD();
+    return {
+      ...base, ...s,
+      ff:             (Array.isArray(s.ff) && s.ff.length === 3 && s.ff[0]?.length === 4) ? s.ff : base.ff,
+      trains:         (Array.isArray(s.trains) && s.trains.length === 3) ? s.trains : base.trains,
+      counterHeads:   Array.isArray(s.counterHeads) ? s.counterHeads : base.counterHeads,
+      commercial:     Array.isArray(s.commercial)   ? s.commercial   : base.commercial,
+      primes:         Array.isArray(s.primes)        ? s.primes        : base.primes,
+      stationEarning: Array.isArray(s.stationEarning) ? s.stationEarning : base.stationEarning,
+    };
+  });
 
   const save   = () => { onUpdate({ handoutData: d } as any); setEditing(false); };
   const cancel = () => { setD((widget as any).handoutData ?? mkHD()); setEditing(false); };
-  const upd    = (patch: Partial<HD>) => setD(prev => ({ ...prev, ...patch }));
+  const upd    = (patch: Partial<HD>) => setD(p => ({ ...p, ...patch }));
 
-  const updFF = (r: number, c: number, v: string) => setD(prev => {
-    const ff = prev.ff.map(row => [...row]) as string[][];
-    ff[r][c] = v; return { ...prev, ff };
-  });
-  const updTr = (r: number, c: number, v: string) => setD(prev => {
-    const t = prev.trains.map(row => [...row]) as string[][];
-    t[r][c] = v; return { ...prev, trains: t };
-  });
-  const updPr = (r: number, c: number, v: string) => setD(prev => {
-    const p = prev.primes.map(row => [...row]) as string[][];
-    p[r][c] = v; return { ...prev, primes: p };
-  });
+  const updFF  = (r: number, c: number, v: string) => setD(p => { const a = p.ff.map(x=>[...x]); a[r][c]=v; return {...p, ff: a}; });
+  const updTr  = (r: number, c: number, v: string) => setD(p => { const a = p.trains.map(x=>[...x]); a[r][c]=v; return {...p, trains: a}; });
+  const updPr  = (r: number, c: number, v: string) => setD(p => { const a = p.primes.map(x=>[...x]); a[r][c]=v; return {...p, primes: a}; });
+  const updSE  = (r: number, c: number, v: string) => setD(p => { const a = p.stationEarning.map(x=>[...x]); a[r][c]=v; return {...p, stationEarning: a}; });
 
-  const FF_ROWS = ['Outward', 'Inward', 'Platform', 'Total'];
+  const updCH  = (i: number, patch: Partial<CounterHead>) =>
+    setD(p => { const a=[...p.counterHeads]; a[i]={...a[i],...patch}; return {...p, counterHeads: a}; });
+  const addCH  = () => setD(p => ({...p, counterHeads: [...p.counterHeads, mkCH()]}));
+  const rmCH   = (i: number) => setD(p => ({...p, counterHeads: p.counterHeads.filter((_,j)=>j!==i)}));
+
+  const updCI  = (i: number, patch: Partial<CommercialItem>) =>
+    setD(p => { const a=[...p.commercial]; a[i]={...a[i],...patch}; return {...p, commercial: a}; });
+  const addCI  = () => setD(p => ({...p, commercial: [...p.commercial, mkCI()]}));
+  const rmCI   = (i: number) => setD(p => ({...p, commercial: p.commercial.filter((_,j)=>j!==i)}));
+
+  const FF_ROWS = ['UTS', 'PRS', 'Total'];
+  const FF_COLS = ['Outward', 'Inward', 'PF', 'Total'];
   const TR_ROWS = ['Mail / Exp', 'Passenger', 'Total'];
   const TR_COLS = ['Orig.', 'Term.', 'Passing', 'Total'];
   const PR_ROWS = ['UTS', 'PRS', 'Total'];
-  const PR_COLS = ['Tickets/day', 'Pax/day', 'Earning/day (₹)'];
+  const PR_COLS = ['Tickets / day', 'Passengers / day', 'Earning / day'];
 
-  /** Amber table header row */
   const TH = ({ cols }: { cols: string[] }) => (
     <tr className="bg-amber-600 text-white">
-      {cols.map((c, i) => (
-        <th key={i} className="px-2 py-1 text-[10px] font-bold border border-amber-500 text-center">{c}</th>
-      ))}
+      {cols.map((c,i) => <th key={i} className="px-2 py-1 text-[10px] font-bold border border-amber-500 text-center whitespace-nowrap">{c}</th>)}
     </tr>
   );
-  /** Table data row */
   const TRow = ({ label, cells, hi }: { label: string; cells: string[]; hi?: boolean }) => (
     <tr className={hi ? 'bg-amber-50 font-semibold' : 'hover:bg-amber-50/40'}>
       <td className="px-2 py-1 text-[10px] border border-amber-200 font-medium text-slate-700 whitespace-nowrap">{label}</td>
-      {cells.map((c, i) => (
-        <td key={i} className="px-2 py-1 text-[10px] text-center border border-amber-200 text-slate-700">{c || '—'}</td>
-      ))}
+      {cells.map((c,i) => <td key={i} className="px-2 py-1 text-[10px] text-center border border-amber-200 text-slate-700">{c||'—'}</td>)}
     </tr>
   );
-  /** Tiny cell input for edit-mode tables */
-  const CellInp = ({ val, onChange }: { val: string; onChange: (v: string) => void }) => (
-    <input value={val} onChange={e => onChange(e.target.value)}
+  const CI = ({ val, onChange, ph }: { val: string; onChange: (v:string)=>void; ph?: string }) => (
+    <input value={val} onChange={e=>onChange(e.target.value)} placeholder={ph}
       className="w-full bg-amber-50 border border-amber-200 rounded px-1 py-0.5 text-[10px] text-center focus:outline-none focus:border-amber-400"/>
   );
 
-  // ── Edit mode ──────────────────────────────────────────────────────────────
+  // ── EDIT MODE ──────────────────────────────────────────────────────────────
   if (editing && canManage) return (
-    <div className="space-y-4 text-xs">
-      {/* Header fields */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        {([
-          ['Station Code',  d.stationCode,     (v: string) => upd({ stationCode: v })],
-          ['Station Name',  d.stationName,     (v: string) => upd({ stationName: v })],
-          ['Category',      d.category,        (v: string) => upd({ category: v })],
-          ['Date (As on)',  d.date,            (v: string) => upd({ date: v })],
-          ['Division',      d.division,        (v: string) => upd({ division: v })],
-        ] as [string, string, (v: string) => void][]).map(([lbl, val, cb]) => (
-          <label key={lbl} className="flex flex-col gap-0.5">
-            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">{lbl}</span>
-            <input value={val} onChange={e => cb(e.target.value)}
-              className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
-          </label>
-        ))}
+    <div className="space-y-5 text-xs">
+
+      {/* ① Station Info */}
+      <div>
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Station Info</p>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {([
+            ['Station Code', 'stationCode', d.stationCode],
+            ['Station Name', 'stationName', d.stationName],
+            ['Category',     'category',    d.category],
+            ['Date (As on)', 'date',        d.date],
+            ['Division',     'division',    d.division],
+          ] as [string, keyof HD, string][]).map(([lbl,key,val]) => (
+            <label key={lbl} className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">{lbl}</span>
+              <input value={val} onChange={e=>upd({[key]:e.target.value} as Partial<HD>)}
+                className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
+            </label>
+          ))}
+        </div>
       </div>
 
-      {/* Footfall table */}
+      {/* ② Footfall */}
       <div>
         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Footfall / Day</p>
         <div className="overflow-x-auto">
           <table className="text-[10px] w-full border-collapse">
             <thead>
               <tr className="bg-amber-100">
-                <th className="px-2 py-1 border border-amber-200 text-left">Direction</th>
-                {['UTS', 'PRS', 'Total'].map(h => <th key={h} className="px-2 py-1 border border-amber-200 text-center">{h}</th>)}
+                <th className="px-2 py-1 border border-amber-200 text-left">Type</th>
+                {FF_COLS.map(h=><th key={h} className="px-2 py-1 border border-amber-200 text-center">{h}</th>)}
               </tr>
             </thead>
             <tbody>
-              {FF_ROWS.map((row, r) => (
+              {FF_ROWS.map((row,r)=>(
                 <tr key={row}>
-                  <td className="px-2 py-0.5 border border-amber-200 font-medium whitespace-nowrap">{row}</td>
-                  {[0,1,2].map(c => <td key={c} className="px-1 py-0.5 border border-amber-200"><CellInp val={d.ff[r][c]} onChange={v => updFF(r, c, v)}/></td>)}
+                  <td className="px-2 py-0.5 border border-amber-200 font-medium">{row}</td>
+                  {[0,1,2,3].map(c=><td key={c} className="px-1 py-0.5 border border-amber-200"><CI val={d.ff[r][c]} onChange={v=>updFF(r,c,v)}/></td>)}
                 </tr>
               ))}
             </tbody>
@@ -1064,26 +1088,25 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
         </div>
       </div>
 
-      {/* Infrastructure */}
+      {/* ③ Infrastructure */}
       <div>
         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Infrastructure</p>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           {([
-            ['Platforms (e.g. 2 — P1:260m, P2:230m)', d.platforms, (v:string)=>upd({platforms:v})],
-            ['FOB (e.g. 1 — L:12m)',                  d.fob,       (v:string)=>upd({fob:v})],
-            ['Waiting Room – Ladies',                   d.wrL,       (v:string)=>upd({wrL:v})],
-            ['Waiting Room – Gents',                    d.wrG,       (v:string)=>upd({wrG:v})],
-          ] as [string, string, (v:string)=>void][]).map(([lbl, val, cb]) => (
+            ['Platforms (e.g. 2(P1-570m, P2-550m))', 'platforms',    d.platforms],
+            ['FOB',                                    'fob',          d.fob],
+            ['Waiting Rooms (e.g. 2 [1L + 1 upper])', 'waitingRooms', d.waitingRooms],
+          ] as [string, keyof HD, string][]).map(([lbl,key,val]) => (
             <label key={lbl} className="flex flex-col gap-0.5">
               <span className="text-[10px] font-semibold text-slate-500">{lbl}</span>
-              <input value={val} onChange={e => cb(e.target.value)}
+              <input value={val} onChange={e=>upd({[key]:e.target.value} as Partial<HD>)}
                 className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
             </label>
           ))}
         </div>
       </div>
 
-      {/* Trains table */}
+      {/* ④ Trains */}
       <div>
         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Trains / Day</p>
         <div className="overflow-x-auto">
@@ -1091,14 +1114,14 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
             <thead>
               <tr className="bg-amber-100">
                 <th className="px-2 py-1 border border-amber-200 text-left">Type</th>
-                {TR_COLS.map(h => <th key={h} className="px-2 py-1 border border-amber-200 text-center">{h}</th>)}
+                {TR_COLS.map(h=><th key={h} className="px-2 py-1 border border-amber-200 text-center">{h}</th>)}
               </tr>
             </thead>
             <tbody>
-              {TR_ROWS.map((row, r) => (
+              {TR_ROWS.map((row,r)=>(
                 <tr key={row}>
                   <td className="px-2 py-0.5 border border-amber-200 font-medium whitespace-nowrap">{row}</td>
-                  {[0,1,2,3].map(c => <td key={c} className="px-1 py-0.5 border border-amber-200"><CellInp val={d.trains[r][c]} onChange={v => updTr(r, c, v)}/></td>)}
+                  {[0,1,2,3].map(c=><td key={c} className="px-1 py-0.5 border border-amber-200"><CI val={d.trains[r][c]} onChange={v=>updTr(r,c,v)}/></td>)}
                 </tr>
               ))}
             </tbody>
@@ -1106,102 +1129,151 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
         </div>
       </div>
 
-      {/* Counters */}
+      {/* ⑤ Counters & Manpower */}
       <div>
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Counters</p>
-        <div className="grid grid-cols-2 gap-2">
-          {([
-            ['Total Counters',               d.cntTotal, (v:string)=>upd({cntTotal:v})],
-            ['Morning shift (M) – nos.',     d.cntM,     (v:string)=>upd({cntM:v})],
-            ['Evening shift (E) – nos.',     d.cntE,     (v:string)=>upd({cntE:v})],
-            ['Night shift (N) – nos.',       d.cntN,     (v:string)=>upd({cntN:v})],
-          ] as [string, string, (v:string)=>void][]).map(([lbl, val, cb]) => (
-            <label key={lbl} className="flex flex-col gap-0.5">
-              <span className="text-[10px] font-semibold text-slate-500">{lbl}</span>
-              <input value={val} onChange={e => cb(e.target.value)} placeholder="e.g. 1, 2"
-                className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
-            </label>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+            Counters &amp; Manpower
+            <span className="ml-1 normal-case font-normal text-slate-400">(M-Morning · E-Evening · N-Night · S-Sanctioned · OR-On Roll · AW-Actual Working)</span>
+          </p>
+          <button onClick={addCH}
+            className="flex items-center gap-1 px-2 py-1 text-[10px] bg-amber-100 text-amber-700 rounded hover:bg-amber-200 shrink-0">
+            <Plus size={10}/> Add Head
+          </button>
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-2">
+          {d.counterHeads.map((ch, i) => (
+            <div key={i} className="flex-shrink-0 w-44 bg-amber-50 border border-amber-200 rounded-lg p-2 space-y-1.5 relative">
+              <button onClick={()=>rmCH(i)} className="absolute top-1 right-1 text-slate-300 hover:text-red-400">
+                <X size={10}/>
+              </button>
+              {/* Head name */}
+              <input value={ch.name} onChange={e=>updCH(i,{name:e.target.value})} placeholder="Head (e.g. UTS)"
+                className="w-full text-[10px] font-bold bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5 focus:outline-none focus:border-amber-400 pr-4"/>
+              {/* Total */}
+              <label className="flex flex-col gap-0.5">
+                <span className="text-[9px] text-slate-400 uppercase tracking-wide">Total counters</span>
+                <CI val={ch.total} onChange={v=>updCH(i,{total:v})} ph="e.g. 2"/>
+              </label>
+              {/* Shifts */}
+              <div className="grid grid-cols-3 gap-1">
+                {(['M','E','N'] as const).map(s=>(
+                  <label key={s} className="flex flex-col gap-0.5 items-center">
+                    <span className="text-[9px] text-slate-400">{s}</span>
+                    <CI val={ch[s]} onChange={v=>updCH(i,{[s]:v} as Partial<CounterHead>)} ph="0"/>
+                  </label>
+                ))}
+              </div>
+              {/* Manpower */}
+              <div className="border-t border-amber-200 pt-1">
+                <p className="text-[9px] text-slate-400 uppercase tracking-wide mb-1">Manpower</p>
+                <div className="grid grid-cols-3 gap-1">
+                  {([
+                    ['S',  'mpSanctioned', 'Sanctioned'],
+                    ['OR', 'mpOnRoll',     'On Roll'],
+                    ['AW', 'mpActual',     'Actual Working'],
+                  ] as [string, keyof CounterHead, string][]).map(([code,key,title])=>(
+                    <label key={code} className="flex flex-col gap-0.5 items-center">
+                      <span className="text-[9px] text-slate-400" title={title}>{code}</span>
+                      <CI val={ch[key] as string} onChange={v=>updCH(i,{[key]:v} as Partial<CounterHead>)} ph="0"/>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
           ))}
         </div>
       </div>
 
-      {/* Manpower */}
-      <div>
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Manpower</p>
-        <div className="grid grid-cols-2 gap-2">
-          {([
-            ['On-roll',    d.mpOnRoll,      (v:string)=>upd({mpOnRoll:v})],
-            ['Sanctioned', d.mpSanctioned,  (v:string)=>upd({mpSanctioned:v})],
-          ] as [string, string, (v:string)=>void][]).map(([lbl, val, cb]) => (
-            <label key={lbl} className="flex flex-col gap-0.5">
-              <span className="text-[10px] font-semibold text-slate-500">{lbl}</span>
-              <input value={val} onChange={e => cb(e.target.value)}
-                className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
-            </label>
-          ))}
-        </div>
-      </div>
-
-      {/* Sanitation */}
+      {/* ⑥ Sanitation */}
       <div>
         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Sanitation</p>
-        <div className="grid grid-cols-3 gap-2">
-          {([
-            ['Toilet Blocks',       d.sanBlocks, (v:string)=>upd({sanBlocks:v})],
-            ['ODF Status',          d.sanOdf,    (v:string)=>upd({sanOdf:v})],
-            ['Safai Karamchari',    d.sanSk,     (v:string)=>upd({sanSk:v})],
-          ] as [string, string, (v:string)=>void][]).map(([lbl, val, cb]) => (
-            <label key={lbl} className="flex flex-col gap-0.5">
-              <span className="text-[10px] font-semibold text-slate-500">{lbl}</span>
-              <input value={val} onChange={e => cb(e.target.value)}
-                className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
-            </label>
+        <textarea value={d.sanitation} onChange={e=>upd({sanitation:e.target.value})} rows={2}
+          placeholder="e.g. Managed through Sanitation Imprest of ₹80,000 per month"
+          className="w-full bg-amber-50 border border-amber-200 rounded px-2 py-1.5 text-xs resize-none focus:outline-none focus:border-amber-400"/>
+      </div>
+
+      {/* ⑦ Commercial Earnings */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Commercial Earnings (₹ lakhs PA)</p>
+          <button onClick={addCI}
+            className="flex items-center gap-1 px-2 py-1 text-[10px] bg-amber-100 text-amber-700 rounded hover:bg-amber-200 shrink-0">
+            <Plus size={10}/> Add Item
+          </button>
+        </div>
+        <div className="space-y-1.5">
+          <div className="hidden sm:grid grid-cols-[140px_100px_1fr_16px] gap-1.5 px-1">
+            {['Item','Earning','Status / Description',''].map(h=>(
+              <span key={h} className="text-[9px] font-semibold text-slate-400 uppercase tracking-wide">{h}</span>
+            ))}
+          </div>
+          {d.commercial.map((ci, i)=>(
+            <div key={i} className="grid grid-cols-[140px_100px_1fr_16px] gap-1.5 items-center">
+              <input value={ci.name}    onChange={e=>updCI(i,{name:e.target.value})}    placeholder="Item"
+                className="bg-amber-50 border border-amber-200 rounded px-1.5 py-1 text-[10px] focus:outline-none focus:border-amber-400"/>
+              <input value={ci.earning} onChange={e=>updCI(i,{earning:e.target.value})} placeholder="₹ lakhs PA"
+                className="bg-amber-50 border border-amber-200 rounded px-1.5 py-1 text-[10px] focus:outline-none focus:border-amber-400"/>
+              <input value={ci.status}  onChange={e=>updCI(i,{status:e.target.value})}  placeholder="Status / description"
+                className="bg-amber-50 border border-amber-200 rounded px-1.5 py-1 text-[10px] focus:outline-none focus:border-amber-400"/>
+              <button onClick={()=>rmCI(i)} className="text-slate-300 hover:text-red-400"><X size={10}/></button>
+            </div>
           ))}
         </div>
       </div>
 
-      {/* Commercial */}
+      {/* ⑧ PRIMES Data */}
       <div>
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Commercial Earnings (₹ / month)</p>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {([
-            ['Pay & Use Toilets', d.comPay,  (v:string)=>upd({comPay:v})],
-            ['Parking',           d.comPark, (v:string)=>upd({comPark:v})],
-            ['Catering',          d.comCat,  (v:string)=>upd({comCat:v})],
-            ['Publicity',         d.comPub,  (v:string)=>upd({comPub:v})],
-            ['ATM',               d.comAtm,  (v:string)=>upd({comAtm:v})],
-            ['Total',             d.comTot,  (v:string)=>upd({comTot:v})],
-          ] as [string, string, (v:string)=>void][]).map(([lbl, val, cb]) => (
-            <label key={lbl} className="flex flex-col gap-0.5">
-              <span className="text-[10px] font-semibold text-slate-500">{lbl}</span>
-              <input value={val} onChange={e => cb(e.target.value)}
-                className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
-            </label>
-          ))}
-        </div>
-      </div>
-
-      {/* PRIMES table */}
-      <div>
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">PRIMES Data / Day</p>
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">PRIMES Data</p>
         <div className="overflow-x-auto">
           <table className="text-[10px] w-full border-collapse">
             <thead>
               <tr className="bg-amber-100">
                 <th className="px-2 py-1 border border-amber-200"/>
-                {PR_COLS.map(h => <th key={h} className="px-2 py-1 border border-amber-200 text-center">{h}</th>)}
+                {PR_COLS.map(h=><th key={h} className="px-2 py-1 border border-amber-200 text-center">{h}</th>)}
               </tr>
             </thead>
             <tbody>
-              {PR_ROWS.map((row, r) => (
+              {PR_ROWS.map((row,r)=>(
                 <tr key={row}>
                   <td className="px-2 py-0.5 border border-amber-200 font-medium">{row}</td>
-                  {[0,1,2].map(c => <td key={c} className="px-1 py-0.5 border border-amber-200"><CellInp val={d.primes[r][c]} onChange={v => updPr(r, c, v)}/></td>)}
+                  {[0,1,2].map(c=><td key={c} className="px-1 py-0.5 border border-amber-200"><CI val={d.primes[r][c]} onChange={v=>updPr(r,c,v)}/></td>)}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* ⑨ Counter / Station Earning */}
+      <div>
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Counter / Station Earning</p>
+        <div className="overflow-x-auto">
+          <table className="text-[10px] w-full border-collapse">
+            <thead>
+              <tr className="bg-amber-100">
+                <th className="px-2 py-1 border border-amber-200"/>
+                {PR_COLS.map(h=><th key={h} className="px-2 py-1 border border-amber-200 text-center">{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {PR_ROWS.map((row,r)=>(
+                <tr key={row}>
+                  <td className="px-2 py-0.5 border border-amber-200 font-medium">{row}</td>
+                  {[0,1,2].map(c=><td key={c} className="px-1 py-0.5 border border-amber-200"><CI val={d.stationEarning[r][c]} onChange={v=>updSE(r,c,v)}/></td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ⑩ Earning Bifurcation */}
+      <div>
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Earning Bifurcation</p>
+        <textarea value={d.earningBifurcation} onChange={e=>upd({earningBifurcation:e.target.value})} rows={3}
+          placeholder={'e.g. UTS- RailOne- 4631, STBS- 2900, UTS- 54592\nPRS- Cash- 63,273, Cashless- 15,997'}
+          className="w-full bg-amber-50 border border-amber-200 rounded px-2 py-1.5 text-xs font-mono resize-none focus:outline-none focus:border-amber-400"/>
       </div>
 
       {/* Save / Cancel */}
@@ -1217,23 +1289,22 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
     </div>
   );
 
-  // ── View mode ──────────────────────────────────────────────────────────────
+  // ── VIEW MODE ──────────────────────────────────────────────────────────────
   const hasData = !!(d.stationName || d.stationCode);
 
   if (!hasData && canManage) return (
     <div className="text-center py-8 space-y-3">
       <p className="text-4xl">🗂️</p>
       <p className="text-slate-300 text-sm italic">No station data yet</p>
-      <button onClick={() => setEditing(true)}
+      <button onClick={()=>setEditing(true)}
         className="px-4 py-2 text-xs bg-amber-600 text-white rounded-lg hover:bg-amber-700">
         Fill Station Data
       </button>
     </div>
   );
+  if (!hasData) return <p className="text-xs text-slate-300 italic text-center py-4">No station data</p>;
 
-  if (!hasData) return (
-    <p className="text-xs text-slate-300 italic text-center py-4">No station data</p>
-  );
+  const visibleCH = d.counterHeads.filter(ch => ch.name || ch.total);
 
   return (
     <div className="space-y-3">
@@ -1244,14 +1315,12 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
             {d.stationName}{d.stationCode ? ` (${d.stationCode})` : ''}
           </p>
           {(d.category || d.division) && (
-            <p className="text-amber-100 text-xs mt-0.5">
-              {[d.category, d.division].filter(Boolean).join(' · ')}
-            </p>
+            <p className="text-amber-100 text-xs mt-0.5">{[d.category, d.division].filter(Boolean).join(' · ')}</p>
           )}
           {d.date && <p className="text-amber-200 text-[10px] mt-0.5">As on {d.date}</p>}
         </div>
         {canManage && (
-          <button onClick={() => setEditing(true)}
+          <button onClick={()=>setEditing(true)}
             className="p-1.5 rounded-lg bg-amber-700/50 hover:bg-amber-700 text-amber-100 hover:text-white transition-colors shrink-0 ml-3">
             <Edit3 size={12}/>
           </button>
@@ -1259,25 +1328,25 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
       </div>
 
       {/* Footfall */}
-      {d.ff.some(row => row.some(v => v)) && (
+      {d.ff.some(row=>row.some(v=>v)) && (
         <div>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Footfall / Day</p>
           <div className="overflow-x-auto rounded-lg border border-amber-200">
             <table className="text-[10px] w-full border-collapse">
-              <thead><TH cols={['', 'UTS', 'PRS', 'Total']}/></thead>
-              <tbody>{FF_ROWS.map((r, i) => <TRow key={r} label={r} cells={d.ff[i]} hi={i === 3}/>)}</tbody>
+              <thead><TH cols={['', ...FF_COLS]}/></thead>
+              <tbody>{FF_ROWS.map((r,i)=><TRow key={r} label={r} cells={d.ff[i]} hi={i===2}/>)}</tbody>
             </table>
           </div>
         </div>
       )}
 
       {/* Infrastructure */}
-      {(d.platforms || d.fob || d.wrL || d.wrG) && (
+      {(d.platforms || d.fob || d.waitingRooms) && (
         <div>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Infrastructure</p>
-          <div className="grid grid-cols-2 gap-1.5">
-            {[['Platforms', d.platforms], ['FOB', d.fob], ['WR – Ladies', d.wrL], ['WR – Gents', d.wrG]]
-              .filter(([, v]) => v).map(([l, v]) => (
+          <div className="space-y-1">
+            {[['Platforms', d.platforms], ['FOB', d.fob], ['Waiting Rooms', d.waitingRooms]]
+              .filter(([,v])=>v).map(([l,v])=>(
                 <div key={l} className="bg-slate-50 rounded-lg px-2.5 py-1.5 text-[11px]">
                   <span className="text-slate-400">{l}: </span>
                   <span className="font-semibold text-slate-700">{v}</span>
@@ -1288,84 +1357,85 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
       )}
 
       {/* Trains */}
-      {d.trains.some(row => row.some(v => v)) && (
+      {d.trains.some(row=>row.some(v=>v)) && (
         <div>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Trains / Day</p>
           <div className="overflow-x-auto rounded-lg border border-amber-200">
             <table className="text-[10px] w-full border-collapse">
               <thead><TH cols={['', ...TR_COLS]}/></thead>
-              <tbody>{TR_ROWS.map((r, i) => <TRow key={r} label={r} cells={d.trains[i]} hi={i === 2}/>)}</tbody>
+              <tbody>{TR_ROWS.map((r,i)=><TRow key={r} label={r} cells={d.trains[i]} hi={i===2}/>)}</tbody>
             </table>
           </div>
         </div>
       )}
 
-      {/* Counters */}
-      {(d.cntTotal || d.cntM || d.cntE || d.cntN) && (
+      {/* Counters & Manpower — side-by-side columns with dividers */}
+      {visibleCH.length > 0 && (
         <div>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Counters</p>
-          <div className="bg-slate-50 rounded-lg px-3 py-2 text-[11px] space-y-0.5">
-            {d.cntTotal && <p><span className="text-slate-400">Total: </span><span className="font-semibold">{d.cntTotal}</span></p>}
-            {d.cntM     && <p><span className="text-slate-400">M (Morning): </span><span className="font-semibold">{d.cntM}</span></p>}
-            {d.cntE     && <p><span className="text-slate-400">E (Evening): </span><span className="font-semibold">{d.cntE}</span></p>}
-            {d.cntN     && <p><span className="text-slate-400">N (Night): </span><span className="font-semibold">{d.cntN}</span></p>}
-          </div>
-        </div>
-      )}
-
-      {/* Manpower */}
-      {(d.mpOnRoll || d.mpSanctioned) && (
-        <div>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Manpower</p>
-          <div className="grid grid-cols-2 gap-1.5">
-            {[['On-roll', d.mpOnRoll], ['Sanctioned', d.mpSanctioned]]
-              .filter(([, v]) => v).map(([l, v]) => (
-                <div key={l} className="bg-slate-50 rounded-lg px-2.5 py-1.5 text-[11px]">
-                  <span className="text-slate-400">{l}: </span>
-                  <span className="font-semibold text-slate-700">{v}</span>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">
+            Counters &nbsp;<span className="normal-case font-normal text-slate-400">(M-Morning · E-Evening · N-Night)</span>
+          </p>
+          <div className="overflow-x-auto">
+            <div className="inline-flex border border-amber-200 rounded-lg overflow-hidden min-w-full">
+              {visibleCH.map((ch, i) => (
+                <div key={i} className={`flex-1 min-w-[90px] p-2 ${i < visibleCH.length-1 ? 'border-r border-amber-200' : ''}`}>
+                  {/* Name + Total */}
+                  <p className="text-[10px] font-bold text-amber-700 whitespace-nowrap leading-tight">
+                    {ch.name}{ch.total ? ` - ${ch.total}` : ''}
+                  </p>
+                  {/* Shifts */}
+                  <div className="mt-0.5">
+                    {ch.M && <p className="text-[10px] text-slate-600 leading-snug">M - {ch.M}</p>}
+                    {ch.E && <p className="text-[10px] text-slate-600 leading-snug">E - {ch.E}</p>}
+                    {ch.N && <p className="text-[10px] text-slate-600 leading-snug">N - {ch.N}</p>}
+                  </div>
+                  {/* Manpower */}
+                  {(ch.mpSanctioned || ch.mpOnRoll || ch.mpActual) && (
+                    <div className="mt-1 pt-1 border-t border-amber-100">
+                      <p className="text-[9px] text-slate-400 uppercase tracking-wide leading-tight mb-0.5">Manpower</p>
+                      {ch.mpSanctioned && <p className="text-[9px] text-slate-500 leading-snug">S: <span className="font-semibold text-slate-700">{ch.mpSanctioned}</span></p>}
+                      {ch.mpOnRoll     && <p className="text-[9px] text-slate-500 leading-snug">OR: <span className="font-semibold text-slate-700">{ch.mpOnRoll}</span></p>}
+                      {ch.mpActual     && <p className="text-[9px] text-slate-500 leading-snug">AW: <span className="font-semibold text-slate-700">{ch.mpActual}</span></p>}
+                    </div>
+                  )}
                 </div>
               ))}
+            </div>
           </div>
         </div>
       )}
 
       {/* Sanitation */}
-      {(d.sanBlocks || d.sanOdf || d.sanSk) && (
+      {d.sanitation && (
         <div>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Sanitation</p>
-          <div className="grid grid-cols-3 gap-1.5">
-            {[['Blocks', d.sanBlocks], ['ODF', d.sanOdf], ['SK Staff', d.sanSk]]
-              .filter(([, v]) => v).map(([l, v]) => (
-                <div key={l} className="bg-slate-50 rounded-lg px-2.5 py-1.5 text-[11px] text-center">
-                  <p className="text-slate-400">{l}</p>
-                  <p className="font-semibold text-slate-700">{v}</p>
-                </div>
-              ))}
-          </div>
+          <div className="bg-slate-50 rounded-lg px-2.5 py-2 text-[11px] text-slate-700 whitespace-pre-wrap">{d.sanitation}</div>
         </div>
       )}
 
-      {/* Commercial earnings */}
-      {(d.comPay || d.comPark || d.comCat || d.comPub || d.comAtm || d.comTot) && (
+      {/* Commercial Earnings — earning + status columns */}
+      {d.commercial.some(ci=>ci.name||ci.earning||ci.status) && (
         <div>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Commercial Earnings (₹ / month)</p>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">
+            Commercial Earnings &nbsp;<span className="normal-case font-normal text-slate-400">(₹ lakhs PA)</span>
+          </p>
           <div className="rounded-lg border border-amber-200 overflow-hidden">
             <table className="text-[10px] w-full border-collapse">
+              <thead>
+                <tr className="bg-amber-50">
+                  <th className="px-2.5 py-1 border border-amber-200 text-left font-semibold text-slate-600 whitespace-nowrap">Item</th>
+                  <th className="px-2.5 py-1 border border-amber-200 text-center font-semibold text-slate-600 whitespace-nowrap">Earning</th>
+                  <th className="px-2.5 py-1 border border-amber-200 text-left font-semibold text-slate-600">Status</th>
+                </tr>
+              </thead>
               <tbody>
-                {[['Pay & Use Toilets', d.comPay], ['Parking', d.comPark],
-                  ['Catering', d.comCat], ['Publicity', d.comPub], ['ATM', d.comAtm]]
-                  .filter(([, v]) => v).map(([l, v]) => (
-                    <tr key={l} className="hover:bg-amber-50/40">
-                      <td className="px-2.5 py-1 border border-amber-200 text-slate-600">{l}</td>
-                      <td className="px-2.5 py-1 border border-amber-200 text-right font-medium">₹ {v}</td>
-                    </tr>
-                  ))}
-                {d.comTot && (
-                  <tr className="bg-amber-50 font-semibold">
-                    <td className="px-2.5 py-1 border border-amber-200 text-slate-700">Total</td>
-                    <td className="px-2.5 py-1 border border-amber-200 text-right text-amber-700">₹ {d.comTot}</td>
+                {d.commercial.filter(ci=>ci.name||ci.earning||ci.status).map((ci,i)=>(
+                  <tr key={i} className="hover:bg-amber-50/40">
+                    <td className="px-2.5 py-1.5 border border-amber-200 font-medium text-slate-700 whitespace-nowrap">{ci.name||'—'}</td>
+                    <td className="px-2.5 py-1.5 border border-amber-200 text-center text-slate-700 whitespace-nowrap">{ci.earning ? `₹ ${ci.earning}` : '—'}</td>
+                    <td className="px-2.5 py-1.5 border border-amber-200 text-slate-600">{ci.status||'—'}</td>
                   </tr>
-                )}
+                ))}
               </tbody>
             </table>
           </div>
@@ -1373,15 +1443,36 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
       )}
 
       {/* PRIMES */}
-      {d.primes.some(row => row.some(v => v)) && (
+      {d.primes.some(row=>row.some(v=>v)) && (
         <div>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">PRIMES Data / Day</p>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">PRIMES Data</p>
           <div className="overflow-x-auto rounded-lg border border-amber-200">
             <table className="text-[10px] w-full border-collapse">
               <thead><TH cols={['', ...PR_COLS]}/></thead>
-              <tbody>{PR_ROWS.map((r, i) => <TRow key={r} label={r} cells={d.primes[i]} hi={i === 2}/>)}</tbody>
+              <tbody>{PR_ROWS.map((r,i)=><TRow key={r} label={r} cells={d.primes[i]} hi={i===2}/>)}</tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* Counter / Station Earning */}
+      {d.stationEarning.some(row=>row.some(v=>v)) && (
+        <div>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Counter / Station Earning</p>
+          <div className="overflow-x-auto rounded-lg border border-amber-200">
+            <table className="text-[10px] w-full border-collapse">
+              <thead><TH cols={['', ...PR_COLS]}/></thead>
+              <tbody>{PR_ROWS.map((r,i)=><TRow key={r} label={r} cells={d.stationEarning[i]} hi={i===2}/>)}</tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Earning Bifurcation */}
+      {d.earningBifurcation && (
+        <div>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Earning Bifurcation</p>
+          <div className="bg-slate-50 rounded-lg px-2.5 py-2 text-[11px] text-slate-700 font-mono whitespace-pre-wrap">{d.earningBifurcation}</div>
         </div>
       )}
     </div>
