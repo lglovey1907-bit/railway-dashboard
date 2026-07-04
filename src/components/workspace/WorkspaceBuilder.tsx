@@ -21,7 +21,7 @@ import {
   setRowColumns, addWidgetToRow, removeWidgetFromRow, updateWidgetInRow,
   moveWidgetInRow, resizeRowColumn, saveRowLayoutVersion, loadRowLayoutVersion,
   ROW_COLUMN_PRESETS, type RowBasedLayout, type LayoutRow,
-  type LayoutWidget, type WidgetType,
+  type LayoutColumn, type LayoutWidget, type WidgetType,
 } from '@/lib/workspace/layoutEngine';
 import {
   getWindowStore, saveWindowStore, createWindow, updateWindow, deleteWindow,
@@ -389,6 +389,59 @@ function WorkspaceRow({
   const [hovering, setHovering] = useState(false);
   const [pickCol, setPickCol]   = useState<string | null>(null);
 
+  // ── Double-click rename state ─────────────────────────────────────────────
+  const [editingTitle, setEditingTitle] = useState<string | null>(null); // widget.id being renamed
+  const [titleDraft,   setTitleDraft]   = useState('');
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  const commitTitleEdit = (colId: string, widgetId: string, draft: string, original: string) => {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== original) onUpdateWidget(colId, widgetId, { title: trimmed });
+    setEditingTitle(null);
+  };
+
+  // ── Column layout live-preview state ─────────────────────────────────────
+  // Saved original columns so we can revert on Cancel
+  const originalColsRef = useRef<LayoutColumn[] | null>(null);
+  const [colPreviewing, setColPreviewing] = useState(false); // true while a preset was clicked but not confirmed
+
+  const applyColPreset = (preset: { label: string; widths: number[] }) => {
+    if (!colPreviewing) {
+      // Save original columns on the first preview click
+      originalColsRef.current = row.columns.map(c => ({ ...c, widgets: [...c.widgets] }));
+    }
+    const newCols: LayoutColumn[] = preset.widths.map((w, i) => ({
+      id: row.columns[i]?.id ?? `c${Date.now()}${i}`,
+      widthPercent: w,
+      widgets: row.columns[i]?.widgets ?? [],
+    }));
+    onUpdate({ columns: newCols }); // immediately commit → live preview
+    setColPreviewing(true);
+  };
+
+  const confirmColPreset = () => {
+    originalColsRef.current = null;
+    setColPreviewing(false);
+  };
+
+  const cancelColPreset = () => {
+    if (originalColsRef.current) onUpdate({ columns: originalColsRef.current });
+    originalColsRef.current = null;
+    setColPreviewing(false);
+  };
+
+  // Enter confirms, Escape cancels when column picker is in preview mode
+  useEffect(() => {
+    if (!colPreviewing) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Enter')  { e.preventDefault(); confirmColPreset(); }
+      if (e.key === 'Escape') { e.preventDefault(); cancelColPreset(); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [colPreviewing, row.columns]);
+
   // Widget type picker for column
   const WidgetTypePicker = ({ colId }: { colId: string }) => (
     <div className="grid grid-cols-2 gap-1.5 p-2 max-h-60 overflow-y-auto">
@@ -460,11 +513,43 @@ function WorkspaceRow({
                   <div className={cn('bg-white border border-slate-100 rounded-xl overflow-visible transition-all',
                     widget.fullscreen && 'fixed inset-4 z-[300] shadow-2xl')}>
 
-                    {/* Widget header */}
+                    {/* Widget header — double-click title to rename */}
                     {widget.type !== 'divider' && (
                       <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-50">
                         {isEditing && <GripVertical size={11} className="text-slate-300 shrink-0 cursor-grab"/>}
-                        <p className="text-xs font-semibold text-slate-700 flex-1 truncate">{widget.title}</p>
+
+                        {editingTitle === widget.id ? (
+                          /* Inline rename input */
+                          <input
+                            ref={titleInputRef}
+                            autoFocus
+                            value={titleDraft}
+                            onChange={e => setTitleDraft(e.target.value)}
+                            onBlur={() => commitTitleEdit(col.id, widget.id, titleDraft, widget.title)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter')  { e.preventDefault(); commitTitleEdit(col.id, widget.id, titleDraft, widget.title); }
+                              if (e.key === 'Escape') { e.stopPropagation(); setEditingTitle(null); }
+                            }}
+                            className="text-xs font-semibold text-slate-700 flex-1 min-w-0 bg-rail-50 border border-rail-300 rounded-md px-1.5 py-0.5 outline-none ring-1 ring-rail-300"
+                            onClick={e => e.stopPropagation()}
+                          />
+                        ) : (
+                          /* Static title — double-click to edit */
+                          <p
+                            className={cn(
+                              'text-xs font-semibold text-slate-700 flex-1 truncate',
+                              canManage && 'cursor-text select-none'
+                            )}
+                            title={canManage ? 'Double-click to rename' : widget.title}
+                            onDoubleClick={() => {
+                              if (!canManage) return;
+                              setTitleDraft(widget.title);
+                              setEditingTitle(widget.id);
+                            }}>
+                            {widget.title}
+                          </p>
+                        )}
+
                         <div className="flex gap-0.5 opacity-0 group-hover/widget:opacity-100 transition-opacity">
                           <button onClick={() => onToggleWidget(col.id, widget.id, 'collapsed')} title="Collapse"
                             className="p-1 rounded hover:bg-slate-100 text-slate-300 hover:text-slate-600">
@@ -519,25 +604,14 @@ function WorkspaceRow({
         ))}
       </div>
 
-      {/* Column layout selector (edit mode) */}
+      {/* Column layout selector (edit mode) — live preview on click, Done/Cancel to confirm */}
       {isEditing && canManage && (
-        <div className="border-t border-slate-50 px-3 py-2 flex items-center gap-2">
-          <p className="text-[10px] text-slate-400 font-medium">Columns:</p>
-          <div className="flex gap-1">
+        <div className="border-t border-slate-50 px-3 py-2 flex items-center gap-2 flex-wrap">
+          <p className="text-[10px] text-slate-400 font-medium shrink-0">Columns:</p>
+          <div className="flex gap-1 flex-wrap">
             {ROW_COLUMN_PRESETS.slice(0, 5).map(preset => (
               <button key={preset.label}
-                onClick={() => {
-                  // apply preset to this row via parent commit
-                  const p = { ...layout };
-                  const rIdx = p.rows.findIndex(r => r.id === row.id);
-                  if (rIdx < 0) return;
-                  const newCols = preset.widths.map((w, i) => ({
-                    id: row.columns[i]?.id ?? `c${Date.now()}${i}`,
-                    widthPercent: w,
-                    widgets: row.columns[i]?.widgets ?? [],
-                  }));
-                  p.rows[rIdx] = { ...row, columns: newCols };
-                }}
+                onClick={() => applyColPreset(preset)}
                 className={cn(
                   'px-2 py-1 text-[10px] rounded-lg border font-medium transition-all',
                   row.columns.length === preset.widths.length
@@ -549,6 +623,24 @@ function WorkspaceRow({
               </button>
             ))}
           </div>
+
+          {/* Done / Cancel — shown after a preset is clicked */}
+          {colPreviewing && (
+            <div className="flex items-center gap-1.5 ml-1">
+              <button
+                onClick={confirmColPreset}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-green-500 hover:bg-green-600 text-white text-[10px] font-semibold transition-colors"
+                title="Confirm layout (Enter)">
+                <Check size={9}/> Done
+              </button>
+              <button
+                onClick={cancelColPreset}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 text-[10px] font-semibold transition-colors"
+                title="Revert (Escape)">
+                <X size={9}/> Cancel
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
