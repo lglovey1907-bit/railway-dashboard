@@ -20,6 +20,7 @@ import {
   OP_LABELS, LAYOUT_ICONS,
 } from '@/lib/overview/overviewEngine';
 import type { SheetRow } from '@/lib/sheets/googleSheets';
+import { sharedRead } from '@/lib/config/sharedSync';
 
 // ── Universal portal popup ─────────────────────────────────────────────────────
 // Renders at fixed position calculated from trigger rect.
@@ -1186,6 +1187,39 @@ export function OverviewWorkspace({ canEdit: canEditProp }: { canEdit?: boolean 
   const commit = useCallback((next: DBViewStore) => {
     setStore(next); saveDBViewStore(next, user?.id);
   }, [user?.id]);
+
+  // ── Cloud sync: fetch from _shared_ on mount + re-read when useAppSync finishes ──
+  useEffect(() => {
+    const SK = 'sheet_nsg_category_wise';
+    const NS = `dbviews_${SK.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const LS_KEY = `rly_dbviews_${SK}`;
+
+    // Phase 1: direct cloud read on mount (handles case where user is already logged in)
+    sharedRead(NS).then((cloudData) => {
+      if (!cloudData) return;
+      try {
+        const cd = cloudData as DBViewStore;
+        // Only apply cloud data if it has more properties than what we loaded from localStorage
+        const localStore = getDBViewStore(SK);
+        const localPropCount = localStore.views.reduce((s, v) => s + (v.properties?.length ?? 0), 0);
+        const cloudPropCount = (cd.views ?? []).reduce((s: number, v: DBView) => s + (v.properties?.length ?? 0), 0);
+        if (cloudPropCount > 0 || localPropCount === 0) {
+          const updated = { ...cd, sourceKey: SK };
+          localStorage.setItem(LS_KEY, JSON.stringify(updated));
+          setStore(updated);
+        }
+      } catch { /* ignore parse errors */ }
+    }).catch(() => {});
+
+    // Phase 2: listen for useAppSync bulk-sync completion event
+    const handleSyncComplete = () => {
+      const fresh = getDBViewStore(SK);
+      setStore(fresh);
+    };
+    window.addEventListener('rly_cloud_sync_complete', handleSyncComplete);
+    return () => window.removeEventListener('rly_cloud_sync_complete', handleSyncComplete);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Open a record by index in the processedRows array
   const openRecord = useCallback((row: SheetRow, idx: number, mode: RecordOpenMode = 'peek') => {
