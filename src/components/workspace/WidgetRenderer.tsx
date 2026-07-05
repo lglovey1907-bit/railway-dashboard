@@ -1063,6 +1063,28 @@ function _parsePrimesTable(tbl: Element): string[][] | null {
 }
 
 /**
+ * Strip HTML tags to plain text, inserting newlines at block-level elements.
+ * More reliable than innerText on DOMParser output (which may not be rendered).
+ */
+function _htmlToText(html: string): string {
+  return html
+    // Block close/self-close → newline
+    .replace(/<\/(?:p|li|div|ul|ol|h[1-6]|tr|blockquote|section)[^>]*>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    // Strip all remaining tags
+    .replace(/<[^>]+>/g, '')
+    // Decode common HTML entities
+    .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+    .replace(/&#39;/gi, "'").replace(/&quot;/gi, '"')
+    .replace(/&#8377;/gi, '₹').replace(/&#x20b9;/gi, '₹')
+    .replace(/&mdash;/gi, '—').replace(/&ndash;/gi, '–')
+    // Collapse excess blank lines
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/**
  * Parse a Google Doc HTML export and extract all handout fields.
  * Understands the CMI numbered-section format:
  *   1=Category, 2=Footfall, 3=Platforms, 4=FOB, 5=Waiting Rooms, 6=Trains,
@@ -1070,47 +1092,31 @@ function _parsePrimesTable(tbl: Element): string[][] | null {
  *   12=Catering, 13=Publicity/NFR, 14=ATM  +  PRIMES + Station Earning + Bifurcation
  *
  * Multi-station documents: stationHint (station code, e.g. "NDLS") is used
- * to isolate BOTH the HTML DOM section AND the text section for that station.
+ * to isolate BOTH the text section AND the HTML table search for that station.
  * Stations are separated by <hr> elements in the Google Docs HTML export.
  */
 function parseDocForHandout(html: string, stationHint = ''): DocFields {
   if (typeof document === 'undefined') return {};
-  const dom = new DOMParser().parseFromString(html, 'text/html');
   const result: DocFields = {};
 
-  // ── 0. Isolate the station's DOM section ──────────────────────────────────
-  // Google Docs exports stations separated by <hr> elements.
-  // Split body children into blocks at each <hr>.
-  const bodyChildren = [...dom.body.children];
-  const stationBlocks: Element[][] = [];
-  let curBlock: Element[] = [];
-  for (const el of bodyChildren) {
-    if (el.tagName === 'HR') {
-      if (curBlock.length > 0) stationBlocks.push(curBlock);
-      curBlock = [];
-    } else {
-      curBlock.push(el);
-    }
-  }
-  if (curBlock.length > 0) stationBlocks.push(curBlock);
-
-  // Find the block containing this station's code
-  let activeBlock: Element[] = bodyChildren; // fallback: use entire document
+  // ── 0. Station isolation — split raw HTML at <hr> tags ────────────────────
+  // Google Docs uses <hr> as the visual separator between station blocks.
+  // Splitting the raw HTML string works even if <hr> is deeply nested.
+  const hrBlocks = html.split(/<hr[^>]*\/?>/gi);
+  let stationHtml = html; // fallback: entire document
   if (stationHint) {
     const codeRe = new RegExp(`\\(\\s*${stationHint}\\s*\\)`, 'i');
-    for (const blk of stationBlocks) {
-      const blkText = blk.map(e => e.textContent ?? '').join('\n');
-      if (codeRe.test(blkText)) { activeBlock = blk; break; }
+    for (const blk of hrBlocks) {
+      if (codeRe.test(blk)) { stationHtml = blk; break; }
     }
   }
 
-  // Build a working DOM from the isolated block
-  const wrapper = document.createElement('div');
-  for (const el of activeBlock) wrapper.appendChild(el.cloneNode(true));
+  // Plain text for section parsing
+  const workText = _htmlToText(stationHtml);
+  // DOM for table parsing (PRIMES / Station Earning are actual <table> elements)
   const workDom = new DOMParser().parseFromString(
-    `<html><body>${wrapper.innerHTML}</body></html>`, 'text/html'
+    `<html><body>${stationHtml}</body></html>`, 'text/html'
   );
-  const workText = workDom.body?.innerText ?? '';
 
   // ── 1. Station name + code ────────────────────────────────────────────────
   const headM = /^(.+?)\s*\(([A-Z]{2,5})\)/m.exec(workText);
