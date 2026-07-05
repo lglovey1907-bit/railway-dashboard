@@ -1020,51 +1020,43 @@ type DocFields = {
 };
 
 /* ─── Helpers used inside parseDocForHandout ─────────────────────────── */
-function _numStr(s: string) { return s.replace(/[,\s₹]/g, ''); }
 
-function _parseFFTable(tbl: Element): string[][] | null {
-  const rowMap: Record<string, number> = { uts: 0, prs: 1, total: 2 };
-  const ff: string[][] = [['','','',''],['','','',''],['','','','']];
-  let hit = false;
-  tbl.querySelectorAll('tr').forEach(tr => {
-    const cells = [...tr.querySelectorAll('td,th')].map(c => c.textContent?.trim() ?? '');
-    if (cells.length < 2) return;
-    const ri = rowMap[cells[0].toLowerCase().replace(/\s/g,'')];
-    if (ri === undefined) return;
-    cells.slice(1).filter(c => c !== '').slice(0, 4).forEach((v, i) => { ff[ri][i] = _numStr(v); });
-    hit = true;
-  });
-  return hit ? ff : null;
-}
-
-function _parseTrTable(tbl: Element): string[][] | null {
-  const tr2: string[][] = [['','','',''],['','','',''],['','','','']];
-  let hit = false;
-  tbl.querySelectorAll('tr').forEach(row => {
-    const cells = [...row.querySelectorAll('td,th')].map(c => c.textContent?.trim() ?? '');
-    if (cells.length < 2) return;
-    const lbl = cells[0].toLowerCase().replace(/[\s.]/g,'');
-    let ri = -1;
-    if (lbl.includes('mail') || lbl.includes('exp')) ri = 0;
-    else if (lbl.startsWith('pass') && !lbl.includes('total')) ri = 1;
-    else if (lbl === 'total') ri = 2;
-    if (ri < 0) return;
-    cells.slice(1).filter(c => c !== '').slice(0, 4).forEach((v, i) => { tr2[ri][i] = _numStr(v); });
-    hit = true;
-  });
-  return hit ? tr2 : null;
-}
-
+/**
+ * Parse a PRIMES or Counter/Station Earning table from Google Docs HTML.
+ *
+ * Table structure (Google Docs export):
+ *   Row 0 (header): [label_col | UTS | PRS | Total]
+ *   Row 1:          [Tickets/day | uts_val | prs_val | tot_val]
+ *   Row 2:          [Passengers/day | uts_val | prs_val | tot_val]
+ *   Row 3:          [Earning/day | uts_val | prs_val | tot_val]
+ *   Row 4 (opt):    [Earning Bifurcation: ... (merged cell)]
+ *
+ * Output: primes[rowIdx][colIdx]
+ *   rowIdx 0=UTS, 1=PRS, 2=Total
+ *   colIdx 0=Tickets/day, 1=Passengers/day, 2=Earning/day
+ */
 function _parsePrimesTable(tbl: Element): string[][] | null {
-  const rowMap: Record<string, number> = { uts: 0, prs: 1, total: 2 };
+  // Data rows in the table: first cell label → output column index
+  const labelToColIdx: Record<string, number> = {
+    'tickets': 0, 'ticketsday': 0,
+    'passengers': 1, 'passengersday': 1,
+    'earning': 2, 'earningday': 2,
+  };
+  // output[rowIdx=UTS/PRS/Total][colIdx=Tickets/Pax/Earn]
   const pr: string[][] = [['','',''],['','',''],['','','']];
   let hit = false;
   tbl.querySelectorAll('tr').forEach(row => {
     const cells = [...row.querySelectorAll('td,th')].map(c => c.textContent?.trim() ?? '');
     if (cells.length < 2) return;
-    const ri = rowMap[cells[0].toLowerCase().replace(/\s/g,'')];
-    if (ri === undefined) return;
-    cells.slice(1).filter(c => c !== '').slice(0, 3).forEach((v, i) => { pr[ri][i] = v.replace(/,/g,''); });
+    // Normalise first-cell label: lowercase, remove spaces and slashes, strip trailing 'day'
+    const lbl = cells[0].toLowerCase().replace(/[/\s]/g, '').replace(/day$/, '');
+    const colIdx = labelToColIdx[lbl];
+    if (colIdx === undefined) return; // header row or bifurcation row → skip
+    // cells[1]=UTS value, cells[2]=PRS value, cells[3]=Total value
+    const vals = cells.slice(1).filter(c => c !== '');
+    for (let r = 0; r < 3 && r < vals.length; r++) {
+      pr[r][colIdx] = vals[r].replace(/,/g, '').replace(/₹\s*/g, '').trim();
+    }
     hit = true;
   });
   return hit ? pr : null;
@@ -1077,149 +1069,162 @@ function _parsePrimesTable(tbl: Element): string[][] | null {
  *   7=Counters, 8=Manpower, 9=Sanitation, 10=Pay&Use, 11=Parking,
  *   12=Catering, 13=Publicity/NFR, 14=ATM  +  PRIMES + Station Earning + Bifurcation
  *
- * If the document contains multiple stations, stationHint (the station code)
- * is used to extract only that station's block.
+ * Multi-station documents: stationHint (station code, e.g. "NDLS") is used
+ * to isolate BOTH the HTML DOM section AND the text section for that station.
+ * Stations are separated by <hr> elements in the Google Docs HTML export.
  */
 function parseDocForHandout(html: string, stationHint = ''): DocFields {
   if (typeof document === 'undefined') return {};
-  const dom  = new DOMParser().parseFromString(html, 'text/html');
+  const dom = new DOMParser().parseFromString(html, 'text/html');
   const result: DocFields = {};
-  const bodyText = dom.body?.innerText ?? '';
 
-  // ── 0. Station isolation ─────────────────────────────────────────────────
-  // Multi-station docs repeat the pattern "StationName (CODE)\nAs on DD.MM.YYYY"
-  let workText = bodyText;
+  // ── 0. Isolate the station's DOM section ──────────────────────────────────
+  // Google Docs exports stations separated by <hr> elements.
+  // Split body children into blocks at each <hr>.
+  const bodyChildren = [...dom.body.children];
+  const stationBlocks: Element[][] = [];
+  let curBlock: Element[] = [];
+  for (const el of bodyChildren) {
+    if (el.tagName === 'HR') {
+      if (curBlock.length > 0) stationBlocks.push(curBlock);
+      curBlock = [];
+    } else {
+      curBlock.push(el);
+    }
+  }
+  if (curBlock.length > 0) stationBlocks.push(curBlock);
+
+  // Find the block containing this station's code
+  let activeBlock: Element[] = bodyChildren; // fallback: use entire document
   if (stationHint) {
-    const codeRe = new RegExp(`(?:^|\\n)([^\\n]*\\b${stationHint}\\b[^\\n]*)`, 'i');
-    const sm = codeRe.exec(bodyText);
-    if (sm) {
-      // End at the next station-code line (2-5 uppercase letters in parens)
-      const nextRe = /\n[^\n]*\([A-Z]{2,5}\)[^\n]*\n/g;
-      nextRe.lastIndex = sm.index + sm[0].length + 1;
-      const nm = nextRe.exec(bodyText);
-      workText = bodyText.slice(sm.index, nm ? nm.index : bodyText.length);
+    const codeRe = new RegExp(`\\(\\s*${stationHint}\\s*\\)`, 'i');
+    for (const blk of stationBlocks) {
+      const blkText = blk.map(e => e.textContent ?? '').join('\n');
+      if (codeRe.test(blkText)) { activeBlock = blk; break; }
     }
   }
 
-  // ── 1. Station name + code from heading line ─────────────────────────────
-  const headM = /^(.+?)\s*\(([A-Z]{2,5})\)\s*(?:\n|$)/m.exec(workText);
+  // Build a working DOM from the isolated block
+  const wrapper = document.createElement('div');
+  for (const el of activeBlock) wrapper.appendChild(el.cloneNode(true));
+  const workDom = new DOMParser().parseFromString(
+    `<html><body>${wrapper.innerHTML}</body></html>`, 'text/html'
+  );
+  const workText = workDom.body?.innerText ?? '';
+
+  // ── 1. Station name + code ────────────────────────────────────────────────
+  const headM = /^(.+?)\s*\(([A-Z]{2,5})\)/m.exec(workText);
   if (headM) {
-    if (!result.stationName) result.stationName = headM[1].trim();
-    if (!result.stationCode) result.stationCode = headM[2].trim();
+    result.stationName = headM[1].trim();
+    result.stationCode = headM[2].trim();
   }
 
-  // ── 2. Split text into numbered sections (1–14) ──────────────────────────
-  // The pattern matches a section number that is NOT preceded by another digit.
-  // e.g. "3Platforms" or "3 Platforms" or "3\nPlatforms"
-  const KWORDS = 'Category|Footfall|Platform|FOB|Waiting Room|Train|Counter|Manpower|Sanitation|Pay|Parking|Catering|Publicity|NFR|ATM';
-  const secRe  = new RegExp(`(?:^|[^\\d])(\\d{1,2})\\s*(${KWORDS})`, 'gi');
-  const marks: Array<{ num: number; end: number }> = [];
-  let sm2: RegExpExecArray | null;
-  while ((sm2 = secRe.exec(workText)) !== null) {
-    const n = parseInt(sm2[1]);
-    if (n >= 1 && n <= 14) marks.push({ num: n, end: sm2.index + sm2[0].length });
+  // ── 2. Split text into numbered sections (1–14) ───────────────────────────
+  // Sections appear at the start of lines as:  [optional bullet] N  Keyword
+  // e.g. "1 Category", "- 2 Footfall", "6 Trains Originating ..."
+  const KWORDS = 'Category|Footfall|Platform|FOB|Waiting|Train|Counter|Manpower|Sanitation|Pay|Parking|Catering|Publicity|NFR|ATM';
+  const secRe  = new RegExp(`^[ \\t]*(?:[-•]\\s*)?(\\d{1,2})[ \\t]+(${KWORDS})`, 'gim');
+
+  type SecMark = { num: number; lineStart: number; contentStart: number };
+  const allMarks: SecMark[] = [];
+  let sm: RegExpExecArray | null;
+  while ((sm = secRe.exec(workText)) !== null) {
+    const n = parseInt(sm[1]);
+    if (n >= 1 && n <= 14) {
+      allMarks.push({ num: n, lineStart: sm.index, contentStart: sm.index + sm[0].length });
+    }
   }
+  // Keep only the first occurrence of each section number, sorted by position
+  const seenNums = new Set<number>();
+  const marks: SecMark[] = [];
+  for (const mk of allMarks) {
+    if (!seenNums.has(mk.num)) { seenNums.add(mk.num); marks.push(mk); }
+  }
+  marks.sort((a, b) => a.lineStart - b.lineStart);
+
   const sections: Record<number, string> = {};
   for (let i = 0; i < marks.length; i++) {
-    const from = marks[i].end;
-    const to   = i + 1 < marks.length ? marks[i + 1].end - marks[i + 1].end + marks[i + 1].end - (marks[i+1].end - marks[i+1].end) : workText.length;
-    // to = start of next marker (before the digit)
-    const nextStart = i + 1 < marks.length
-      ? workText.lastIndexOf(String(marks[i+1].num), marks[i+1].end)
-      : workText.length;
-    sections[marks[i].num] = workText.slice(from, nextStart).trim();
+    const from = marks[i].contentStart;
+    const to   = i + 1 < marks.length ? marks[i + 1].lineStart : workText.length;
+    sections[marks[i].num] = workText.slice(from, to).trim();
   }
 
-  // ── 3. Simple string sections ────────────────────────────────────────────
-  // Sec 1: Category
+  // ── 3. Simple string sections ─────────────────────────────────────────────
   if (sections[1]) {
     const c = sections[1].match(/NSG[-–\s]*(\d)/i);
-    result.category = c ? `NSG-${c[1]}` : sections[1].replace(/^\d+/, '').trim().split(/\s/)[0];
+    result.category = c ? `NSG-${c[1]}` : sections[1].trim().split(/[\s\n]/)[0];
   }
-  // Sec 4: FOB
+  if (sections[3]) result.platforms = sections[3].trim();
   if (sections[4]) {
-    const f = sections[4].match(/Nil|(\d+)/i);
-    result.fob = f ? (f[1] ?? 'Nil') : sections[4].trim().split(/[\s\n]/)[0];
+    const f = sections[4].match(/Nil|\d+/i);
+    result.fob = f ? f[0] : sections[4].trim().split(/[\s\n]/)[0];
   }
-  // Sec 5: Waiting Rooms
   if (sections[5]) result.waitingRooms = sections[5].trim();
-  // Sec 9: Sanitation
   if (sections[9]) result.sanitation = sections[9].trim();
 
-  // ── 4. Commercial items (sections 10-14) ─────────────────────────────────
-  const commercialNames: [number, string][] = [
+  // ── 4. Footfall from section 2 text ──────────────────────────────────────
+  // Text format (after the "2 Footfall" marker):
+  //   Outward Inward PF Total   ← header line (skip)
+  //   UTS 42651 88964 8956 140571
+  //   PRS 79875 73905 - 153780
+  //   Total 122526 162869 8956 294351
+  if (sections[2]) {
+    const ff: string[][] = [['','','',''],['','','',''],['','','','']];
+    const rMap: Record<string, number> = { uts: 0, prs: 1, total: 2 };
+    for (const rawLine of sections[2].split('\n')) {
+      const parts = rawLine.trim().split(/\s+/);
+      if (parts.length < 2) continue;
+      const ri = rMap[parts[0].toLowerCase()];
+      if (ri === undefined) continue;
+      let col = 0;
+      for (let p = 1; p < parts.length && col < 4; p++) {
+        ff[ri][col] = parts[p] === '-' ? '' : parts[p].replace(/,/g, '');
+        col++;
+      }
+    }
+    if (ff.some(r => r.some(v => v !== ''))) result.ff = ff;
+  }
+
+  // ── 5. Trains from section 6 text ────────────────────────────────────────
+  // Text format (after the "6 Trains" marker):
+  //   Originating Terminating Passing Total   ← header line (skip)
+  //   Mail/Exp. 87 87 79 253
+  //   Passenger 19 19 37 75
+  //   Total 110 110 118 328
+  if (sections[6]) {
+    const tr: string[][] = [['','','',''],['','','',''],['','','','']];
+    for (const rawLine of sections[6].split('\n')) {
+      const parts = rawLine.trim().split(/\s+/);
+      if (parts.length < 2) continue;
+      const lbl = parts[0].toLowerCase().replace(/[.\s]/g, '');
+      let ri = -1;
+      if (lbl.startsWith('mail') || lbl.includes('exp')) ri = 0;
+      else if (lbl.startsWith('pass') && lbl !== 'passing') ri = 1;
+      else if (lbl === 'total') ri = 2;
+      if (ri < 0) continue;
+      let col = 0;
+      for (let p = 1; p < parts.length && col < 4; p++) {
+        tr[ri][col] = parts[p] === '-' ? '' : parts[p].replace(/,/g, '');
+        col++;
+      }
+    }
+    if (tr.some(r => r.some(v => v !== ''))) result.trains = tr;
+  }
+
+  // ── 6. Commercial items (sections 10-14) ──────────────────────────────────
+  const commercialDefs: [number, string][] = [
     [10,'Pay & Use Toilet'],[11,'Parking'],
     [12,'Catering'],[13,'Publicity'],[14,'ATM'],
   ];
   const cItems: CommercialItem[] = [];
-  for (const [n, name] of commercialNames) {
-    if (!sections[n]) continue;
-    const t = sections[n].trim();
+  for (const [n, name] of commercialDefs) {
+    const t = sections[n] ?? '';
     const em = t.match(/Earning\s*(?:₹|Rs\.?)\s*([\d,.]+)\s*lakhs?\s*PA/i);
-    cItems.push({ name, earning: em ? `₹ ${em[1]} lakhs PA` : '', status: t });
+    cItems.push({ name, earning: em ? `₹ ${em[1]} lakhs PA` : '', status: t.trim() });
   }
   if (cItems.length) result.commercial = cItems;
 
-  // ── 5. HTML table-based parsing for array fields ─────────────────────────
-  const allTbls = [...dom.querySelectorAll('table')];
-  const primeCandidates: Element[] = [];
-
-  for (const tbl of allTbls) {
-    const tt = (tbl.textContent ?? '').toLowerCase();
-    const firstColVals = [...tbl.querySelectorAll('tr')].map(r =>
-      (r.querySelector('td,th')?.textContent ?? '').toLowerCase().replace(/\s/g,''));
-
-    // Footfall: has 'outward' or 'inward' + UTS/PRS row labels
-    if (!result.ff &&
-        (tt.includes('outward') || tt.includes('inward')) &&
-        firstColVals.some(v => v === 'uts')) {
-      const parsed = _parseFFTable(tbl);
-      if (parsed) result.ff = parsed;
-    }
-    // Trains: has 'originating'/'terminating' + 'mail'/'passenger'
-    else if (!result.trains &&
-        (tt.includes('originating') || tt.includes('terminating') || tt.includes('orig.')) &&
-        (tt.includes('mail') || tt.includes('passenger'))) {
-      const parsed = _parseTrTable(tbl);
-      if (parsed) result.trains = parsed;
-    }
-    // PRIMES / Station Earning: UTS/PRS/Total rows + Tickets or Earning columns
-    else if (firstColVals.some(v => v === 'uts') &&
-             (tt.includes('tickets') || (tt.includes('earning') && tt.includes('prs')))) {
-      primeCandidates.push(tbl);
-    }
-
-    // Outer section table: look for cells containing section numbers + keywords
-    // and parse platforms from section-3 cell text (avoids concatenation bug)
-    if (!result.platforms) {
-      tbl.querySelectorAll('tr').forEach(row => {
-        const cells = [...row.querySelectorAll('td,th')].map(c => c.textContent?.trim() ?? '');
-        if (cells.length < 2) return;
-        const k0 = cells[0].toLowerCase();
-        if (/\bplatform\b/.test(k0)) {
-          // Take the last cell content (the actual platform data cell)
-          const pfContent = cells[cells.length - 1];
-          if (pfContent && pfContent.length < 500) result.platforms = pfContent;
-        }
-        if (/\bfob\b/.test(k0) && !result.fob) {
-          const fNum = cells[1]?.match(/(\d+|Nil)/i);
-          if (fNum) result.fob = fNum[1];
-        }
-        if (/\bwaiting room\b/.test(k0) && !result.waitingRooms) {
-          result.waitingRooms = cells[1] ?? '';
-        }
-        if (/\bcategor\b/.test(k0) && !result.category) {
-          result.category = cells[1] ?? '';
-        }
-      });
-    }
-  }
-
-  // Assign the first two PRIMES-like tables to primes and stationEarning
-  if (primeCandidates[0]) { const p = _parsePrimesTable(primeCandidates[0]); if (p) result.primes = p; }
-  if (primeCandidates[1]) { const p = _parsePrimesTable(primeCandidates[1]); if (p) result.stationEarning = p; }
-
-  // ── 6. Counter heads from section 7 text ─────────────────────────────────
+  // ── 7. Counter heads (section 7) + Manpower (section 8) ──────────────────
   if (sections[7]) {
     const chMap: Record<string, CounterHead> = {};
     const cRe = /([A-Z]+(?:\/[A-Z]+)?)\s*[-–]\s*(\d+)(?:\s*\(M[-–](\d+)[^)]*E[-–](\d+)[^)]*N[-–](\d+)\))?/g;
@@ -1238,7 +1243,6 @@ function parseDocForHandout(html: string, stationHint = ''): DocFields {
         };
       }
     }
-    // Merge manpower (section 8) into mpOnRoll / mpSanctioned
     if (sections[8]) {
       const mpRe = /([A-Z]+)\s*[-–]\s*(\d+)\/(\d+)/g;
       let mm: RegExpExecArray | null;
@@ -1251,40 +1255,41 @@ function parseDocForHandout(html: string, stationHint = ''): DocFields {
     if (chs.length) result.counterHeads = chs;
   }
 
-  // ── 7. Earning bifurcation ────────────────────────────────────────────────
-  // Pattern: "UTS: ATVM- …" block that appears after the PRIMES tables
-  const bifM = workText.match(/(UTS\s*[:：]\s*ATVM[-–][\d,]+[^\n]*(?:\n(?!PRS:)[^\n]+)*\nPRS\s*[:：][^\n]*)/i)
-            ?? workText.match(/(UTS\s*[:：][^\n]+(?:\nPRS\s*[:：][^\n]+)?)/i);
-  if (bifM) result.earningBifurcation = bifM[1].trim();
-
-  // ── 8. Simple key-value fallbacks for header fields ──────────────────────
-  const trySet = (key: keyof DocFields, val: string) => {
-    if (!result[key] && val.trim()) (result as Record<string, unknown>)[key] = val.trim();
-  };
-  dom.querySelectorAll('table tr').forEach(row => {
-    const cells = [...row.querySelectorAll('td,th')].map(c => c.textContent?.trim() ?? '');
-    if (cells.length < 2) return;
-    const k = cells[0].toLowerCase().replace(/\s+/g,' ');
-    const v = cells.slice(1).join(' ').trim();
-    if (!v) return;
-    if (k.includes('station name') || k === 'station') trySet('stationName', v);
-    if (k.includes('station code') || k === 'stn code') trySet('stationCode', v);
-    if (k === 'state') trySet('state', v);
-    if (k.includes('section') && !k.includes('sanit')) trySet('section', v);
-    if (k === 'cmi' || k.startsWith('cmi/')) trySet('cmi', k.startsWith('cmi/') ? cells[0] : v);
-    if (k.includes('division')) trySet('division', v);
-  });
-  const lines = bodyText.split('\n');
-  for (const line of lines) {
-    const ci = line.indexOf(':');
-    if (ci <= 0) continue;
-    const k = line.slice(0,ci).trim().toLowerCase().replace(/\s+/g,' ');
-    const v = line.slice(ci+1).trim();
-    if (!v) continue;
-    if (k === 'state') trySet('state', v);
-    if (k.includes('division')) trySet('division', v);
-    if (k === 'cmi') trySet('cmi', v);
+  // ── 8. PRIMES + Station Earning from HTML tables (station-isolated DOM) ───
+  // These are actual <table> elements in the Google Docs HTML export.
+  // They appear at the bottom of each station block, after section 14.
+  // Identify them by containing 'ticket' AND 'passenger' in their text.
+  const primeCandidates: Element[] = [];
+  for (const tbl of workDom.querySelectorAll('table')) {
+    const tt = (tbl.textContent ?? '').toLowerCase();
+    if (tt.includes('ticket') && tt.includes('passenger') &&
+        (tt.includes('uts') || tt.includes('prs'))) {
+      primeCandidates.push(tbl);
+    }
   }
+  if (primeCandidates[0]) { const p = _parsePrimesTable(primeCandidates[0]); if (p) result.primes = p; }
+  if (primeCandidates[1]) { const p = _parsePrimesTable(primeCandidates[1]); if (p) result.stationEarning = p; }
+
+  // ── 9. Earning Bifurcation ────────────────────────────────────────────────
+  // Appears in the last row of the Station Earning table (merged cell) or in text.
+  // Check table cells first, then fall back to workText pattern.
+  let bifText = '';
+  for (const tbl of primeCandidates) {
+    for (const row of tbl.querySelectorAll('tr')) {
+      const cellText = row.textContent ?? '';
+      if (/bifurcation/i.test(cellText) || /UTS\s*[:：]\s*ATVM/i.test(cellText)) {
+        bifText = cellText.trim();
+        break;
+      }
+    }
+    if (bifText) break;
+  }
+  if (!bifText) {
+    const bifM = workText.match(/(Earning\s*Bifurcation\s*[:\n][\s\S]*?(?:PRS\s*[:：][^\n]+))/i)
+              ?? workText.match(/(UTS\s*[:：]\s*(?:ATVM|JTBS|RailOne|UTS|SMC)[^\n]*(?:\n(?!--|New Delhi|Delhi )[^\n]+)*(?:\nPRS\s*[:：][^\n]+)?)/i);
+    if (bifM) bifText = bifM[1].trim();
+  }
+  if (bifText) result.earningBifurcation = bifText;
 
   return result;
 }
