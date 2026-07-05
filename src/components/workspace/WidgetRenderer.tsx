@@ -1092,8 +1092,10 @@ function _htmlToText(html: string): string {
       .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
   }
   return html
-    // Block-level closing tags → newline (so sections end up on their own lines)
-    .replace(/<\/(?:p|li|div|ul|ol|h[1-6]|tr|blockquote|section)[^>]*>/gi, '\n')
+    // Block-level closing tags → newline (so sections end up on their own lines).
+    // NOTE: td/th are included because CMI handout sections are authored as a
+    // TABLE — each value lives in its own cell, so cells must break to lines.
+    .replace(/<\/(?:p|li|div|ul|ol|h[1-6]|tr|td|th|blockquote|section)[^>]*>/gi, '\n')
     .replace(/<br\s*\/?>/gi, '\n')
     // Strip all remaining tags
     .replace(/<[^>]+>/g, '')
@@ -1175,9 +1177,161 @@ function _splitNumberedSections(workText: string): Record<number, string> {
     const from = marks[i].contentStart;
     let to = i + 1 < marks.length ? marks[i + 1].lineStart : workText.length;
     if (to > primesBoundary) to = primesBoundary; // don't let section 14 swallow table text
-    sections[marks[i].num] = workText.slice(from, Math.max(from, to)).trim();
+    sections[marks[i].num] = _stripTrailingSecNum(workText.slice(from, Math.max(from, to)).trim());
   }
   return sections;
+}
+
+/**
+ * Remove a trailing lone section number (1–14) that leaks from the NEXT table
+ * row. The doc is a table where the number sits in its own cell; after
+ * linearisation it lands at the tail of the previous section's slice
+ * (e.g. "…614-610 612\n4"). This strips that dangling number.
+ */
+function _stripTrailingSecNum(s: string): string {
+  return s.replace(/\s*\n\s*(?:[1-9]|1[0-4])\s*$/, '').trim();
+}
+
+/** True if a token is purely numeric (or the "-" placeholder). */
+function _isNumericToken(t: string): boolean {
+  return t === '-' || (/^[\d,.\-]+$/.test(t) && /\d/.test(t));
+}
+
+/**
+ * Parse a footfall/trains matrix from section text. Because the source is a
+ * table, every value lands on its own line, e.g.:
+ *   Outward · Inward · PF · Total · UTS · 42651 · 88964 · 8956 · 140571 · …
+ * For each row label we capture the next up-to-4 numeric tokens. The header
+ * row ("… Total" before the first data label) is skipped because the token
+ * following it is a label, not a number.
+ */
+function _parseMatrixFromSection(sectionText: string, rowKeys: string[][]): string[][] | null {
+  // Flatten on ALL whitespace so this works whether the export puts each value
+  // in its own table cell (one per line) or on a single space-separated line.
+  const tokens = sectionText.split(/\s+/).map(t => t.trim()).filter(t => t !== '');
+  const out: string[][] = rowKeys.map(() => ['', '', '', '']);
+  for (let i = 0; i < tokens.length; i++) {
+    const norm = tokens[i].toLowerCase().replace(/[.\s]/g, '');
+    const ri = rowKeys.findIndex(keys => keys.includes(norm));
+    if (ri < 0) continue;
+    if (i + 1 >= tokens.length || !_isNumericToken(tokens[i + 1])) continue; // header row → skip
+    let col = 0;
+    for (let p = i + 1; p < tokens.length && col < 4; p++) {
+      if (!_isNumericToken(tokens[p])) break;
+      out[ri][col] = tokens[p] === '-' ? '' : tokens[p].replace(/,/g, '');
+      col++;
+    }
+  }
+  return out.some(r => r.some(v => v !== '')) ? out : null;
+}
+
+/** Commercial: split "(Earning ₹ X lakhs PA)" from the status body. */
+function _parseCommercialSection(sectionText: string): { earning: string; status: string } {
+  const em = sectionText.match(/Earning\s*(?:₹|Rs\.?)?\s*([\d,.]+)\s*lakhs?\s*PA/i);
+  const earning = em ? `${em[1]} lakhs PA` : '';
+  // Strip everything up to & including the "(Earning … PA)" chunk (with any name remnant before it).
+  let status = sectionText.replace(/^[\s\S]*?\(Earning[^)]*\)\s*/i, '');
+  if (status === sectionText) status = sectionText.replace(/^[A-Za-z &]+\n/, ''); // no earning paren
+  return { earning, status: status.replace(/\n{2,}/g, '\n').trim() };
+}
+
+/** Counters: mixed-case names, aggregate across station sides, capture M/E/N. */
+function _parseCounterHeads(sec7: string, sec8: string): CounterHead[] {
+  const chMap: Record<string, CounterHead> = {};
+  const NON_COUNTER = new Set(['M','E','N','L','G','AC','PG','AG','SL']);
+  const cRe = /([A-Za-z]{2,}(?:\/[A-Za-z]+)?)\s*[-–]\s*(\d+)(?:\s*\(M[-–](\d+)[^)]*E[-–](\d+)[^)]*N[-–](\d+)\))?/g;
+  let cm: RegExpExecArray | null;
+  while ((cm = cRe.exec(sec7)) !== null) {
+    const name = cm[1];
+    if (NON_COUNTER.has(name.toUpperCase())) continue;
+    if (chMap[name]) {
+      chMap[name].total = String(+chMap[name].total + +(cm[2] || 0));
+      if (cm[3]) chMap[name].M = String(+(chMap[name].M || 0) + +cm[3]);
+      if (cm[4]) chMap[name].E = String(+(chMap[name].E || 0) + +cm[4]);
+      if (cm[5]) chMap[name].N = String(+(chMap[name].N || 0) + +cm[5]);
+    } else {
+      chMap[name] = {
+        name, total: cm[2] || '', M: cm[3] || '', E: cm[4] || '', N: cm[5] || '',
+        mpOnRoll: '', mpSanctioned: '', mpActual: '', extraFields: [], meta: mkMeta(),
+      };
+    }
+  }
+  if (sec8) {
+    const mpRe = /([A-Za-z]{2,})\s*[-–]\s*(\d+)\/(\d+)/g;
+    let mm: RegExpExecArray | null;
+    while ((mm = mpRe.exec(sec8)) !== null) {
+      const n = mm[1];
+      if (chMap[n]) { chMap[n].mpOnRoll = mm[2]; chMap[n].mpSanctioned = mm[3]; }
+    }
+  }
+  return Object.values(chMap);
+}
+
+/** Earning bifurcation: put UTS and PRS on their own lines. */
+function _formatBifurcation(raw: string): string {
+  return raw
+    .replace(/Earning\s*Bifurcation\s*:?\s*/i, '')
+    .replace(/\s*PRS\s*:/i, '\nPRS:')
+    .replace(/^\s*UTS\s*:/i, 'UTS:')
+    .replace(/\n{2,}/g, '\n')
+    .trim();
+}
+
+/** Platforms: canonical "PF No.: a | b | …" + "Length: x | y | …" two-line form. */
+function _formatPlatforms(sec3: string): string {
+  const toks = sec3.split('\n').map(t => t.trim()).filter(t => t !== '');
+  const li = toks.findIndex(t => /^length/i.test(t));
+  if (li < 0) return sec3.replace(/\n+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  const pf = toks.slice(0, li).filter(t => !/^pf\s*no/i.test(t));
+  const len = toks.slice(li + 1);
+  return `PF No.: ${pf.join(' | ')}\nLength: ${len.join(' | ')}`;
+}
+
+/**
+ * Parse the canonical platforms string into aligned grid rows for display.
+ * Returns null if the string isn't in the "Label: a | b | …" per-line form.
+ */
+function parsePlatformGrid(platforms: string): { label: string; cells: string[] }[] | null {
+  const lines = platforms.split('\n').map(l => l.trim()).filter(Boolean);
+  const rows = lines
+    .map(l => {
+      const m = /^([^:]+):\s*(.*)$/.exec(l);
+      if (!m) return null;
+      return { label: m[1].trim(), cells: m[2].split('|').map(c => c.trim()) };
+    })
+    .filter((r): r is { label: string; cells: string[] } => r !== null);
+  if (rows.length < 2) return null;
+  const width = Math.max(...rows.map(r => r.cells.length));
+  rows.forEach(r => { while (r.cells.length < width) r.cells.push(''); });
+  return rows;
+}
+
+/**
+ * Render a commercial "status" string as a bullet list. Numbered points are
+ * split into bullets; within each bullet the lead clause (what/who, before the
+ * date "w.e.f." or the first parenthesis) is bolded for quick scanning.
+ */
+function renderStatusBullets(status: string) {
+  if (!status || !status.trim()) return '—';
+  let points = status.split('\n').map(s => s.trim()).filter(Boolean);
+  if (points.length === 1) {
+    // Fall back to splitting inline "1. … 2. …" numbered runs.
+    points = status.split(/\s+(?=\d{1,2}[.)]\s)/).map(s => s.trim()).filter(Boolean);
+  }
+  if (points.length <= 1) {
+    return <span className="whitespace-pre-wrap">{status}</span>;
+  }
+  return (
+    <ul className="list-disc pl-4 space-y-0.5">
+      {points.map((p, i) => {
+        const clean = p.replace(/^\d{1,2}[.)]\s*/, '');
+        const m = /^(.*?)(\s+w\.e\.f\..*)$/i.exec(clean) ?? /^(.*?)(\s*\(.*)$/.exec(clean);
+        return m
+          ? <li key={i}><span className="font-semibold text-slate-700">{m[1]}</span><span className="text-slate-500">{m[2]}</span></li>
+          : <li key={i} className="text-slate-700">{clean}</li>;
+      })}
+    </ul>
+  );
 }
 
 /**
@@ -1229,64 +1383,29 @@ function parseDocForHandout(html: string, stationHint = ''): DocFields {
     const c = sections[1].match(/NSG[-–\s]*(\d)/i);
     result.category = c ? `NSG-${c[1]}` : sections[1].trim().split(/[\s\n]/)[0];
   }
-  if (sections[3]) result.platforms = sections[3].trim();
+  if (sections[3]) result.platforms = _formatPlatforms(sections[3]);
   if (sections[4]) {
-    const f = sections[4].match(/Nil|\d+/i);
-    result.fob = f ? f[0] : sections[4].trim().split(/[\s\n]/)[0];
+    const f = sections[4].match(/Nil[^\n]*|\d+/i);
+    result.fob = f ? f[0].trim() : sections[4].trim().split(/[\s\n]/)[0];
   }
   if (sections[5]) result.waitingRooms = sections[5].trim();
   if (sections[9]) result.sanitation = sections[9].trim();
 
-  // ── 4. Footfall from section 2 text ──────────────────────────────────────
-  // Text format (after the "2 Footfall" marker):
-  //   Outward Inward PF Total   ← header line (skip)
-  //   UTS 42651 88964 8956 140571
-  //   PRS 79875 73905 - 153780
-  //   Total 122526 162869 8956 294351
+  // ── 4. Footfall (section 2) — table cells, one value per line ─────────────
   if (sections[2]) {
-    const ff: string[][] = [['','','',''],['','','',''],['','','','']];
-    const rMap: Record<string, number> = { uts: 0, prs: 1, total: 2 };
-    for (const rawLine of sections[2].split('\n')) {
-      const parts = rawLine.trim().split(/\s+/);
-      if (parts.length < 2) continue;
-      const ri = rMap[parts[0].toLowerCase()];
-      if (ri === undefined) continue;
-      let col = 0;
-      for (let p = 1; p < parts.length && col < 4; p++) {
-        ff[ri][col] = parts[p] === '-' ? '' : parts[p].replace(/,/g, '');
-        col++;
-      }
-    }
-    if (ff.some(r => r.some(v => v !== ''))) result.ff = ff;
+    const ff = _parseMatrixFromSection(sections[2], [['uts'], ['prs'], ['total']]);
+    if (ff) result.ff = ff;
   }
 
-  // ── 5. Trains from section 6 text ────────────────────────────────────────
-  // Text format (after the "6 Trains" marker):
-  //   Originating Terminating Passing Total   ← header line (skip)
-  //   Mail/Exp. 87 87 79 253
-  //   Passenger 19 19 37 75
-  //   Total 110 110 118 328
+  // ── 5. Trains (section 6) — table cells, one value per line ───────────────
   if (sections[6]) {
-    const tr: string[][] = [['','','',''],['','','',''],['','','','']];
-    for (const rawLine of sections[6].split('\n')) {
-      const parts = rawLine.trim().split(/\s+/);
-      if (parts.length < 2) continue;
-      const lbl = parts[0].toLowerCase().replace(/[.\s]/g, '');
-      let ri = -1;
-      if (lbl.startsWith('mail') || lbl.includes('exp')) ri = 0;
-      else if (lbl.startsWith('pass') && lbl !== 'passing') ri = 1;
-      else if (lbl === 'total') ri = 2;
-      if (ri < 0) continue;
-      let col = 0;
-      for (let p = 1; p < parts.length && col < 4; p++) {
-        tr[ri][col] = parts[p] === '-' ? '' : parts[p].replace(/,/g, '');
-        col++;
-      }
-    }
-    if (tr.some(r => r.some(v => v !== ''))) result.trains = tr;
+    const tr = _parseMatrixFromSection(sections[6], [['mailexp','mail','mail/exp'], ['passenger'], ['total']]);
+    if (tr) result.trains = tr;
   }
 
   // ── 6. Commercial items (sections 10-14) ──────────────────────────────────
+  // Earning is stored WITHOUT the ₹ prefix (the UI adds one) and the status
+  // body excludes the "(Earning … PA)" chunk.
   const commercialDefs: [number, string][] = [
     [10,'Pay & Use Toilet'],[11,'Parking'],
     [12,'Catering'],[13,'Publicity'],[14,'ATM'],
@@ -1294,42 +1413,14 @@ function parseDocForHandout(html: string, stationHint = ''): DocFields {
   const cItems: CommercialItem[] = [];
   for (const [n, name] of commercialDefs) {
     const t = sections[n] ?? '';
-    const em = t.match(/Earning\s*(?:₹|Rs\.?)\s*([\d,.]+)\s*lakhs?\s*PA/i);
-    cItems.push({ name, earning: em ? `₹ ${em[1]} lakhs PA` : '', status: t.trim() });
+    const { earning, status } = _parseCommercialSection(t);
+    cItems.push({ name, earning, status });
   }
   if (cItems.length) result.commercial = cItems;
 
   // ── 7. Counter heads (section 7) + Manpower (section 8) ──────────────────
   if (sections[7]) {
-    const chMap: Record<string, CounterHead> = {};
-    const cRe = /([A-Z]+(?:\/[A-Z]+)?)\s*[-–]\s*(\d+)(?:\s*\(M[-–](\d+)[^)]*E[-–](\d+)[^)]*N[-–](\d+)\))?/g;
-    let cm: RegExpExecArray | null;
-    // Shift/room indicators that must never be treated as counter names.
-    const NON_COUNTER = new Set(['M', 'E', 'N', 'L', 'G', 'AC']);
-    while ((cm = cRe.exec(sections[7])) !== null) {
-      const name = cm[1];
-      if (NON_COUNTER.has(name.toUpperCase())) continue; // e.g. the "M-6, E-6, N-4" shift group
-      if (chMap[name]) {
-        chMap[name].total = String(+chMap[name].total + +(cm[2]||0));
-        if (cm[3]) chMap[name].M = String(+chMap[name].M + +cm[3]);
-        if (cm[4]) chMap[name].E = String(+chMap[name].E + +cm[4]);
-        if (cm[5]) chMap[name].N = String(+chMap[name].N + +cm[5]);
-      } else {
-        chMap[name] = {
-          name, total: cm[2]||'', M: cm[3]||'', E: cm[4]||'', N: cm[5]||'',
-          mpOnRoll:'', mpSanctioned:'', mpActual:'', extraFields:[], meta: mkMeta(),
-        };
-      }
-    }
-    if (sections[8]) {
-      const mpRe = /([A-Z]+)\s*[-–]\s*(\d+)\/(\d+)/g;
-      let mm: RegExpExecArray | null;
-      while ((mm = mpRe.exec(sections[8])) !== null) {
-        const n = mm[1];
-        if (chMap[n]) { chMap[n].mpOnRoll = mm[2]; chMap[n].mpSanctioned = mm[3]; }
-      }
-    }
-    const chs = Object.values(chMap);
+    const chs = _parseCounterHeads(sections[7], sections[8] ?? '');
     if (chs.length) result.counterHeads = chs;
   }
 
@@ -1367,7 +1458,7 @@ function parseDocForHandout(html: string, stationHint = ''): DocFields {
               ?? workText.match(/(UTS\s*[:：]\s*(?:ATVM|JTBS|RailOne|UTS|SMC)[^\n]*(?:\n(?!--|New Delhi|Delhi )[^\n]+)*(?:\nPRS\s*[:：][^\n]+)?)/i);
     if (bifM) bifText = bifM[1].trim();
   }
-  if (bifText) result.earningBifurcation = bifText;
+  if (bifText) result.earningBifurcation = _formatBifurcation(bifText);
 
   return result;
 }
@@ -2113,7 +2204,21 @@ ${sheet('Station Earning',[
         if (extracted.trains)               merged.trains         = extracted.trains;
         if (extracted.primes)               merged.primes         = extracted.primes;
         if (extracted.stationEarning)       merged.stationEarning = extracted.stationEarning;
-        if (extracted.counterHeads?.length) merged.counterHeads   = extracted.counterHeads;
+        // Merge counters by name so user-added rows (e.g. a manually-added
+        // "Enquiry") are preserved and updated rather than wiped out.
+        if (extracted.counterHeads?.length) {
+          const byName = new Map<string, CounterHead>();
+          for (const ch of d.counterHeads) if (ch.name?.trim()) byName.set(ch.name.trim().toLowerCase(), ch);
+          for (const ch of extracted.counterHeads) {
+            const key = ch.name.trim().toLowerCase();
+            const existing = byName.get(key);
+            byName.set(key, existing ? { ...existing, ...ch, extraFields: existing.extraFields } : ch);
+          }
+          // Keep any blank user rows too (rows with no name), appended at the end.
+          const named = [...byName.values()];
+          const blanks = d.counterHeads.filter(ch => !ch.name?.trim());
+          merged.counterHeads = [...named, ...blanks];
+        }
         if (extracted.commercial?.length)   merged.commercial     = extracted.commercial;
 
         setD(merged);
@@ -2326,8 +2431,13 @@ ${sheet('Station Earning',[
           ] as [string, keyof HD, string][]).map(([lbl,key,val]) => (
             <label key={lbl} className="flex flex-col gap-0.5">
               <span className="text-[10px] font-semibold text-slate-500">{lbl}</span>
-              <input value={val} onChange={e=>upd({[key]:e.target.value} as Partial<HD>)}
-                className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
+              {key === 'fob' ? (
+                <input value={val} onChange={e=>upd({[key]:e.target.value} as Partial<HD>)}
+                  className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
+              ) : (
+                <textarea value={val} onChange={e=>upd({[key]:e.target.value} as Partial<HD>)} rows={key==='platforms'?2:2}
+                  className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400 resize-y whitespace-pre-wrap"/>
+              )}
             </label>
           ))}
         </div>
@@ -2842,12 +2952,38 @@ ${sheet('Station Earning',[
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Infrastructure</p>
             <SecMeta meta={d.infraMeta} sec="infra"/>
           </div>
-          <div className="space-y-1">
-            {[['Platforms', d.platforms], ['FOB', d.fob], ['Waiting Rooms', d.waitingRooms]]
+          <div className="space-y-1.5">
+            {/* Platforms — rendered as a PF No. / Length grid when structured */}
+            {d.platforms && (() => {
+              const grid = parsePlatformGrid(d.platforms);
+              if (!grid) return (
+                <div className="bg-slate-50 rounded-lg px-2.5 py-1.5 text-[11px]">
+                  <span className="text-slate-400">Platforms: </span>
+                  <span className="font-semibold text-slate-700">{d.platforms}</span>
+                </div>
+              );
+              return (
+                <div className="overflow-x-auto rounded-lg border border-amber-200">
+                  <table className="text-[10px] w-full border-collapse">
+                    <tbody>
+                      {grid.map((row, ri) => (
+                        <tr key={ri} className={ri === 0 ? 'bg-amber-50' : ''}>
+                          <td className="px-2 py-1 border border-amber-200 font-semibold text-slate-600 whitespace-nowrap">{row.label}</td>
+                          {row.cells.map((c, ci) => (
+                            <td key={ci} className={`px-2 py-1 border border-amber-200 text-center whitespace-nowrap ${ri===0?'font-semibold text-slate-600':'text-slate-700'}`}>{c || '—'}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+            {[['FOB', d.fob], ['Waiting Rooms', d.waitingRooms]]
               .filter(([,v])=>v).map(([l,v])=>(
                 <div key={l} className="bg-slate-50 rounded-lg px-2.5 py-1.5 text-[11px]">
                   <span className="text-slate-400">{l}: </span>
-                  <span className="font-semibold text-slate-700">{v}</span>
+                  <span className="font-semibold text-slate-700 whitespace-pre-wrap">{v}</span>
                 </div>
               ))}
           </div>
@@ -2965,10 +3101,10 @@ ${sheet('Station Earning',[
               </thead>
               <tbody>
                 {d.commercial.filter(ci=>ci.name||ci.earning||ci.status).map((ci,i)=>(
-                  <tr key={i} className="hover:bg-amber-50/40">
+                  <tr key={i} className="hover:bg-amber-50/40 align-top">
                     <td className="px-2.5 py-1.5 border border-amber-200 font-medium text-slate-700 whitespace-nowrap">{ci.name||'—'}</td>
-                    <td className="px-2.5 py-1.5 border border-amber-200 text-center text-slate-700 whitespace-nowrap">{ci.earning ? `₹ ${ci.earning}` : '—'}</td>
-                    <td className="px-2.5 py-1.5 border border-amber-200 text-slate-600">{ci.status||'—'}</td>
+                    <td className="px-2.5 py-1.5 border border-amber-200 text-center text-slate-700 whitespace-nowrap">{ci.earning ? `₹ ${ci.earning.replace(/^₹\s*/,'')}` : '—'}</td>
+                    <td className="px-2.5 py-1.5 border border-amber-200 text-slate-600">{renderStatusBullets(ci.status)}</td>
                   </tr>
                 ))}
               </tbody>
