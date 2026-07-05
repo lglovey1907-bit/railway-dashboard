@@ -978,6 +978,27 @@ const SEC_LABELS: Record<string, string> = {
   ebif: 'Earning Bifurcation',
 };
 
+// ── CMI role options for Cell Assignment Configuration ────────────────────────
+const SECTIONAL_CMI_OPTIONS = [
+  'CMI/NDLS','CMI/DLI','CMI/NZM','CMI/ANVT',
+  'CMI/DSA','CMI/SZM','CMI/TKJ','CMI/DEE',
+  'CMI/SNP','CMI/ROK','CMI/PTR','CMI/RK',
+  'CMI/HNZ','CMI/BVH','CMI/GZB',
+] as const;
+const DIVISIONAL_CMI_OPTIONS = [
+  'CMI/UTS-PRS','CMI/Sanitation','CMI/Planning','CMI/Marketing',
+  'CMI/Traffic','CMI/Engineering','CMI/Security','CMI/Catering',
+  'CMI/Parking','CMI/Coaching','CMI/Goods','CMI/Passenger',
+] as const;
+
+// ── Data source attached to a handout ─────────────────────────────────────────
+type DataSource = {
+  id: string;
+  type: 'sheets' | 'docs' | 'pdf' | 'other';
+  url: string;
+  label: string;
+};
+
 type HD = {
   stationCode: string; stationName: string; category: string;
   state: string; section: string; cmi: string;
@@ -1013,6 +1034,8 @@ type HD = {
   /** CMI-level check */
   cmiCheckedBy: string;
   cmiCheckedAt: string;
+  /** Linked external data sources */
+  dataSources: DataSource[];
 };
 const mkCH = (name = ''): CounterHead => ({
   name, total: '', M: '', E: '', N: '', mpSanctioned: '', mpOnRoll: '', mpActual: '',
@@ -1047,6 +1070,7 @@ const mkHD = (): HD => ({
   earningMeta: mkMeta(),
   cmiCheckedBy: '',
   cmiCheckedAt: '',
+  dataSources: [],
 });
 
 // ── helper: find matching column in a SheetRow by keyword ────────────────────
@@ -1115,6 +1139,7 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
       cmiCheckedAt:       s.cmiCheckedAt       ?? '',
       parking:            s.parking            ?? '',
       catering:           s.catering           ?? '',
+      dataSources:        Array.isArray(s.dataSources) ? s.dataSources : [],
     };
   });
 
@@ -1460,6 +1485,173 @@ ${html}
     const a = document.createElement('a');
     a.href = url; a.download = `handout_${d.stationCode||'station'}.csv`; a.click();
     URL.revokeObjectURL(url);
+  };
+
+  // ── Word export (.doc via HTML) ───────────────────────────────────────────
+  const handleExportWord = () => {
+    const stn = d.stationName || d.stationCode || 'Handout';
+    const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office'
+      xmlns:w='urn:schemas-microsoft-com:office:word'
+      xmlns='http://www.w3.org/TR/REC-html40'>
+<head><meta charset='utf-8'><title>${stn}</title>
+<style>
+  body{font-family:Arial,sans-serif;font-size:11pt;margin:20mm;}
+  h1{font-size:16pt;color:#d97706;}h2{font-size:12pt;color:#92400e;border-bottom:1px solid #d97706;padding-bottom:3pt;}
+  table{border-collapse:collapse;width:100%;margin-bottom:10pt;}
+  th{background:#d97706;color:#fff;padding:4pt 6pt;border:1pt solid #b45309;}
+  td{padding:4pt 6pt;border:1pt solid #d1d5db;}
+  .meta{font-size:9pt;color:#6b7280;margin-top:2pt;}
+</style></head><body>
+<h1>${stn}${d.stationCode ? ` (${d.stationCode})` : ''}</h1>
+<p>${[d.category,d.state,d.section,d.cmi?`CMI: ${d.cmi}`:'',d.division].filter(Boolean).join(' · ')}</p>
+${d.date?`<p><b>As on:</b> ${d.date}</p>`:''}
+${d.cmiCheckedBy?`<p><b>CMI Checked by:</b> ${d.cmiCheckedBy}${d.cmiCheckedAt?` (${d.cmiCheckedAt})`:''}</p>`:''}
+
+<h2>Footfall / Day</h2>
+<table><tr><th>Type</th><th>Outward</th><th>Inward</th><th>PF</th><th>Total</th></tr>
+${['UTS','PRS','Total'].map((r,i)=>`<tr><td><b>${r}</b></td>${d.ff[i].map(v=>`<td>${v||'-'}</td>`).join('')}</tr>`).join('')}
+</table>${d.ffMeta?.updatedBy?`<p class="meta">✎ ${d.ffMeta.updatedBy}${d.ffMeta.updatedAt?` (${d.ffMeta.updatedAt})`:''}</p>`:''}
+
+<h2>Infrastructure</h2>
+<table><tr><th>Platforms</th><th>FOB</th><th>Waiting Rooms</th></tr>
+<tr><td>${d.platforms||'-'}</td><td>${d.fob||'-'}</td><td>${d.waitingRooms||'-'}</td></tr></table>
+
+<h2>Trains / Day</h2>
+<table><tr><th>Type</th><th>Originating</th><th>Terminating</th><th>Passing</th><th>Total</th></tr>
+${['Mail/Exp','Passenger','Total'].map((r,i)=>`<tr><td><b>${r}</b></td>${d.trains[i].map(v=>`<td>${v||'-'}</td>`).join('')}</tr>`).join('')}
+</table>
+
+<h2>Counter Heads</h2>
+<table><tr><th>Counter</th><th>Total</th><th>M</th><th>E</th><th>N</th><th>MP Sanc.</th><th>MP OnRoll</th><th>MP Actual</th></tr>
+${d.counterHeads.map(ch=>`<tr><td>${ch.name}</td><td>${ch.total||'-'}</td><td>${ch.M||'-'}</td><td>${ch.E||'-'}</td><td>${ch.N||'-'}</td><td>${ch.mpSanctioned||'-'}</td><td>${ch.mpOnRoll||'-'}</td><td>${ch.mpActual||'-'}</td></tr>`).join('')}
+</table>
+
+<h2>Sanitation</h2><p>${d.sanitation||'-'}</p>
+<h2>Commercial Earnings (₹ lakhs PA)</h2>
+<table><tr><th>Item</th><th>Earning</th><th>Status</th></tr>
+${d.commercial.map(ci=>`<tr><td>${ci.name}</td><td>${ci.earning||'-'}</td><td>${ci.status||'-'}</td></tr>`).join('')}
+</table>
+${d.parking?`<h2>Parking</h2><p>${d.parking}</p>`:''}
+${d.catering?`<h2>Catering</h2><p>${d.catering}</p>`:''}
+
+<h2>PRIMES</h2>
+<table><tr><th>Type</th><th>Tickets/day</th><th>Passengers/day</th><th>Earning/day</th></tr>
+${['UTS','PRS','Total'].map((r,i)=>`<tr><td><b>${r}</b></td>${d.primes[i].map(v=>`<td>${v||'-'}</td>`).join('')}</tr>`).join('')}
+</table>
+
+<h2>Station Earning</h2>
+<table><tr><th>Type</th><th>Col1</th><th>Col2</th><th>Col3</th></tr>
+${['UTS','PRS','Total'].map((r,i)=>`<tr><td><b>${r}</b></td>${d.stationEarning[i].map(v=>`<td>${v||'-'}</td>`).join('')}</tr>`).join('')}
+</table>
+${d.earningBifurcation?`<h2>Earning Bifurcation</h2><p>${d.earningBifurcation}</p>`:''}
+</body></html>`;
+    const blob = new Blob(['﻿', html], { type: 'application/msword' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `handout_${d.stationCode||'station'}.doc`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ── Excel export (.xls via HTML table) ────────────────────────────────────
+  const handleExportExcel = () => {
+    const stn = d.stationName || d.stationCode || 'Handout';
+    const sheet = (title: string, rows: string[][]) =>
+      `<h3 style='color:#d97706'>${title}</h3><table border='1' style='border-collapse:collapse;font-size:10pt;'>`
+      + rows.map((r,ri) =>
+          `<tr>${r.map(c => ri===0
+            ? `<th style='background:#d97706;color:#fff;padding:4pt 6pt'>${c}</th>`
+            : `<td style='padding:4pt 6pt'>${c||''}</td>`).join('')}</tr>`
+        ).join('') + '</table><br/>';
+    const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office'
+      xmlns:x='urn:schemas-microsoft-com:office:excel'
+      xmlns='http://www.w3.org/TR/REC-html40'>
+<head><meta charset='utf-8'><title>${stn}</title></head><body>
+<h2>${stn} — Station Handout${d.date?` (As on ${d.date})`:''}</h2>
+${sheet('Footfall / Day',[
+  ['Type','Outward','Inward','PF','Total'],
+  ...['UTS','PRS','Total'].map((r,i)=>[r,...d.ff[i]]),
+])}
+${sheet('Trains / Day',[
+  ['Type','Originating','Terminating','Passing','Total'],
+  ...['Mail/Exp','Passenger','Total'].map((r,i)=>[r,...d.trains[i]]),
+])}
+${sheet('Counter Heads',[
+  ['Counter','Total','M','E','N','MP Sanc.','MP OnRoll','MP Actual'],
+  ...d.counterHeads.map(ch=>[ch.name,ch.total,ch.M,ch.E,ch.N,ch.mpSanctioned,ch.mpOnRoll,ch.mpActual]),
+])}
+${sheet('Commercial Earnings',[
+  ['Item','Earning (₹ lakhs PA)','Status'],
+  ...d.commercial.map(ci=>[ci.name,ci.earning,ci.status]),
+])}
+${sheet('PRIMES',[
+  ['Type','Tickets/day','Passengers/day','Earning/day'],
+  ...['UTS','PRS','Total'].map((r,i)=>[r,...d.primes[i]]),
+])}
+${sheet('Station Earning',[
+  ['Type','Col1','Col2','Col3'],
+  ...['UTS','PRS','Total'].map((r,i)=>[r,...d.stationEarning[i]]),
+])}
+</body></html>`;
+    const blob = new Blob(['﻿', html], { type: 'application/vnd.ms-excel' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `handout_${d.stationCode||'station'}.xls`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ── Data Sources helpers ───────────────────────────────────────────────────
+  const [showDataSources,    setShowDataSources]    = useState(false);
+  const [showExportMenu,     setShowExportMenu]      = useState(false);
+  const [dsPreview, setDsPreview] = useState<{id: string; text: string; error?: boolean} | null>(null);
+  const [newSrc, setNewSrc] = useState<{type: DataSource['type']; url: string; label: string}>(
+    { type: 'sheets', url: '', label: '' }
+  );
+
+  /** Convert any Google Sheets share/edit URL to a published CSV export URL */
+  function toCSVUrl(url: string): string | null {
+    const m = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (!m) return null;
+    const gid = url.match(/[?&]gid=(\d+)/)?.[1] ?? '0';
+    return `https://docs.google.com/spreadsheets/d/${m[1]}/pub?gid=${gid}&single=true&output=csv`;
+  }
+
+  const addDataSource = () => {
+    if (!newSrc.url) return;
+    const src: DataSource = { id: Date.now().toString(), ...newSrc,
+      label: newSrc.label || (newSrc.type === 'sheets' ? 'Google Sheet'
+            : newSrc.type === 'docs' ? 'Google Doc'
+            : newSrc.type === 'pdf'  ? 'PDF' : 'Source') };
+    const updated = { ...d, dataSources: [...d.dataSources, src] };
+    setD(updated);
+    onUpdate({ ...widget, handoutData: updated } as any);
+    setNewSrc({ type: 'sheets', url: '', label: '' });
+  };
+  const removeDataSource = (id: string) => {
+    const updated = { ...d, dataSources: d.dataSources.filter(s => s.id !== id) };
+    setD(updated);
+    onUpdate({ ...widget, handoutData: updated } as any);
+  };
+  const fetchDataSource = async (src: DataSource) => {
+    if (src.type === 'sheets') {
+      const csvUrl = toCSVUrl(src.url);
+      if (!csvUrl) {
+        setDsPreview({ id: src.id, text: '⚠ Could not parse Sheet URL.', error: true });
+        return;
+      }
+      try {
+        const r = await fetch(csvUrl);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const txt = await r.text();
+        setDsPreview({ id: src.id, text: txt.slice(0, 800) + (txt.length > 800 ? '\n…' : '') });
+      } catch {
+        setDsPreview({ id: src.id, text: '⚠ Could not fetch. Make sure the sheet is published:\nFile → Share → Publish to web → CSV.', error: true });
+      }
+    } else {
+      window.open(src.url, '_blank');
+    }
+  };
+  const SRC_ICONS: Record<DataSource['type'], string> = {
+    sheets: '📊', docs: '📄', pdf: '📕', other: '🔗',
   };
 
   const updFF  = (r: number, c: number, v: string) => setD(p => { const a = p.ff.map(x=>[...x]); a[r][c]=v; return {...p, ff: a}; });
@@ -1981,11 +2173,19 @@ ${html}
         <div className="ml-auto flex gap-2">
           <button onClick={handlePrint}
             className="flex items-center gap-1 px-3 py-1.5 text-xs text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50">
-            <Printer size={11}/> Print / PDF
+            <Printer size={11}/> PDF
+          </button>
+          <button onClick={handleExportWord}
+            className="flex items-center gap-1 px-3 py-1.5 text-xs text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50">
+            <Download size={11}/> Word
+          </button>
+          <button onClick={handleExportExcel}
+            className="flex items-center gap-1 px-3 py-1.5 text-xs text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50">
+            <Download size={11}/> Excel
           </button>
           <button onClick={handleExportCSV}
             className="flex items-center gap-1 px-3 py-1.5 text-xs text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50">
-            <Download size={11}/> CSV / Excel
+            <Download size={11}/> CSV
           </button>
         </div>
       </div>
@@ -2082,14 +2282,39 @@ ${html}
               CMI ✓
             </button>
           )}
-          <button onClick={handlePrint} title="Print / Save as PDF"
-            className="p-1.5 rounded-lg bg-amber-700/50 hover:bg-amber-700 text-amber-100 hover:text-white transition-colors">
-            <Printer size={12}/>
+          {/* Data Sources button */}
+          <button onClick={()=>setShowDataSources(true)} title="Linked Data Sources"
+            className="p-1.5 rounded-lg bg-amber-700/50 hover:bg-amber-700 text-amber-100 hover:text-white transition-colors text-[11px]">
+            🔗
           </button>
-          <button onClick={handleExportCSV} title="Export as CSV"
-            className="p-1.5 rounded-lg bg-amber-700/50 hover:bg-amber-700 text-amber-100 hover:text-white transition-colors">
-            <Download size={12}/>
-          </button>
+          {/* Export dropdown */}
+          <div className="relative">
+            <button onClick={()=>setShowExportMenu(v=>!v)} title="Export Handout"
+              className="p-1.5 rounded-lg bg-amber-700/50 hover:bg-amber-700 text-amber-100 hover:text-white transition-colors">
+              <Download size={12}/>
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 top-8 z-50 bg-white border border-slate-200 rounded-xl shadow-xl py-1 w-40"
+                onMouseLeave={()=>setShowExportMenu(false)}>
+                <button onClick={()=>{handlePrint();setShowExportMenu(false);}}
+                  className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+                  🖨️ Print / PDF
+                </button>
+                <button onClick={()=>{handleExportWord();setShowExportMenu(false);}}
+                  className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+                  📝 Word (.doc)
+                </button>
+                <button onClick={()=>{handleExportExcel();setShowExportMenu(false);}}
+                  className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+                  📊 Excel (.xls)
+                </button>
+                <button onClick={()=>{handleExportCSV();setShowExportMenu(false);}}
+                  className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+                  📋 CSV
+                </button>
+              </div>
+            )}
+          </div>
           {/* Admin: configure cell assignments */}
           {(currentUser?.role === 'maintenance' || currentUser?.role === 'admin') && (
             <button onClick={()=>setShowCellConfig(true)} title="Configure Cell Assignments"
@@ -2105,6 +2330,19 @@ ${html}
           )}
         </div>
       </div>
+
+      {/* Linked data source chips */}
+      {d.dataSources.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 px-1">
+          {d.dataSources.map(src => (
+            <button key={src.id}
+              onClick={()=>window.open(src.url,'_blank')}
+              className="flex items-center gap-1 px-2 py-0.5 bg-slate-100 hover:bg-amber-50 border border-slate-200 hover:border-amber-300 rounded-full text-[10px] text-slate-600 hover:text-amber-700 transition-colors">
+              {SRC_ICONS[src.type]} {src.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Footfall */}
       {d.ff.some(row=>row.some(v=>v)) && (
@@ -2358,13 +2596,20 @@ ${html}
               </div>
             ))}
             <datalist id="handout-cells-datalist">
-              {/* Active cells from Cell Management */}
+              {/* ── Active cells from Cell Management ── */}
               {availableCells.map(c => <option key={`cell-${c.name}`} value={c.name}/>)}
-              {/* Sectional CMIs from Staff Master */}
-              {sectionalCMIs.map(s => <option key={`cmi-${s.name}`} value={s.name}/>)}
-              {/* Preserve any already-assigned values not in the above lists */}
+              {/* ── Sectional CMIs (station-based) ── */}
+              {SECTIONAL_CMI_OPTIONS.map(c => <option key={`scmi-${c}`} value={c}/>)}
+              {/* ── Divisional CMIs (function-based) ── */}
+              {DIVISIONAL_CMI_OPTIONS.map(c => <option key={`dcmi-${c}`} value={c}/>)}
+              {/* ── CMIs from Staff Master (registered incharges) ── */}
+              {sectionalCMIs.map(s => <option key={`staffcmi-${s.name}`} value={s.name}/>)}
+              {/* ── Preserve any already-assigned values not in the above lists ── */}
               {Object.values(cellConfig).filter(v =>
-                !availableCells.some(c => c.name === v) && !sectionalCMIs.some(s => s.name === v)
+                !availableCells.some(c => c.name === v) &&
+                !(SECTIONAL_CMI_OPTIONS as readonly string[]).includes(v) &&
+                !(DIVISIONAL_CMI_OPTIONS as readonly string[]).includes(v) &&
+                !sectionalCMIs.some(s => s.name === v)
               ).map(v => <option key={`existing-${v}`} value={v}/>)}
             </datalist>
           </div>
@@ -2372,6 +2617,103 @@ ${html}
             <button onClick={()=>saveCellConfig({})}
               className="text-xs text-red-400 hover:text-red-600">Clear All</button>
             <button onClick={()=>setShowCellConfig(false)}
+              className="px-4 py-1.5 text-xs bg-amber-600 text-white rounded-lg hover:bg-amber-700">Done</button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* ── Data Sources Modal ──────────────────────────────────────────────── */}
+    {showDataSources && (
+      <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+        onClick={()=>{setShowDataSources(false);setDsPreview(null);}}>
+        <div className="bg-white rounded-2xl shadow-2xl w-[min(92vw,560px)] max-h-[88vh] flex flex-col"
+          onClick={e=>e.stopPropagation()}>
+
+          {/* Header */}
+          <div className="px-5 pt-5 pb-3 border-b border-slate-100">
+            <p className="font-bold text-slate-700 text-sm">📎 Linked Data Sources</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Attach Google Sheets, Docs, PDFs, or any URL as reference sources for this handout.
+            </p>
+          </div>
+
+          <div className="overflow-y-auto flex-1 px-5 py-4 space-y-3">
+
+            {/* Existing sources */}
+            {d.dataSources.length === 0 ? (
+              <p className="text-xs text-slate-400 italic text-center py-4">No sources linked yet.</p>
+            ) : d.dataSources.map(src => (
+              <div key={src.id} className="border border-slate-200 rounded-xl p-3 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-base">{SRC_ICONS[src.type]}</span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-slate-700 truncate">{src.label}</p>
+                      <p className="text-[10px] text-slate-400 truncate">{src.url}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={()=>window.open(src.url,'_blank')}
+                      className="px-2 py-1 text-[10px] bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600">
+                      Open ↗
+                    </button>
+                    {src.type === 'sheets' && (
+                      <button onClick={()=>fetchDataSource(src)}
+                        className="px-2 py-1 text-[10px] bg-amber-50 hover:bg-amber-100 rounded-lg text-amber-700">
+                        Preview
+                      </button>
+                    )}
+                    <button onClick={()=>removeDataSource(src.id)}
+                      className="px-2 py-1 text-[10px] bg-red-50 hover:bg-red-100 rounded-lg text-red-500">
+                      ✕
+                    </button>
+                  </div>
+                </div>
+                {/* CSV preview */}
+                {dsPreview?.id === src.id && (
+                  <div className={`rounded-lg p-2 text-[10px] font-mono whitespace-pre-wrap max-h-32 overflow-y-auto ${dsPreview.error ? 'bg-red-50 text-red-600' : 'bg-slate-50 text-slate-600'}`}>
+                    {dsPreview.text}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {/* Add new source */}
+            <div className="border border-dashed border-slate-300 rounded-xl p-3 space-y-2 bg-slate-50">
+              <p className="text-[11px] font-semibold text-slate-500">+ Add New Source</p>
+              <div className="flex gap-2">
+                <select value={newSrc.type}
+                  onChange={e=>setNewSrc(p=>({...p, type: e.target.value as DataSource['type']}))}
+                  className="border border-slate-200 rounded-lg px-2 py-1.5 text-[11px] focus:outline-none focus:border-amber-400 bg-white">
+                  <option value="sheets">Google Sheet</option>
+                  <option value="docs">Google Doc</option>
+                  <option value="pdf">PDF</option>
+                  <option value="other">Other Link</option>
+                </select>
+                <input value={newSrc.label} placeholder="Label (optional)"
+                  onChange={e=>setNewSrc(p=>({...p, label: e.target.value}))}
+                  className="border border-slate-200 rounded-lg px-2 py-1.5 text-[11px] focus:outline-none focus:border-amber-400 flex-1 bg-white"/>
+              </div>
+              <div className="flex gap-2">
+                <input value={newSrc.url} placeholder="Paste URL here…"
+                  onChange={e=>setNewSrc(p=>({...p, url: e.target.value}))}
+                  className="border border-slate-200 rounded-lg px-2 py-1.5 text-[11px] focus:outline-none focus:border-amber-400 flex-1 bg-white"/>
+                <button onClick={addDataSource} disabled={!newSrc.url}
+                  className="px-3 py-1.5 text-[11px] bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-40">
+                  Add
+                </button>
+              </div>
+              {newSrc.type === 'sheets' && (
+                <p className="text-[10px] text-slate-400">
+                  💡 For live preview, publish the sheet first: File → Share → Publish to web → CSV.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="px-5 py-3 border-t border-slate-100 flex justify-end">
+            <button onClick={()=>{setShowDataSources(false);setDsPreview(null);}}
               className="px-4 py-1.5 text-xs bg-amber-600 text-white rounded-lg hover:bg-amber-700">Done</button>
           </div>
         </div>
