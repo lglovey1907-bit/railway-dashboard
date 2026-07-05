@@ -946,15 +946,19 @@ function ToggleWidget({ widget, onUpdate, canManage }: {
 type SectionMeta = { updatedBy: string; updatedAt: string; checkedBy: string; checkedAt: string };
 const mkMeta = (): SectionMeta => ({ updatedBy: '', updatedAt: '', checkedBy: '', checkedAt: '' });
 
-type CounterSide = { label: string; M: string; E: string; N: string };
+type CounterSide = { label: string; M: string; E: string; N: string; count?: string };
 type CounterHead = {
   name: string; total: string;
   M: string; E: string; N: string;
   mpSanctioned: string; mpOnRoll: string; mpActual: string;
-  /** Optional per-side (e.g. AG Side / PG Side) shift breakdown. When present
-   *  and non-empty, the shift distribution is shown as side columns instead of
-   *  the single M/E/N. Purely optional — most counters won't use it. */
+  /** Optional per-side (e.g. AG Side / PG Side) breakdown. When present and
+   *  non-empty, the distribution is shown as side columns instead of the single
+   *  M/E/N. Purely optional — most counters won't use it. */
   sides?: CounterSide[];
+  /** How side columns display: 'shifts' shows M/E/N rows; 'count' shows a
+   *  single per-side count row (e.g. AG ATVM / PG ATVM with no shift split).
+   *  Defaults to 'shifts' when omitted. */
+  sideMode?: 'shifts' | 'count';
   extraFields: { key: string; value: string }[];
   meta: SectionMeta;
 };
@@ -1290,9 +1294,11 @@ function _parseCounterHeads(sec7: string, sec8: string): CounterHead[] {
         const ch = ensure(name);
         ch.total = String((+ch.total || 0) + +(cm[2] || 0));
         addShift(ch, cm);
-        if (cm[3] !== undefined) {
-          (ch.sides ??= []).push({ label, M: cm[3] || '', E: cm[4] || '', N: cm[5] || '' });
-        }
+        // Record a side entry for EVERY occurrence (count always; M/E/N when present).
+        (ch.sides ??= []).push({
+          label, count: cm[2] || '',
+          M: cm[3] || '', E: cm[4] || '', N: cm[5] || '',
+        });
       }
     }
   } else {
@@ -1317,7 +1323,20 @@ function _parseCounterHeads(sec7: string, sec8: string): CounterHead[] {
   }
   return order.map(n => {
     const ch = chMap[n];
-    if (ch.sides && ch.sides.length === 0) ch.sides = undefined;
+    if (ch.sides && ch.sides.length) {
+      const hasShift = ch.sides.some(s => s.M !== '' || s.E !== '' || s.N !== '');
+      if (hasShift) {
+        ch.sideMode = 'shifts';
+      } else if (ch.sides.length >= 2) {
+        // e.g. ATVM: AG- 3 / PG- 22 with no shift split → show a count row.
+        ch.sideMode = 'count';
+      } else {
+        // single side, no shift (e.g. JTBS) → not worth a split.
+        ch.sides = undefined;
+      }
+    } else {
+      ch.sides = undefined;
+    }
     return ch;
   });
 }
@@ -1638,8 +1657,9 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
         ? s.counterHeads.map((ch: any) => ({ ...mkCH(ch.name), ...ch,
             extraFields: Array.isArray(ch.extraFields) ? ch.extraFields : [],
             sides: Array.isArray(ch.sides) && ch.sides.length
-              ? ch.sides.map((sd: any) => ({ label: sd?.label ?? '', M: sd?.M ?? '', E: sd?.E ?? '', N: sd?.N ?? '' }))
+              ? ch.sides.map((sd: any) => ({ label: sd?.label ?? '', M: sd?.M ?? '', E: sd?.E ?? '', N: sd?.N ?? '', count: sd?.count ?? '' }))
               : undefined,
+            sideMode: ch.sideMode === 'count' ? 'count' : (Array.isArray(ch.sides) && ch.sides.length ? 'shifts' : undefined),
             meta: ch.meta ?? mkMeta(),
           }))
         : base.counterHeads,
@@ -1948,28 +1968,137 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
   const handlePrint = () => {
     const win = window.open('', '_blank', 'width=900,height=700');
     if (!win) return;
-    const html = document.getElementById('handout-print-root')?.innerHTML ?? '';
-    win.document.write(`<!DOCTYPE html><html><head><title>Handout - ${d.stationName || d.stationCode}</title>
+    const esc = (s: unknown) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const has2d = (m: string[][]) => m.some(r => r.some(v => v));
+
+    // ── Footfall / Trains matrix table ──
+    const matrixTable = (title: string, cols: string[], rows: string[], data: string[][]) => {
+      if (!has2d(data)) return '';
+      const head = `<tr><th></th>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr>`;
+      const body = rows.map((r,i)=>`<tr${i===rows.length-1?' class="tot"':''}><td class="rl">${esc(r)}</td>${data[i].map(c=>`<td>${esc(c)||'—'}</td>`).join('')}</tr>`).join('');
+      return `<div class="section"><h2>${esc(title)}</h2><table>${head}${body}</table></div>`;
+    };
+
+    // ── Infrastructure ──
+    let infra = '';
+    if (d.platforms || d.fob || d.waitingRooms) {
+      let pf = '';
+      const grid = d.platforms ? parsePlatformGrid(d.platforms) : null;
+      if (grid) {
+        pf = `<table class="plat">${grid.map((row,ri)=>`<tr${ri===0?' class="pfhdr"':''}><td class="rl">${esc(row.label)}</td>${row.cells.map(c=>`<td>${esc(c)||'—'}</td>`).join('')}</tr>`).join('')}</table>`;
+      } else if (d.platforms) {
+        pf = `<div class="kv"><b>Platforms:</b> ${esc(d.platforms)}</div>`;
+      }
+      const fobWr = [['FOB',d.fob],['Waiting Rooms',d.waitingRooms]].filter(([,v])=>v)
+        .map(([l,v])=>`<div class="kv"><b>${esc(l)}:</b> ${esc(v).replace(/\n/g,'<br>')}</div>`).join('');
+      infra = `<div class="section"><h2>Infrastructure</h2>${pf}${fobWr}</div>`;
+    }
+
+    // ── Counters ──
+    let counters = '';
+    const chVis = d.counterHeads.filter(ch=>ch.name||ch.total||ch.M||ch.E||ch.N||(ch.sides&&ch.sides.length));
+    if (chVis.length) {
+      const cells = chVis.map(ch=>{
+        let shift = '';
+        if (ch.sides && ch.sides.length) {
+          const hdr = `<tr>${ch.sideMode==='count'?'':'<td class="sc"></td>'}${ch.sides.map(sd=>`<td class="sh">${esc(sd.label)}</td>`).join('')}</tr>`;
+          let rows = '';
+          if (ch.sideMode==='count') {
+            rows = `<tr>${ch.sides.map(sd=>`<td>${esc(sd.count)||'—'}</td>`).join('')}</tr>`;
+          } else {
+            rows = (['M','E','N'] as const).map(s=>`<tr><td class="sc">${s}</td>${ch.sides!.map(sd=>`<td>${esc(sd[s])||'—'}</td>`).join('')}</tr>`).join('');
+          }
+          shift = `<table class="sd">${hdr}${rows}</table>`;
+        } else {
+          shift = (['M','E','N'] as const).filter(s=>ch[s]).map(s=>`<div class="mn">${s} - ${esc(ch[s])}</div>`).join('');
+        }
+        const mp = (ch.mpSanctioned||ch.mpOnRoll||ch.mpActual)
+          ? `<div class="mp"><b>Manpower</b>${ch.mpSanctioned?`<div>S: ${esc(ch.mpSanctioned)}</div>`:''}${ch.mpOnRoll?`<div>OR: ${esc(ch.mpOnRoll)}</div>`:''}${ch.mpActual?`<div>AW: ${esc(ch.mpActual)}</div>`:''}</div>` : '';
+        const ef = (ch.extraFields||[]).filter(e=>e.key||e.value).map(e=>`<div class="mn">${e.key?`${esc(e.key)}: `:''}${esc(e.value)}</div>`).join('');
+        return `<div class="ch"><div class="ch-name">${esc(ch.name)}${ch.total?` - ${esc(ch.total)}`:''}</div>${shift}${mp}${ef}</div>`;
+      }).join('');
+      counters = `<div class="section"><h2>Counters (M-Morning · E-Evening · N-Night)</h2><div class="counters">${cells}</div></div>`;
+    }
+
+    // ── Commercial earnings (bulleted status) ──
+    let commercial = '';
+    const ciVis = d.commercial.filter(ci=>ci.name||ci.earning||ci.status);
+    if (ciVis.length) {
+      const rows = ciVis.map(ci=>{
+        const pts = (ci.status||'').split('\n').map(s=>s.trim()).filter(Boolean);
+        const status = pts.length>1
+          ? `<ul>${pts.map(p=>`<li>${esc(p.replace(/^\d{1,2}[.)]\s*/,''))}</li>`).join('')}</ul>`
+          : esc(ci.status||'—');
+        return `<tr><td class="rl">${esc(ci.name)}</td><td class="ern">${ci.earning?`₹ ${esc(ci.earning.replace(/^₹\s*/,''))}`:'—'}</td><td>${status}</td></tr>`;
+      }).join('');
+      commercial = `<div class="section"><h2>Commercial Earnings (₹ lakhs PA)</h2><table class="comm"><tr><th>Item</th><th>Earning</th><th>Status</th></tr>${rows}</table></div>`;
+    }
+
+    // ── PRIMES / Station Earning ──
+    const primesTable = (title: string, data: string[][]) => {
+      if (!has2d(data)) return '';
+      const cols = ['Tickets/day','Passengers/day','Earning/day'];
+      const head = `<tr><th></th>${cols.map(c=>`<th>${c}</th>`).join('')}</tr>`;
+      const rl = ['UTS','PRS','Total'];
+      const body = rl.map((r,i)=>`<tr${i===2?' class="tot"':''}><td class="rl">${r}</td>${data[i].map(c=>`<td>${esc(c)||'—'}</td>`).join('')}</tr>`).join('');
+      return `<div class="section"><h2>${esc(title)}</h2><table>${head}${body}</table></div>`;
+    };
+
+    const bif = d.earningBifurcation
+      ? `<div class="section"><h2>Earning Bifurcation</h2><div class="kv mono">${esc(d.earningBifurcation).replace(/\n/g,'<br>')}</div></div>` : '';
+    const sanit = d.sanitation
+      ? `<div class="section"><h2>Sanitation</h2><div class="kv">${esc(d.sanitation).replace(/\n/g,'<br>')}</div></div>` : '';
+
+    const body = [
+      matrixTable('Footfall / Day', FF_COLS, FF_ROWS, d.ff),
+      matrixTable('Trains / Day', TR_COLS, TR_ROWS, d.trains),
+      infra,
+      counters,
+      sanit,
+      commercial,
+      primesTable('PRIMES Data', d.primes),
+      primesTable('Counter / Station Earning', d.stationEarning),
+      bif,
+    ].join('');
+
+    win.document.write(`<!DOCTYPE html><html><head><title>Handout - ${esc(d.stationName || d.stationCode)}</title>
 <style>
-  body{font-family:Arial,sans-serif;font-size:11px;padding:20px;color:#1e293b;}
-  h1{font-size:16px;margin:0 0 4px;}
-  h2{font-size:12px;font-weight:bold;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;}
-  table{border-collapse:collapse;width:100%;margin-bottom:8px;}
-  th{background:#d97706;color:#fff;padding:4px 6px;border:1px solid #b45309;font-size:10px;}
-  td{padding:4px 6px;border:1px solid #d1d5db;font-size:10px;}
-  .header{background:#d97706;color:#fff;padding:10px 14px;border-radius:8px;margin-bottom:12px;}
-  .header h1{color:#fff;} .header p{color:#fde68a;margin:2px 0;font-size:10px;}
-  .section{margin-bottom:10px;}
-  .counters{display:flex;border:1px solid #d1d5db;border-radius:6px;overflow:hidden;margin-bottom:10px;}
-  .ch{flex:1;padding:6px 8px;border-right:1px solid #d1d5db;}
-  .ch:last-child{border-right:none;}
-  .ch-name{font-weight:bold;color:#b45309;font-size:10px;}
-  @media print{body{padding:10px;}button{display:none;}}
+  @page{size:A4;margin:8mm;}
+  *{box-sizing:border-box;}
+  body{font-family:Arial,Helvetica,sans-serif;font-size:10px;color:#1e293b;margin:0;padding:0;}
+  h1{font-size:15px;margin:0 0 3px;}
+  h2{font-size:11px;font-weight:bold;margin:8px 0 3px;text-transform:uppercase;letter-spacing:.04em;color:#b45309;border-bottom:1px solid #fcd34d;padding-bottom:1px;}
+  table{border-collapse:collapse;width:100%;margin:0 0 6px;}
+  th{background:#d97706;color:#fff;padding:3px 5px;border:1px solid #b45309;font-size:9px;text-align:center;}
+  td{padding:3px 5px;border:1px solid #fcd34d;font-size:9px;text-align:center;}
+  td.rl{text-align:left;font-weight:600;background:#fffbeb;white-space:nowrap;}
+  tr.tot td{background:#fef3c7;font-weight:bold;}
+  table.plat td, table.comm td{font-size:9px;}
+  table.plat tr.pfhdr td{background:#fef3c7;font-weight:bold;}
+  table.comm th:last-child, table.comm td:last-child{text-align:left;}
+  table.comm td:nth-child(2){white-space:nowrap;}
+  table.comm ul{margin:0;padding-left:14px;} table.comm li{margin:1px 0;}
+  .header{background:#d97706;color:#fff;padding:8px 12px;border-radius:6px;margin-bottom:8px;}
+  .header h1{color:#fff;} .header p{color:#fde68a;margin:2px 0;font-size:9px;}
+  .section{margin-bottom:6px;page-break-inside:avoid;}
+  .kv{background:#fffbeb;border:1px solid #fcd34d;border-radius:4px;padding:4px 6px;margin-bottom:4px;}
+  .kv b{color:#b45309;}
+  .mono{font-family:'Courier New',monospace;}
+  .counters{display:flex;flex-wrap:wrap;border:1px solid #fcd34d;border-radius:4px;overflow:hidden;}
+  .ch{flex:1;min-width:110px;padding:4px 6px;border-right:1px solid #fcd34d;border-bottom:1px solid #fcd34d;}
+  .ch-name{font-weight:bold;color:#b45309;font-size:10px;text-align:center;background:#fef3c7;border-radius:3px;padding:1px 2px;margin-bottom:2px;}
+  table.sd{width:100%;margin:0;} table.sd td{padding:1px 3px;font-size:8px;}
+  table.sd td.sh{background:#fef3c7;color:#b45309;font-weight:bold;}
+  table.sd td.sc{color:#94a3b8;border:none;}
+  .mn{font-size:9px;color:#475569;}
+  .mp{margin-top:3px;padding-top:2px;border-top:1px solid #fde68a;font-size:8px;color:#64748b;}
+  .mp b{display:block;color:#94a3b8;text-transform:uppercase;font-size:7px;}
+  @media print{button{display:none;}}
 </style></head><body>
-<div class="header"><h1>${d.stationName}${d.stationCode?` (${d.stationCode})`:''}</h1>
-<p>${[d.category,d.state,d.section].filter(Boolean).join(' · ')}</p>
-<p>${d.division}${d.date?` · As on ${d.date}`:''}</p></div>
-${html}
+<div class="header"><h1>${esc(d.stationName)}${d.stationCode?` (${esc(d.stationCode)})`:''}</h1>
+<p>${[d.category,d.state,d.section].filter(Boolean).map(esc).join(' · ')}</p>
+<p>${esc(d.division)}${d.date?` · As on ${esc(d.date)}`:''}</p></div>
+${body}
 <script>window.onload=()=>{window.print();window.close();}</script>
 </body></html>`);
     win.document.close();
@@ -2272,7 +2401,7 @@ ${sheet('Station Earning',[
             const existing = byName.get(key);
             // For a matched counter, let freshly-parsed side data win (clears
             // any stale empty AG/PG columns the user added before fetching).
-            byName.set(key, existing ? { ...existing, ...ch, extraFields: existing.extraFields, sides: ch.sides } : ch);
+            byName.set(key, existing ? { ...existing, ...ch, extraFields: existing.extraFields, sides: ch.sides, sideMode: ch.sideMode } : ch);
           }
           // Keep any blank user rows too (rows with no name), appended at the end.
           const named = [...byName.values()];
@@ -2317,14 +2446,16 @@ ${sheet('Station Earning',[
       const a = [...p.counterHeads];
       const sides = [...(a[i].sides ?? [])];
       const defaults = ['AG Side', 'PG Side', 'Side 3', 'Side 4'];
-      sides.push({ label: defaults[sides.length] ?? `Side ${sides.length + 1}`, M: '', E: '', N: '' });
-      a[i] = { ...a[i], sides };
+      sides.push({ label: defaults[sides.length] ?? `Side ${sides.length + 1}`, M: '', E: '', N: '', count: '' });
+      a[i] = { ...a[i], sides, sideMode: a[i].sideMode ?? 'shifts' };
       return { ...p, counterHeads: a };
     });
   const updCHSide = (i: number, si: number, patch: Partial<CounterSide>) =>
     setD(p => { const a=[...p.counterHeads]; const s=[...(a[i].sides??[])]; s[si]={...s[si],...patch}; a[i]={...a[i],sides:s}; return {...p, counterHeads: a}; });
   const rmCHSide = (i: number, si: number) =>
-    setD(p => { const a=[...p.counterHeads]; const s=(a[i].sides??[]).filter((_,j)=>j!==si); a[i]={...a[i],sides:s.length?s:undefined}; return {...p, counterHeads: a}; });
+    setD(p => { const a=[...p.counterHeads]; const s=(a[i].sides??[]).filter((_,j)=>j!==si); a[i]={...a[i],sides:s.length?s:undefined, sideMode:s.length?a[i].sideMode:undefined}; return {...p, counterHeads: a}; });
+  const setCHSideMode = (i: number, mode: 'shifts'|'count') =>
+    setD(p => { const a=[...p.counterHeads]; a[i]={...a[i], sideMode: mode}; return {...p, counterHeads: a}; });
 
   const updCI  = (i: number, patch: Partial<CommercialItem>) =>
     setD(p => { const a=[...p.commercial]; a[i]={...a[i],...patch}; return {...p, commercial: a}; });
@@ -2592,10 +2723,21 @@ ${sheet('Station Earning',[
                 </div>
               ) : (
                 <div className="space-y-1">
+                  {/* Mode toggle: M/E/N rows vs a single count row */}
+                  <div className="flex gap-1 text-[8px]">
+                    <button onClick={()=>setCHSideMode(i,'shifts')}
+                      className={`flex-1 rounded py-0.5 border ${(ch.sideMode??'shifts')==='shifts' ? 'bg-amber-600 text-white border-amber-600' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                      M/E/N rows
+                    </button>
+                    <button onClick={()=>setCHSideMode(i,'count')}
+                      className={`flex-1 rounded py-0.5 border ${ch.sideMode==='count' ? 'bg-amber-600 text-white border-amber-600' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                      Count only
+                    </button>
+                  </div>
                   <div className="flex items-start gap-1">
-                    {/* Row-label column: M / E / N */}
+                    {/* Row-label column */}
                     <div className="flex flex-col gap-0.5 pt-3.5 shrink-0">
-                      {(['M','E','N'] as const).map(s=>(
+                      {(ch.sideMode==='count' ? ['No.'] : ['M','E','N']).map(s=>(
                         <span key={s} className="text-[9px] text-slate-400 h-[18px] flex items-center">{s}</span>
                       ))}
                     </div>
@@ -2608,9 +2750,13 @@ ${sheet('Station Earning',[
                             className="w-full text-[8px] font-semibold bg-amber-100 border border-amber-200 rounded px-1 py-0.5 focus:outline-none focus:border-amber-400"/>
                           <button onClick={()=>rmCHSide(i,si)} className="text-slate-300 hover:text-red-400 shrink-0"><X size={8}/></button>
                         </div>
-                        {(['M','E','N'] as const).map(s=>(
-                          <CI key={s} val={sd[s]} onChange={v=>updCHSide(i,si,{[s]:v} as Partial<CounterSide>)} ph="0"/>
-                        ))}
+                        {ch.sideMode==='count' ? (
+                          <CI val={sd.count ?? ''} onChange={v=>updCHSide(i,si,{count:v})} ph="0"/>
+                        ) : (
+                          (['M','E','N'] as const).map(s=>(
+                            <CI key={s} val={sd[s]} onChange={v=>updCHSide(i,si,{[s]:v} as Partial<CounterSide>)} ph="0"/>
+                          ))
+                        )}
                       </div>
                     ))}
                   </div>
@@ -3093,9 +3239,9 @@ ${sheet('Station Earning',[
             })()}
             {[['FOB', d.fob], ['Waiting Rooms', d.waitingRooms]]
               .filter(([,v])=>v).map(([l,v])=>(
-                <div key={l} className="bg-slate-50 rounded-lg px-2.5 py-1.5 text-[11px]">
-                  <span className="text-slate-400">{l}: </span>
-                  <span className="font-semibold text-slate-700 whitespace-pre-wrap">{v}</span>
+                <div key={l} className="bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 text-[11px]">
+                  <span className="text-amber-700 font-semibold">{l}: </span>
+                  <span className="font-medium text-slate-700 whitespace-pre-wrap">{v}</span>
                 </div>
               ))}
           </div>
@@ -3128,7 +3274,7 @@ ${sheet('Station Earning',[
             <div className="inline-flex border border-amber-200 rounded-lg overflow-hidden min-w-full">
               {visibleCH.map((ch, i) => (
                 <div key={i} className={`flex-1 ${ch.sides && ch.sides.length ? 'min-w-[130px]' : 'min-w-[90px]'} p-2 ${i < visibleCH.length-1 ? 'border-r border-amber-200' : ''}`}>
-                  <p className="text-[10px] font-bold text-amber-700 whitespace-nowrap leading-tight">
+                  <p className="text-[10px] font-bold text-amber-700 whitespace-nowrap leading-tight text-center bg-amber-100 rounded px-1 py-0.5 -mx-0.5">
                     {ch.name}{ch.total ? ` - ${ch.total}` : ''}
                   </p>
                   {(ch.sides && ch.sides.length > 0) ? (
@@ -3136,21 +3282,29 @@ ${sheet('Station Earning',[
                       <table className="text-[9px] w-full border-collapse">
                         <thead>
                           <tr>
-                            <th className="text-left font-normal text-slate-400 pr-1"></th>
+                            {ch.sideMode !== 'count' && <th className="text-left font-normal text-slate-400 pr-1"></th>}
                             {ch.sides.map((sd,si)=>(
-                              <th key={si} className="px-1 font-semibold text-amber-700 text-center border-l border-amber-100 whitespace-nowrap">{sd.label||`Side ${si+1}`}</th>
+                              <th key={si} className="px-1 py-0.5 font-semibold text-amber-700 text-center border border-amber-200 bg-amber-50 whitespace-nowrap">{sd.label||`Side ${si+1}`}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
-                          {(['M','E','N'] as const).map(s=>(
-                            <tr key={s}>
-                              <td className="text-slate-400 pr-1">{s}</td>
-                              {ch.sides!.map((sd,si)=>(
-                                <td key={si} className="px-1 text-center border-l border-amber-100 text-slate-700 font-medium">{sd[s]||'—'}</td>
+                          {ch.sideMode === 'count' ? (
+                            <tr>
+                              {ch.sides.map((sd,si)=>(
+                                <td key={si} className="px-1 py-0.5 text-center border border-amber-200 text-slate-700 font-semibold">{sd.count||'—'}</td>
                               ))}
                             </tr>
-                          ))}
+                          ) : (
+                            (['M','E','N'] as const).map(s=>(
+                              <tr key={s}>
+                                <td className="text-slate-400 pr-1 text-center">{s}</td>
+                                {ch.sides!.map((sd,si)=>(
+                                  <td key={si} className="px-1 py-0.5 text-center border border-amber-200 text-slate-700 font-medium">{sd[s]||'—'}</td>
+                                ))}
+                              </tr>
+                            ))
+                          )}
                         </tbody>
                       </table>
                     </div>
@@ -3214,7 +3368,7 @@ ${sheet('Station Earning',[
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Sanitation</p>
             <SecMeta meta={d.sanitationMeta} sec="sanitation"/>
           </div>
-          <div className="bg-slate-50 rounded-lg px-2.5 py-2 text-[11px] text-slate-700 whitespace-pre-wrap">{d.sanitation}</div>
+          <div className="bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2 text-[11px] text-slate-700 whitespace-pre-wrap">{d.sanitation}</div>
         </div>
       )}
 
@@ -3289,7 +3443,7 @@ ${sheet('Station Earning',[
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Parking</p>
             <SecMeta meta={d.parkingMeta} sec="parking"/>
           </div>
-          <div className="bg-slate-50 rounded-lg px-2.5 py-2 text-[11px] text-slate-700 whitespace-pre-wrap">{d.parking}</div>
+          <div className="bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2 text-[11px] text-slate-700 whitespace-pre-wrap">{d.parking}</div>
         </div>
       )}
 
@@ -3300,7 +3454,7 @@ ${sheet('Station Earning',[
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Catering</p>
             <SecMeta meta={d.cateringMeta} sec="catering"/>
           </div>
-          <div className="bg-slate-50 rounded-lg px-2.5 py-2 text-[11px] text-slate-700 whitespace-pre-wrap">{d.catering}</div>
+          <div className="bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2 text-[11px] text-slate-700 whitespace-pre-wrap">{d.catering}</div>
         </div>
       )}
 
@@ -3311,7 +3465,7 @@ ${sheet('Station Earning',[
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Earning Bifurcation</p>
             <SecMeta meta={d.earningMeta} sec="ebif"/>
           </div>
-          <div className="bg-slate-50 rounded-lg px-2.5 py-2 text-[11px] text-slate-700 font-mono whitespace-pre-wrap">{d.earningBifurcation}</div>
+          <div className="bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2 text-[11px] text-slate-700 font-mono whitespace-pre-wrap">{d.earningBifurcation}</div>
         </div>
       )}
     </div>
