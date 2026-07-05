@@ -941,34 +941,53 @@ function ToggleWidget({ widget, onUpdate, canManage }: {
 
 // ── Handout Widget ────────────────────────────────────────────────────────────
 // Railway Station Information Handout Card — MDNR format
+
+/** Per-section audit trail: who filled + who checked */
+type SectionMeta = { updatedBy: string; updatedAt: string; checkedBy: string; checkedAt: string };
+const mkMeta = (): SectionMeta => ({ updatedBy: '', updatedAt: '', checkedBy: '', checkedAt: '' });
+
 type CounterHead = {
   name: string; total: string;
   M: string; E: string; N: string;
   mpSanctioned: string; mpOnRoll: string; mpActual: string;
   extraFields: { key: string; value: string }[];
+  meta: SectionMeta;
 };
 type CommercialItem = { name: string; earning: string; status: string };
 type HD = {
   stationCode: string; stationName: string; category: string;
   state: string; section: string; cmi: string;
+  /** Auto-computed from the latest updatedAt across all sections */
   date: string; division: string;
   /** [3×4]  rows: UTS/PRS/Total  ×  cols: Outward/Inward/PF/Total */
   ff: string[][];
+  ffMeta: SectionMeta;
   platforms: string; fob: string; waitingRooms: string;
+  infraMeta: SectionMeta;
   /** [3×4]  rows: Mail_Exp/Passenger/Total  ×  cols: Orig/Term/Passing/Total */
   trains: string[][];
+  trainsMeta: SectionMeta;
   counterHeads: CounterHead[];
   sanitation: string;
+  sanitationMeta: SectionMeta;
   commercial: CommercialItem[];
+  commercialMeta: SectionMeta;
   /** [3×3]  rows: UTS/PRS/Total  ×  cols: Tickets/day, Pax/day, Earning/day */
   primes: string[][];
+  primesMeta: SectionMeta;
   /** same shape — Counter/Station Earning */
   stationEarning: string[][];
+  stationEarningMeta: SectionMeta;
   earningBifurcation: string;
+  earningMeta: SectionMeta;
+  /** CMI-level check */
+  cmiCheckedBy: string;
+  cmiCheckedAt: string;
 };
 const mkCH = (name = ''): CounterHead => ({
   name, total: '', M: '', E: '', N: '', mpSanctioned: '', mpOnRoll: '', mpActual: '',
   extraFields: [],
+  meta: mkMeta(),
 });
 const mkCI = (name = ''): CommercialItem => ({ name, earning: '', status: '' });
 const mkHD = (): HD => ({
@@ -976,14 +995,24 @@ const mkHD = (): HD => ({
   state: '', section: '', cmi: '',
   date: '', division: 'Delhi Division',
   ff: [['','','',''],['','','',''],['','','','']],
+  ffMeta: mkMeta(),
   platforms: '', fob: '', waitingRooms: '',
+  infraMeta: mkMeta(),
   trains: [['','','',''],['','','',''],['','','','']],
+  trainsMeta: mkMeta(),
   counterHeads: ['UTS','STBA','ATVM','PRS','Enquiry','Announcement'].map(mkCH),
   sanitation: '',
+  sanitationMeta: mkMeta(),
   commercial: ['Pay & Use Toilet','Parking','Catering','Publicity','ATM'].map(mkCI),
+  commercialMeta: mkMeta(),
   primes:         [['','',''],['','',''],['','','']],
+  primesMeta: mkMeta(),
   stationEarning: [['','',''],['','',''],['','','']],
+  stationEarningMeta: mkMeta(),
   earningBifurcation: '',
+  earningMeta: mkMeta(),
+  cmiCheckedBy: '',
+  cmiCheckedAt: '',
 });
 
 // ── helper: find matching column in a SheetRow by keyword ────────────────────
@@ -992,12 +1021,35 @@ function findCol(headers: string[], keyword: string): string {
   return headers.find(h => h.toLowerCase().includes(kw)) ?? '';
 }
 
+// ── date helpers ──────────────────────────────────────────────────────────────
+function todayDDMMYYYY(): string {
+  const n = new Date();
+  return `${String(n.getDate()).padStart(2,'0')}.${String(n.getMonth()+1).padStart(2,'0')}.${n.getFullYear()}`;
+}
+function computeAsOnDate(h: HD): string {
+  const parse = (s: string) => { const [d,m,y]=s.split('.'); return new Date(+y,+m-1,+d).getTime(); };
+  const all = [
+    h.ffMeta?.updatedAt, h.infraMeta?.updatedAt, h.trainsMeta?.updatedAt,
+    h.sanitationMeta?.updatedAt, h.commercialMeta?.updatedAt, h.primesMeta?.updatedAt,
+    h.stationEarningMeta?.updatedAt, h.earningMeta?.updatedAt,
+    ...(h.counterHeads?.map(ch=>ch.meta?.updatedAt)??[]),
+  ].filter(Boolean) as string[];
+  if (!all.length) return h.date ?? '';
+  return all.reduce((mx,c) => parse(c)>parse(mx)?c:mx);
+}
+function fmtMeta(meta?: SectionMeta): { upd: string|null; chk: string|null } {
+  return {
+    upd: meta?.updatedBy ? `${meta.updatedBy}${meta.updatedAt?` (${meta.updatedAt})`:'' }` : null,
+    chk: meta?.checkedBy ? `${meta.checkedBy}${meta.checkedAt?` (${meta.checkedAt})`:'' }` : null,
+  };
+}
+
 function HandoutWidget({ widget, onUpdate, canManage }: {
   widget: LayoutWidget; onUpdate: (p: Partial<LayoutWidget>) => void; canManage: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [d, setD] = useState<HD>(() => {
-    const s = (widget as any).handoutData;
+    const s = (widget as any).handoutData as Partial<HD> | undefined;
     if (!s) return mkHD();
     const base = mkHD();
     return {
@@ -1005,13 +1057,29 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
       ff:             (Array.isArray(s.ff) && s.ff.length === 3 && s.ff[0]?.length === 4) ? s.ff : base.ff,
       trains:         (Array.isArray(s.trains) && s.trains.length === 3) ? s.trains : base.trains,
       counterHeads:   Array.isArray(s.counterHeads)
-        ? s.counterHeads.map((ch: CounterHead) => ({ ...mkCH(ch.name), ...ch, extraFields: Array.isArray(ch.extraFields) ? ch.extraFields : [] }))
+        ? s.counterHeads.map((ch: any) => ({ ...mkCH(ch.name), ...ch,
+            extraFields: Array.isArray(ch.extraFields) ? ch.extraFields : [],
+            meta: ch.meta ?? mkMeta(),
+          }))
         : base.counterHeads,
       commercial:     Array.isArray(s.commercial)   ? s.commercial   : base.commercial,
       primes:         Array.isArray(s.primes)        ? s.primes        : base.primes,
       stationEarning: Array.isArray(s.stationEarning) ? s.stationEarning : base.stationEarning,
+      // Migrate old data: add meta fields if missing
+      ffMeta:             s.ffMeta             ?? mkMeta(),
+      infraMeta:          s.infraMeta          ?? mkMeta(),
+      trainsMeta:         s.trainsMeta         ?? mkMeta(),
+      sanitationMeta:     s.sanitationMeta     ?? mkMeta(),
+      commercialMeta:     s.commercialMeta     ?? mkMeta(),
+      primesMeta:         s.primesMeta         ?? mkMeta(),
+      stationEarningMeta: s.stationEarningMeta ?? mkMeta(),
+      earningMeta:        s.earningMeta        ?? mkMeta(),
+      cmiCheckedBy:       s.cmiCheckedBy       ?? '',
+      cmiCheckedAt:       s.cmiCheckedAt       ?? '',
     };
   });
+  // Check dialog: { sec: section-id, name: checker's name }
+  const [checkDialog, setCheckDialog] = useState<{ sec: string; name: string } | null>(null);
 
   // ── Overview rows for autocomplete (from cached sheet in localStorage) ─────
   const [ovRows,    setOvRows]    = useState<Record<string,string>[]>([]);
@@ -1033,7 +1101,16 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
   }, [editing]);
 
   const colCode = useMemo(() => findCol(ovHeaders, 'code'),     [ovHeaders]);
-  const colName = useMemo(() => findCol(ovHeaders, 'name'),     [ovHeaders]);
+  const colName = useMemo(() => {
+    // Try 'name' first (covers "Station Name", "Name")
+    const byName = findCol(ovHeaders, 'name');
+    if (byName) return byName;
+    // Fallback: column called "Station" (exact or containing) but NOT containing "code"
+    return ovHeaders.find(h => {
+      const hl = h.toLowerCase();
+      return hl.includes('station') && !hl.includes('code');
+    }) ?? '';
+  }, [ovHeaders]);
   const colCat  = useMemo(() => findCol(ovHeaders, 'categor'),  [ovHeaders]);
   const colState= useMemo(() => findCol(ovHeaders, 'state'),    [ovHeaders]);
   const colSec  = useMemo(() => findCol(ovHeaders, 'section'),  [ovHeaders]);
@@ -1061,20 +1138,87 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
     setSuggField(null);
   };
 
-  // ── Save — persist to widget + global localStorage/KV store ───────────────
-  const save = () => {
-    onUpdate({ handoutData: d } as any);
-    // Global store: keyed by station code so HandoutDirectoryTab can find it
-    if (d.stationCode) {
-      const key = `rly_handout_${d.stationCode.toUpperCase().trim()}`;
-      try { localStorage.setItem(key, JSON.stringify(d)); } catch { /* ignore */ }
+  // ── Save — stamp section dates, persist to widget + global store ──────────
+  const persistHD = (h: HD) => {
+    onUpdate({ handoutData: h } as any);
+    const code = h.stationCode?.toUpperCase().trim();
+    if (code) {
+      try { localStorage.setItem(`rly_handout_${code}`, JSON.stringify(h)); } catch { /* ignore */ }
       import('@/lib/config/sharedSync').then(({ sharedWrite }) => {
-        sharedWrite(`handout_${d.stationCode.toUpperCase().trim()}`, d);
+        sharedWrite(`handout_${code}`, h);
       }).catch(() => {});
     }
+  };
+
+  const save = () => {
+    const today = todayDDMMYYYY();
+    const prev = ((widget as any).handoutData ?? {}) as Partial<HD>;
+    // Stamp updatedAt today only when updatedBy name changed or date was missing
+    const stamp = (cur: SectionMeta, p?: SectionMeta): SectionMeta => {
+      if (!cur.updatedBy) return cur;
+      if (cur.updatedBy !== (p?.updatedBy ?? '') || !cur.updatedAt)
+        return { ...cur, updatedAt: today };
+      return cur;
+    };
+    const stamped: HD = {
+      ...d,
+      ffMeta:             stamp(d.ffMeta,             prev.ffMeta),
+      infraMeta:          stamp(d.infraMeta,           prev.infraMeta),
+      trainsMeta:         stamp(d.trainsMeta,          prev.trainsMeta),
+      sanitationMeta:     stamp(d.sanitationMeta,      prev.sanitationMeta),
+      commercialMeta:     stamp(d.commercialMeta,      prev.commercialMeta),
+      primesMeta:         stamp(d.primesMeta,          prev.primesMeta),
+      stationEarningMeta: stamp(d.stationEarningMeta,  prev.stationEarningMeta),
+      earningMeta:        stamp(d.earningMeta,         prev.earningMeta),
+      counterHeads: d.counterHeads.map((ch, i) => ({
+        ...ch,
+        meta: stamp(ch.meta, prev.counterHeads?.[i]?.meta),
+      })),
+    };
+    // Auto-compute "As on" date from the most recent updatedAt across all sections
+    const finalD: HD = { ...stamped, date: computeAsOnDate(stamped) };
+    setD(finalD);
+    persistHD(finalD);
     setEditing(false);
   };
-  const cancel = () => { setD((widget as any).handoutData ?? mkHD()); setEditing(false); };
+
+  // ── Save check (cell incharge / CMI, without opening edit mode) ───────────
+  const saveCheck = (sec: string, name: string) => {
+    if (!name.trim()) return;
+    const today = todayDDMMYYYY();
+    const n = name.trim();
+    let next: HD = { ...d };
+    if (sec === 'cmi') {
+      next = { ...d, cmiCheckedBy: n, cmiCheckedAt: today };
+    } else if (sec === 'ff') {
+      next = { ...d, ffMeta: { ...d.ffMeta, checkedBy: n, checkedAt: today } };
+    } else if (sec === 'infra') {
+      next = { ...d, infraMeta: { ...d.infraMeta, checkedBy: n, checkedAt: today } };
+    } else if (sec === 'trains') {
+      next = { ...d, trainsMeta: { ...d.trainsMeta, checkedBy: n, checkedAt: today } };
+    } else if (sec === 'sanitation') {
+      next = { ...d, sanitationMeta: { ...d.sanitationMeta, checkedBy: n, checkedAt: today } };
+    } else if (sec === 'commercial') {
+      next = { ...d, commercialMeta: { ...d.commercialMeta, checkedBy: n, checkedAt: today } };
+    } else if (sec === 'primes') {
+      next = { ...d, primesMeta: { ...d.primesMeta, checkedBy: n, checkedAt: today } };
+    } else if (sec === 'earning') {
+      next = { ...d, stationEarningMeta: { ...d.stationEarningMeta, checkedBy: n, checkedAt: today } };
+    } else if (sec === 'ebif') {
+      next = { ...d, earningMeta: { ...d.earningMeta, checkedBy: n, checkedAt: today } };
+    } else if (sec.startsWith('ch:')) {
+      const idx = parseInt(sec.slice(3));
+      const chs = d.counterHeads.map((ch, i) =>
+        i === idx ? { ...ch, meta: { ...ch.meta, checkedBy: n, checkedAt: today } } : ch
+      );
+      next = { ...d, counterHeads: chs };
+    }
+    setD(next);
+    persistHD(next);
+    setCheckDialog(null);
+  };
+
+  const cancel = () => { setD(((widget as any).handoutData as HD | undefined) ?? mkHD()); setEditing(false); };
   const upd    = (patch: Partial<HD>) => setD(p => ({ ...p, ...patch }));
 
   // ── Print / Export ────────────────────────────────────────────────────────
@@ -1274,11 +1418,12 @@ ${html}
               className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
           </label>
 
-          {/* Date — date picker */}
+          {/* Date — auto-computed, read-only */}
           <label className="flex flex-col gap-0.5">
-            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Date (As on)</span>
-            <input type="date" value={d.date} onChange={e=>upd({date:e.target.value})}
-              className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
+            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">As on Date</span>
+            <div className="bg-amber-50/60 border border-amber-200 rounded px-2 py-1 text-xs text-slate-500 italic">
+              {computeAsOnDate(d) || 'Auto-filled when sections are updated'}
+            </div>
           </label>
 
           {/* Division — pre-filled */}
@@ -1298,7 +1443,14 @@ ${html}
 
       {/* ② Footfall */}
       <div>
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Footfall / Day</p>
+        <div className="flex items-center justify-between mb-1.5">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Footfall / Day</p>
+          <label className="flex items-center gap-1 shrink-0">
+            <span className="text-[9px] text-slate-400">Updated by:</span>
+            <input value={d.ffMeta.updatedBy} onChange={e=>upd({ffMeta:{...d.ffMeta,updatedBy:e.target.value}})}
+              placeholder="Your name" className="bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 text-[9px] w-24 focus:outline-none focus:border-amber-400"/>
+          </label>
+        </div>
         <div className="overflow-x-auto">
           <table className="text-[10px] w-full border-collapse">
             <thead>
@@ -1321,7 +1473,14 @@ ${html}
 
       {/* ③ Infrastructure */}
       <div>
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Infrastructure</p>
+        <div className="flex items-center justify-between mb-1.5">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Infrastructure</p>
+          <label className="flex items-center gap-1 shrink-0">
+            <span className="text-[9px] text-slate-400">Updated by:</span>
+            <input value={d.infraMeta.updatedBy} onChange={e=>upd({infraMeta:{...d.infraMeta,updatedBy:e.target.value}})}
+              placeholder="Your name" className="bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 text-[9px] w-24 focus:outline-none focus:border-amber-400"/>
+          </label>
+        </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           {([
             ['Platforms (e.g. 2(P1-570m, P2-550m))', 'platforms',    d.platforms],
@@ -1339,7 +1498,14 @@ ${html}
 
       {/* ④ Trains */}
       <div>
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Trains / Day</p>
+        <div className="flex items-center justify-between mb-1.5">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Trains / Day</p>
+          <label className="flex items-center gap-1 shrink-0">
+            <span className="text-[9px] text-slate-400">Updated by:</span>
+            <input value={d.trainsMeta.updatedBy} onChange={e=>upd({trainsMeta:{...d.trainsMeta,updatedBy:e.target.value}})}
+              placeholder="Your name" className="bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 text-[9px] w-24 focus:outline-none focus:border-amber-400"/>
+          </label>
+        </div>
         <div className="overflow-x-auto">
           <table className="text-[10px] w-full border-collapse">
             <thead>
@@ -1431,6 +1597,19 @@ ${html}
                 className="w-full mt-1 text-[9px] text-amber-600 hover:text-amber-700 py-0.5 rounded border border-dashed border-amber-300 hover:border-amber-400">
                 + Add Field
               </button>
+              {/* Per-counter "Updated by" */}
+              <div className="border-t border-amber-200 pt-1 mt-1">
+                <label className="flex flex-col gap-0.5">
+                  <span className="text-[9px] text-slate-400 uppercase tracking-wide">Updated by</span>
+                  <input value={ch.meta?.updatedBy??''}
+                    onChange={e=>updCH(i,{meta:{...ch.meta,updatedBy:e.target.value}})}
+                    placeholder="Your name"
+                    className="w-full text-[9px] bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 focus:outline-none focus:border-amber-400"/>
+                </label>
+                {ch.meta?.updatedAt && (
+                  <p className="text-[8px] text-slate-400 mt-0.5">Last: {ch.meta.updatedAt}</p>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -1438,7 +1617,14 @@ ${html}
 
       {/* ⑥ Sanitation */}
       <div>
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Sanitation</p>
+        <div className="flex items-center justify-between mb-1.5">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Sanitation</p>
+          <label className="flex items-center gap-1 shrink-0">
+            <span className="text-[9px] text-slate-400">Updated by:</span>
+            <input value={d.sanitationMeta.updatedBy} onChange={e=>upd({sanitationMeta:{...d.sanitationMeta,updatedBy:e.target.value}})}
+              placeholder="Your name" className="bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 text-[9px] w-24 focus:outline-none focus:border-amber-400"/>
+          </label>
+        </div>
         <textarea value={d.sanitation} onChange={e=>upd({sanitation:e.target.value})} rows={2}
           placeholder="e.g. Managed through Sanitation Imprest of ₹80,000 per month"
           className="w-full bg-amber-50 border border-amber-200 rounded px-2 py-1.5 text-xs resize-none focus:outline-none focus:border-amber-400"/>
@@ -1448,6 +1634,11 @@ ${html}
       <div>
         <div className="flex items-center justify-between mb-2">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Commercial Earnings (₹ lakhs PA)</p>
+          <label className="flex items-center gap-1 shrink-0">
+            <span className="text-[9px] text-slate-400">Updated by:</span>
+            <input value={d.commercialMeta.updatedBy} onChange={e=>upd({commercialMeta:{...d.commercialMeta,updatedBy:e.target.value}})}
+              placeholder="Your name" className="bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 text-[9px] w-24 focus:outline-none focus:border-amber-400"/>
+          </label>
           <button onClick={addCI}
             className="flex items-center gap-1 px-2 py-1 text-[10px] bg-amber-100 text-amber-700 rounded hover:bg-amber-200 shrink-0">
             <Plus size={10}/> Add Item
@@ -1475,7 +1666,14 @@ ${html}
 
       {/* ⑧ PRIMES Data */}
       <div>
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">PRIMES Data</p>
+        <div className="flex items-center justify-between mb-1.5">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">PRIMES Data</p>
+          <label className="flex items-center gap-1 shrink-0">
+            <span className="text-[9px] text-slate-400">Updated by:</span>
+            <input value={d.primesMeta.updatedBy} onChange={e=>upd({primesMeta:{...d.primesMeta,updatedBy:e.target.value}})}
+              placeholder="Your name" className="bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 text-[9px] w-24 focus:outline-none focus:border-amber-400"/>
+          </label>
+        </div>
         <div className="overflow-x-auto">
           <table className="text-[10px] w-full border-collapse">
             <thead>
@@ -1498,7 +1696,14 @@ ${html}
 
       {/* ⑨ Counter / Station Earning */}
       <div>
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Counter / Station Earning</p>
+        <div className="flex items-center justify-between mb-1.5">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Counter / Station Earning</p>
+          <label className="flex items-center gap-1 shrink-0">
+            <span className="text-[9px] text-slate-400">Updated by:</span>
+            <input value={d.stationEarningMeta.updatedBy} onChange={e=>upd({stationEarningMeta:{...d.stationEarningMeta,updatedBy:e.target.value}})}
+              placeholder="Your name" className="bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 text-[9px] w-24 focus:outline-none focus:border-amber-400"/>
+          </label>
+        </div>
         <div className="overflow-x-auto">
           <table className="text-[10px] w-full border-collapse">
             <thead>
@@ -1521,7 +1726,14 @@ ${html}
 
       {/* ⑩ Earning Bifurcation */}
       <div>
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Earning Bifurcation</p>
+        <div className="flex items-center justify-between mb-1.5">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Earning Bifurcation</p>
+          <label className="flex items-center gap-1 shrink-0">
+            <span className="text-[9px] text-slate-400">Updated by:</span>
+            <input value={d.earningMeta.updatedBy} onChange={e=>upd({earningMeta:{...d.earningMeta,updatedBy:e.target.value}})}
+              placeholder="Your name" className="bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 text-[9px] w-24 focus:outline-none focus:border-amber-400"/>
+          </label>
+        </div>
         <textarea value={d.earningBifurcation} onChange={e=>upd({earningBifurcation:e.target.value})} rows={3}
           placeholder={'e.g. UTS- RailOne- 4631, STBS- 2900, UTS- 54592\nPRS- Cash- 63,273, Cashless- 15,997'}
           className="w-full bg-amber-50 border border-amber-200 rounded px-2 py-1.5 text-xs font-mono resize-none focus:outline-none focus:border-amber-400"/>
@@ -1567,7 +1779,51 @@ ${html}
 
   const visibleCH = d.counterHeads.filter(ch => ch.name || ch.total);
 
+  /** Compact audit trail shown next to each section header */
+  const SecMeta = ({ meta, sec }: { meta?: SectionMeta; sec: string }) => {
+    const { upd: updStr, chk } = fmtMeta(meta);
+    return (
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {updStr && <span className="text-[9px] text-slate-400 italic">✎ {updStr}</span>}
+        {chk    && <span className="text-[9px] text-green-600 font-medium">✓ {chk}</span>}
+        {canManage && (
+          <button onClick={()=>setCheckDialog({sec, name:''})}
+            className="text-[9px] text-slate-300 hover:text-green-600 transition-colors border border-dashed border-slate-200 hover:border-green-400 rounded px-1 py-0.5">
+            ✓ Check
+          </button>
+        )}
+      </div>
+    );
+  };
+
   return (
+    <>
+    {/* Check dialog — renders over view mode */}
+    {checkDialog && (
+      <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/30 backdrop-blur-sm"
+        onClick={()=>setCheckDialog(null)}>
+        <div className="bg-white rounded-2xl shadow-2xl p-5 w-72 space-y-3" onClick={e=>e.stopPropagation()}>
+          <p className="text-sm font-bold text-slate-700">Mark as Checked</p>
+          <p className="text-[11px] text-slate-400">Enter your name to record that you verified this section.</p>
+          <input value={checkDialog.name}
+            onChange={e=>setCheckDialog(p=>p?{...p,name:e.target.value}:p)}
+            placeholder="Your name (e.g. Joginder Kumar)"
+            autoFocus
+            onKeyDown={e=>{ if(e.key==='Enter' && checkDialog.name.trim()) saveCheck(checkDialog.sec, checkDialog.name); }}
+            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-amber-400"/>
+          <div className="flex justify-end gap-2">
+            <button onClick={()=>setCheckDialog(null)}
+              className="px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100 rounded-lg">Cancel</button>
+            <button onClick={()=>saveCheck(checkDialog.sec, checkDialog.name)}
+              disabled={!checkDialog.name.trim()}
+              className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg disabled:opacity-40 hover:bg-green-700">
+              ✓ Confirm Check
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
     <div className="space-y-3">
       {/* Header */}
       <div className="bg-amber-600 text-white rounded-xl px-4 py-3 flex items-start justify-between">
@@ -1581,8 +1837,21 @@ ${html}
             </p>
           )}
           {d.date && <p className="text-amber-200 text-[10px] mt-0.5">As on {d.date}</p>}
+          {/* CMI check status */}
+          {d.cmiCheckedBy && (
+            <p className="text-green-300 text-[10px] mt-0.5 font-medium">
+              ✓ CMI Checked: {d.cmiCheckedBy}{d.cmiCheckedAt ? ` (${d.cmiCheckedAt})` : ''}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-1 shrink-0 ml-3">
+          {/* CMI Check button */}
+          {canManage && (
+            <button onClick={()=>setCheckDialog({sec:'cmi', name:''})} title="CMI — Mark Whole Handout as Checked"
+              className="p-1.5 rounded-lg bg-green-700/40 hover:bg-green-600/70 text-green-100 hover:text-white transition-colors text-[10px] font-bold">
+              CMI ✓
+            </button>
+          )}
           <button onClick={handlePrint} title="Print / Save as PDF"
             className="p-1.5 rounded-lg bg-amber-700/50 hover:bg-amber-700 text-amber-100 hover:text-white transition-colors">
             <Printer size={12}/>
@@ -1603,7 +1872,10 @@ ${html}
       {/* Footfall */}
       {d.ff.some(row=>row.some(v=>v)) && (
         <div>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Footfall / Day</p>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Footfall / Day</p>
+            <SecMeta meta={d.ffMeta} sec="ff"/>
+          </div>
           <div className="overflow-x-auto rounded-lg border border-amber-200">
             <table className="text-[10px] w-full border-collapse">
               <thead><TH cols={['', ...FF_COLS]}/></thead>
@@ -1616,7 +1888,10 @@ ${html}
       {/* Infrastructure */}
       {(d.platforms || d.fob || d.waitingRooms) && (
         <div>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Infrastructure</p>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Infrastructure</p>
+            <SecMeta meta={d.infraMeta} sec="infra"/>
+          </div>
           <div className="space-y-1">
             {[['Platforms', d.platforms], ['FOB', d.fob], ['Waiting Rooms', d.waitingRooms]]
               .filter(([,v])=>v).map(([l,v])=>(
@@ -1632,7 +1907,10 @@ ${html}
       {/* Trains */}
       {d.trains.some(row=>row.some(v=>v)) && (
         <div>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Trains / Day</p>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Trains / Day</p>
+            <SecMeta meta={d.trainsMeta} sec="trains"/>
+          </div>
           <div className="overflow-x-auto rounded-lg border border-amber-200">
             <table className="text-[10px] w-full border-collapse">
               <thead><TH cols={['', ...TR_COLS]}/></thead>
@@ -1642,7 +1920,7 @@ ${html}
         </div>
       )}
 
-      {/* Counters & Manpower — side-by-side columns with dividers */}
+      {/* Counters & Manpower — side-by-side columns */}
       {visibleCH.length > 0 && (
         <div>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">
@@ -1652,17 +1930,14 @@ ${html}
             <div className="inline-flex border border-amber-200 rounded-lg overflow-hidden min-w-full">
               {visibleCH.map((ch, i) => (
                 <div key={i} className={`flex-1 min-w-[90px] p-2 ${i < visibleCH.length-1 ? 'border-r border-amber-200' : ''}`}>
-                  {/* Name + Total */}
                   <p className="text-[10px] font-bold text-amber-700 whitespace-nowrap leading-tight">
                     {ch.name}{ch.total ? ` - ${ch.total}` : ''}
                   </p>
-                  {/* Shifts */}
                   <div className="mt-0.5">
                     {ch.M && <p className="text-[10px] text-slate-600 leading-snug">M - {ch.M}</p>}
                     {ch.E && <p className="text-[10px] text-slate-600 leading-snug">E - {ch.E}</p>}
                     {ch.N && <p className="text-[10px] text-slate-600 leading-snug">N - {ch.N}</p>}
                   </div>
-                  {/* Manpower */}
                   {(ch.mpSanctioned || ch.mpOnRoll || ch.mpActual) && (
                     <div className="mt-1 pt-1 border-t border-amber-100">
                       <p className="text-[9px] text-slate-400 uppercase tracking-wide leading-tight mb-0.5">Manpower</p>
@@ -1671,7 +1946,6 @@ ${html}
                       {ch.mpActual     && <p className="text-[9px] text-slate-500 leading-snug">AW: <span className="font-semibold text-slate-700">{ch.mpActual}</span></p>}
                     </div>
                   )}
-                  {/* Extra fields */}
                   {Array.isArray(ch.extraFields) && ch.extraFields.filter(ef=>ef.key||ef.value).length > 0 && (
                     <div className="mt-1 pt-1 border-t border-amber-100">
                       {ch.extraFields.filter(ef=>ef.key||ef.value).map((ef,fi)=>(
@@ -1681,6 +1955,27 @@ ${html}
                         </p>
                       ))}
                     </div>
+                  )}
+                  {/* Per-counter meta */}
+                  {(ch.meta?.updatedBy || ch.meta?.checkedBy) && (
+                    <div className="mt-1 pt-1 border-t border-amber-100 space-y-0.5">
+                      {ch.meta.updatedBy && (
+                        <p className="text-[8px] text-slate-400 italic">
+                          ✎ {ch.meta.updatedBy}{ch.meta.updatedAt ? ` (${ch.meta.updatedAt})` : ''}
+                        </p>
+                      )}
+                      {ch.meta.checkedBy && (
+                        <p className="text-[8px] text-green-600 font-medium">
+                          ✓ {ch.meta.checkedBy}{ch.meta.checkedAt ? ` (${ch.meta.checkedAt})` : ''}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {canManage && (
+                    <button onClick={()=>setCheckDialog({sec:`ch:${d.counterHeads.indexOf(ch)}`, name:''})}
+                      className="mt-1 w-full text-[8px] text-slate-300 hover:text-green-600 border border-dashed border-slate-200 hover:border-green-400 rounded py-0.5 transition-colors">
+                      ✓ Check
+                    </button>
                   )}
                 </div>
               ))}
@@ -1692,17 +1987,23 @@ ${html}
       {/* Sanitation */}
       {d.sanitation && (
         <div>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Sanitation</p>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Sanitation</p>
+            <SecMeta meta={d.sanitationMeta} sec="sanitation"/>
+          </div>
           <div className="bg-slate-50 rounded-lg px-2.5 py-2 text-[11px] text-slate-700 whitespace-pre-wrap">{d.sanitation}</div>
         </div>
       )}
 
-      {/* Commercial Earnings — earning + status columns */}
+      {/* Commercial Earnings */}
       {d.commercial.some(ci=>ci.name||ci.earning||ci.status) && (
         <div>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">
-            Commercial Earnings &nbsp;<span className="normal-case font-normal text-slate-400">(₹ lakhs PA)</span>
-          </p>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+              Commercial Earnings &nbsp;<span className="normal-case font-normal text-slate-400">(₹ lakhs PA)</span>
+            </p>
+            <SecMeta meta={d.commercialMeta} sec="commercial"/>
+          </div>
           <div className="rounded-lg border border-amber-200 overflow-hidden">
             <table className="text-[10px] w-full border-collapse">
               <thead>
@@ -1729,7 +2030,10 @@ ${html}
       {/* PRIMES */}
       {d.primes.some(row=>row.some(v=>v)) && (
         <div>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">PRIMES Data</p>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">PRIMES Data</p>
+            <SecMeta meta={d.primesMeta} sec="primes"/>
+          </div>
           <div className="overflow-x-auto rounded-lg border border-amber-200">
             <table className="text-[10px] w-full border-collapse">
               <thead><TH cols={['', ...PR_COLS]}/></thead>
@@ -1742,7 +2046,10 @@ ${html}
       {/* Counter / Station Earning */}
       {d.stationEarning.some(row=>row.some(v=>v)) && (
         <div>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Counter / Station Earning</p>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Counter / Station Earning</p>
+            <SecMeta meta={d.stationEarningMeta} sec="earning"/>
+          </div>
           <div className="overflow-x-auto rounded-lg border border-amber-200">
             <table className="text-[10px] w-full border-collapse">
               <thead><TH cols={['', ...PR_COLS]}/></thead>
@@ -1755,11 +2062,15 @@ ${html}
       {/* Earning Bifurcation */}
       {d.earningBifurcation && (
         <div>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Earning Bifurcation</p>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Earning Bifurcation</p>
+            <SecMeta meta={d.earningMeta} sec="ebif"/>
+          </div>
           <div className="bg-slate-50 rounded-lg px-2.5 py-2 text-[11px] text-slate-700 font-mono whitespace-pre-wrap">{d.earningBifurcation}</div>
         </div>
       )}
     </div>
+    </>
   );
 }
 
