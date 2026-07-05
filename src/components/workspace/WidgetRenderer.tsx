@@ -954,6 +954,30 @@ type CounterHead = {
   meta: SectionMeta;
 };
 type CommercialItem = { name: string; earning: string; status: string };
+/** Maps each section key → assigned cell name (global, not per-handout) */
+type HandoutCellConfig = Record<string, string>;
+const CELL_CFG_KEY = 'rly_handout_cell_config';
+
+/** All fixed section keys (counter heads use dynamic 'ch:{i}' keys) */
+const SEC_LABELS: Record<string, string> = {
+  ff: 'Footfall / Day',
+  infra: 'Infrastructure',
+  trains: 'Trains / Day',
+  'ch:0': 'UTS Counter',
+  'ch:1': 'STBA Counter',
+  'ch:2': 'ATVM Counter',
+  'ch:3': 'PRS Counter',
+  'ch:4': 'Enquiry Counter',
+  'ch:5': 'Announcement Counter',
+  sanitation: 'Sanitation',
+  commercial: 'Commercial Earnings',
+  parking: 'Parking',
+  catering: 'Catering',
+  primes: 'PRIMES',
+  earning: 'Station Earning',
+  ebif: 'Earning Bifurcation',
+};
+
 type HD = {
   stationCode: string; stationName: string; category: string;
   state: string; section: string; cmi: string;
@@ -972,6 +996,12 @@ type HD = {
   sanitationMeta: SectionMeta;
   commercial: CommercialItem[];
   commercialMeta: SectionMeta;
+  /** Parking cell section */
+  parking: string;
+  parkingMeta: SectionMeta;
+  /** Catering cell section */
+  catering: string;
+  cateringMeta: SectionMeta;
   /** [3×3]  rows: UTS/PRS/Total  ×  cols: Tickets/day, Pax/day, Earning/day */
   primes: string[][];
   primesMeta: SectionMeta;
@@ -1003,8 +1033,12 @@ const mkHD = (): HD => ({
   counterHeads: ['UTS','STBA','ATVM','PRS','Enquiry','Announcement'].map(mkCH),
   sanitation: '',
   sanitationMeta: mkMeta(),
-  commercial: ['Pay & Use Toilet','Parking','Catering','Publicity','ATM'].map(mkCI),
+  commercial: ['Pay & Use Toilet','Publicity','ATM'].map(mkCI),
   commercialMeta: mkMeta(),
+  parking: '',
+  parkingMeta: mkMeta(),
+  catering: '',
+  cateringMeta: mkMeta(),
   primes:         [['','',''],['','',''],['','','']],
   primesMeta: mkMeta(),
   stationEarning: [['','',''],['','',''],['','','']],
@@ -1030,8 +1064,9 @@ function computeAsOnDate(h: HD): string {
   const parse = (s: string) => { const [d,m,y]=s.split('.'); return new Date(+y,+m-1,+d).getTime(); };
   const all = [
     h.ffMeta?.updatedAt, h.infraMeta?.updatedAt, h.trainsMeta?.updatedAt,
-    h.sanitationMeta?.updatedAt, h.commercialMeta?.updatedAt, h.primesMeta?.updatedAt,
-    h.stationEarningMeta?.updatedAt, h.earningMeta?.updatedAt,
+    h.sanitationMeta?.updatedAt, h.commercialMeta?.updatedAt,
+    h.parkingMeta?.updatedAt, h.cateringMeta?.updatedAt,
+    h.primesMeta?.updatedAt, h.stationEarningMeta?.updatedAt, h.earningMeta?.updatedAt,
     ...(h.counterHeads?.map(ch=>ch.meta?.updatedAt)??[]),
   ].filter(Boolean) as string[];
   if (!all.length) return h.date ?? '';
@@ -1071,13 +1106,103 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
       trainsMeta:         s.trainsMeta         ?? mkMeta(),
       sanitationMeta:     s.sanitationMeta     ?? mkMeta(),
       commercialMeta:     s.commercialMeta     ?? mkMeta(),
+      parkingMeta:        s.parkingMeta        ?? mkMeta(),
+      cateringMeta:       s.cateringMeta       ?? mkMeta(),
       primesMeta:         s.primesMeta         ?? mkMeta(),
       stationEarningMeta: s.stationEarningMeta ?? mkMeta(),
       earningMeta:        s.earningMeta        ?? mkMeta(),
       cmiCheckedBy:       s.cmiCheckedBy       ?? '',
       cmiCheckedAt:       s.cmiCheckedAt       ?? '',
+      parking:            s.parking            ?? '',
+      catering:           s.catering           ?? '',
     };
   });
+
+  // ── Logged-in user (from auth localStorage) ───────────────────────────────
+  const [currentUser, setCurrentUser] = useState<{ name: string; cell: string; cells?: string[]; role: string } | null>(null);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const u = JSON.parse(localStorage.getItem('rly_dashboard_user') ?? 'null');
+      if (u?.name) setCurrentUser({ name: u.name, cell: u.cell ?? '', cells: u.cells, role: u.role ?? 'user' });
+    } catch { /* ignore */ }
+  }, []);
+
+  // ── Global cell config (applies to ALL handouts) ──────────────────────────
+  const [cellConfig, setCellConfig] = useState<HandoutCellConfig>({});
+  const [showCellConfig, setShowCellConfig] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const local = JSON.parse(localStorage.getItem(CELL_CFG_KEY) ?? '{}');
+      setCellConfig(local);
+    } catch { /* ignore */ }
+    // Also pull from KV for cross-device consistency
+    import('@/lib/config/sharedSync').then(({ sharedRead }) => {
+      sharedRead(CELL_CFG_KEY).then((kv: unknown) => {
+        if (kv && typeof kv === 'object') {
+          setCellConfig(kv as HandoutCellConfig);
+          try { localStorage.setItem(CELL_CFG_KEY, JSON.stringify(kv)); } catch { /* ignore */ }
+        }
+      }).catch(() => {});
+    }).catch(() => {});
+  }, []);
+
+  const saveCellConfig = (cfg: HandoutCellConfig) => {
+    setCellConfig(cfg);
+    try { localStorage.setItem(CELL_CFG_KEY, JSON.stringify(cfg)); } catch { /* ignore */ }
+    import('@/lib/config/sharedSync').then(({ sharedWrite }) => {
+      sharedWrite(CELL_CFG_KEY, cfg);
+    }).catch(() => {});
+  };
+
+  /** Can the logged-in user edit a given section? */
+  const canEditSec = (sec: string): boolean => {
+    if (!currentUser) return canManage; // if user not resolved yet, fall back to canManage
+    const role = currentUser.role;
+    if (role === 'maintenance' || role === 'admin') return true;
+    // incharge with cell='All' can edit everything
+    if (role === 'incharge' && (!currentUser.cell || currentUser.cell === 'All')) return true;
+    const assignedCell = cellConfig[sec];
+    if (!assignedCell) return true; // unassigned section → anyone can edit
+    const userCells = [currentUser.cell, ...(currentUser.cells ?? [])].filter(Boolean);
+    return userCells.some(c => c === assignedCell);
+  };
+
+  /** Auto-fill updatedBy for sections belonging to the current user's cell */
+  const autoFillNames = (hd: HD): HD => {
+    if (!currentUser?.name) return hd;
+    const name = currentUser.name;
+    const userCells = [currentUser.cell, ...(currentUser.cells ?? [])].filter(Boolean);
+    const isMine = (sec: string) => {
+      const assigned = cellConfig[sec];
+      if (!assigned) return false; // don't auto-fill unassigned sections
+      return userCells.includes(assigned);
+    };
+    const tryFill = (meta: SectionMeta, sec: string): SectionMeta => {
+      if (!isMine(sec)) return meta;
+      if (meta.updatedBy && meta.updatedBy !== name) return meta; // already filled by someone else — don't overwrite
+      return { ...meta, updatedBy: name };
+    };
+    return {
+      ...hd,
+      ffMeta:             tryFill(hd.ffMeta, 'ff'),
+      infraMeta:          tryFill(hd.infraMeta, 'infra'),
+      trainsMeta:         tryFill(hd.trainsMeta, 'trains'),
+      sanitationMeta:     tryFill(hd.sanitationMeta, 'sanitation'),
+      commercialMeta:     tryFill(hd.commercialMeta, 'commercial'),
+      parkingMeta:        tryFill(hd.parkingMeta, 'parking'),
+      cateringMeta:       tryFill(hd.cateringMeta, 'catering'),
+      primesMeta:         tryFill(hd.primesMeta, 'primes'),
+      stationEarningMeta: tryFill(hd.stationEarningMeta, 'earning'),
+      earningMeta:        tryFill(hd.earningMeta, 'ebif'),
+      counterHeads: hd.counterHeads.map((ch, i) => ({
+        ...ch,
+        meta: tryFill(ch.meta, `ch:${i}`),
+      })),
+    };
+  };
+
   // Check dialog: { sec: section-id, name: checker's name }
   const [checkDialog, setCheckDialog] = useState<{ sec: string; name: string } | null>(null);
 
@@ -1167,6 +1292,8 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
       trainsMeta:         stamp(d.trainsMeta,          prev.trainsMeta),
       sanitationMeta:     stamp(d.sanitationMeta,      prev.sanitationMeta),
       commercialMeta:     stamp(d.commercialMeta,      prev.commercialMeta),
+      parkingMeta:        stamp(d.parkingMeta,         prev.parkingMeta),
+      cateringMeta:       stamp(d.cateringMeta,        prev.cateringMeta),
       primesMeta:         stamp(d.primesMeta,          prev.primesMeta),
       stationEarningMeta: stamp(d.stationEarningMeta,  prev.stationEarningMeta),
       earningMeta:        stamp(d.earningMeta,         prev.earningMeta),
@@ -1200,6 +1327,10 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
       next = { ...d, sanitationMeta: { ...d.sanitationMeta, checkedBy: n, checkedAt: today } };
     } else if (sec === 'commercial') {
       next = { ...d, commercialMeta: { ...d.commercialMeta, checkedBy: n, checkedAt: today } };
+    } else if (sec === 'parking') {
+      next = { ...d, parkingMeta: { ...d.parkingMeta, checkedBy: n, checkedAt: today } };
+    } else if (sec === 'catering') {
+      next = { ...d, cateringMeta: { ...d.cateringMeta, checkedBy: n, checkedAt: today } };
     } else if (sec === 'primes') {
       next = { ...d, primesMeta: { ...d.primesMeta, checkedBy: n, checkedAt: today } };
     } else if (sec === 'earning') {
@@ -1216,6 +1347,12 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
     setD(next);
     persistHD(next);
     setCheckDialog(null);
+  };
+
+  /** Open edit mode: auto-fill names for the logged-in user's sections */
+  const startEditing = () => {
+    setD(prev => autoFillNames(prev));
+    setEditing(true);
   };
 
   const cancel = () => { setD(((widget as any).handoutData as HD | undefined) ?? mkHD()); setEditing(false); };
@@ -1724,15 +1861,75 @@ ${html}
         </div>
       </div>
 
-      {/* ⑩ Earning Bifurcation */}
-      <div>
+      {/* ⑩ Parking */}
+      <div className={!canEditSec('parking') ? 'opacity-50 pointer-events-none select-none relative' : ''}>
+        {!canEditSec('parking') && (
+          <div className="absolute inset-0 flex items-center justify-center z-10">
+            <span className="bg-white/80 text-[9px] text-slate-400 px-1.5 py-0.5 rounded border border-slate-200">
+              🔒 {cellConfig['parking'] ?? 'Assigned to another cell'}
+            </span>
+          </div>
+        )}
+        <div className="flex items-center justify-between mb-1.5">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Parking</p>
+          <div className="flex items-center gap-2">
+            {cellConfig['parking'] && <span className="text-[9px] bg-amber-100 text-amber-700 px-1 py-0.5 rounded">{cellConfig['parking']}</span>}
+            <label className="flex items-center gap-1 shrink-0">
+              <span className="text-[9px] text-slate-400">Updated by:</span>
+              <input value={d.parkingMeta.updatedBy} onChange={e=>upd({parkingMeta:{...d.parkingMeta,updatedBy:e.target.value}})}
+                placeholder="Your name" className="bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 text-[9px] w-24 focus:outline-none focus:border-amber-400"/>
+            </label>
+          </div>
+        </div>
+        <textarea value={d.parking} onChange={e=>upd({parking:e.target.value})} rows={3}
+          placeholder={'Parking details — no. of slots, type, concessionaire, revenue, issues...'}
+          className="w-full bg-amber-50 border border-amber-200 rounded px-2 py-1.5 text-xs resize-none focus:outline-none focus:border-amber-400"/>
+      </div>
+
+      {/* ⑪ Catering */}
+      <div className={!canEditSec('catering') ? 'opacity-50 pointer-events-none select-none relative' : ''}>
+        {!canEditSec('catering') && (
+          <div className="absolute inset-0 flex items-center justify-center z-10">
+            <span className="bg-white/80 text-[9px] text-slate-400 px-1.5 py-0.5 rounded border border-slate-200">
+              🔒 {cellConfig['catering'] ?? 'Assigned to another cell'}
+            </span>
+          </div>
+        )}
+        <div className="flex items-center justify-between mb-1.5">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Catering</p>
+          <div className="flex items-center gap-2">
+            {cellConfig['catering'] && <span className="text-[9px] bg-amber-100 text-amber-700 px-1 py-0.5 rounded">{cellConfig['catering']}</span>}
+            <label className="flex items-center gap-1 shrink-0">
+              <span className="text-[9px] text-slate-400">Updated by:</span>
+              <input value={d.cateringMeta.updatedBy} onChange={e=>upd({cateringMeta:{...d.cateringMeta,updatedBy:e.target.value}})}
+                placeholder="Your name" className="bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 text-[9px] w-24 focus:outline-none focus:border-amber-400"/>
+            </label>
+          </div>
+        </div>
+        <textarea value={d.catering} onChange={e=>upd({catering:e.target.value})} rows={3}
+          placeholder={'Catering details — stalls, concessionaire, category, revenue, issues...'}
+          className="w-full bg-amber-50 border border-amber-200 rounded px-2 py-1.5 text-xs resize-none focus:outline-none focus:border-amber-400"/>
+      </div>
+
+      {/* ⑫ Earning Bifurcation */}
+      <div className={!canEditSec('ebif') ? 'opacity-50 pointer-events-none select-none relative' : ''}>
+        {!canEditSec('ebif') && (
+          <div className="absolute inset-0 flex items-center justify-center z-10">
+            <span className="bg-white/80 text-[9px] text-slate-400 px-1.5 py-0.5 rounded border border-slate-200">
+              🔒 {cellConfig['ebif'] ?? 'Assigned to another cell'}
+            </span>
+          </div>
+        )}
         <div className="flex items-center justify-between mb-1.5">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Earning Bifurcation</p>
-          <label className="flex items-center gap-1 shrink-0">
-            <span className="text-[9px] text-slate-400">Updated by:</span>
-            <input value={d.earningMeta.updatedBy} onChange={e=>upd({earningMeta:{...d.earningMeta,updatedBy:e.target.value}})}
-              placeholder="Your name" className="bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 text-[9px] w-24 focus:outline-none focus:border-amber-400"/>
-          </label>
+          <div className="flex items-center gap-2">
+            {cellConfig['ebif'] && <span className="text-[9px] bg-amber-100 text-amber-700 px-1 py-0.5 rounded">{cellConfig['ebif']}</span>}
+            <label className="flex items-center gap-1 shrink-0">
+              <span className="text-[9px] text-slate-400">Updated by:</span>
+              <input value={d.earningMeta.updatedBy} onChange={e=>upd({earningMeta:{...d.earningMeta,updatedBy:e.target.value}})}
+                placeholder="Your name" className="bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 text-[9px] w-24 focus:outline-none focus:border-amber-400"/>
+            </label>
+          </div>
         </div>
         <textarea value={d.earningBifurcation} onChange={e=>upd({earningBifurcation:e.target.value})} rows={3}
           placeholder={'e.g. UTS- RailOne- 4631, STBS- 2900, UTS- 54592\nPRS- Cash- 63,273, Cashless- 15,997'}
@@ -1769,7 +1966,7 @@ ${html}
     <div className="text-center py-8 space-y-3">
       <p className="text-4xl">🗂️</p>
       <p className="text-slate-300 text-sm italic">No station data yet</p>
-      <button onClick={()=>setEditing(true)}
+      <button onClick={startEditing}
         className="px-4 py-2 text-xs bg-amber-600 text-white rounded-lg hover:bg-amber-700">
         Fill Station Data
       </button>
@@ -1860,8 +2057,15 @@ ${html}
             className="p-1.5 rounded-lg bg-amber-700/50 hover:bg-amber-700 text-amber-100 hover:text-white transition-colors">
             <Download size={12}/>
           </button>
+          {/* Admin: configure cell assignments */}
+          {(currentUser?.role === 'maintenance' || currentUser?.role === 'admin') && (
+            <button onClick={()=>setShowCellConfig(true)} title="Configure Cell Assignments"
+              className="p-1.5 rounded-lg bg-amber-700/50 hover:bg-amber-700 text-amber-100 hover:text-white transition-colors text-[10px]">
+              ⚙
+            </button>
+          )}
           {canManage && (
-            <button onClick={()=>setEditing(true)}
+            <button onClick={startEditing}
               className="p-1.5 rounded-lg bg-amber-700/50 hover:bg-amber-700 text-amber-100 hover:text-white transition-colors">
               <Edit3 size={12}/>
             </button>
@@ -2059,6 +2263,28 @@ ${html}
         </div>
       )}
 
+      {/* Parking */}
+      {d.parking && (
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Parking</p>
+            <SecMeta meta={d.parkingMeta} sec="parking"/>
+          </div>
+          <div className="bg-slate-50 rounded-lg px-2.5 py-2 text-[11px] text-slate-700 whitespace-pre-wrap">{d.parking}</div>
+        </div>
+      )}
+
+      {/* Catering */}
+      {d.catering && (
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Catering</p>
+            <SecMeta meta={d.cateringMeta} sec="catering"/>
+          </div>
+          <div className="bg-slate-50 rounded-lg px-2.5 py-2 text-[11px] text-slate-700 whitespace-pre-wrap">{d.catering}</div>
+        </div>
+      )}
+
       {/* Earning Bifurcation */}
       {d.earningBifurcation && (
         <div>
@@ -2070,6 +2296,52 @@ ${html}
         </div>
       )}
     </div>
+
+    {/* ── Cell Config Modal (admin only) ──────────────────────────────────── */}
+    {showCellConfig && (
+      <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+        onClick={()=>setShowCellConfig(false)}>
+        <div className="bg-white rounded-2xl shadow-2xl w-[min(90vw,520px)] max-h-[85vh] flex flex-col"
+          onClick={e=>e.stopPropagation()}>
+          <div className="px-5 pt-5 pb-3 border-b border-slate-100">
+            <p className="font-bold text-slate-700 text-sm">Cell Assignment Configuration</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">Assign each section to a cell. Only that cell's members can update it. Applies to all handouts.</p>
+          </div>
+          <div className="overflow-y-auto flex-1 px-5 py-3 space-y-2">
+            {Object.entries(SEC_LABELS).map(([sec, label]) => (
+              <div key={sec} className="flex items-center justify-between gap-3">
+                <span className="text-[11px] text-slate-600 font-medium min-w-0 flex-1">{label}</span>
+                <input
+                  value={cellConfig[sec] ?? ''}
+                  onChange={e => {
+                    const v = e.target.value;
+                    const next = { ...cellConfig };
+                    if (v) next[sec] = v; else delete next[sec];
+                    saveCellConfig(next);
+                  }}
+                  placeholder="Cell name (e.g. UTS Cell)"
+                  list="handout-cells-datalist"
+                  className="border border-slate-200 rounded-lg px-2 py-1 text-[11px] w-44 focus:outline-none focus:border-amber-400"/>
+              </div>
+            ))}
+            <datalist id="handout-cells-datalist">
+              {Array.from(new Set([
+                'UTS Cell','PRS Cell','STBA/ATVM Cell','Marketing Cell',
+                'Sanitation Cell','Engineering Cell','Traffic Cell',
+                'Parking Cell','Catering Cell','Accounts Cell','Enquiry Cell',
+                ...Object.values(cellConfig),
+              ])).filter(Boolean).map(c=><option key={c} value={c}/>)}
+            </datalist>
+          </div>
+          <div className="px-5 py-3 border-t border-slate-100 flex justify-between items-center">
+            <button onClick={()=>saveCellConfig({})}
+              className="text-xs text-red-400 hover:text-red-600">Clear All</button>
+            <button onClick={()=>setShowCellConfig(false)}
+              className="px-4 py-1.5 text-xs bg-amber-600 text-white rounded-lg hover:bg-amber-700">Done</button>
+          </div>
+        </div>
+      </div>
+    )}
     </>
   );
 }
