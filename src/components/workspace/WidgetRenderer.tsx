@@ -1240,27 +1240,73 @@ function _parseCommercialSection(sectionText: string): { earning: string; status
   return { earning, status: status.replace(/\n{2,}/g, '\n').trim() };
 }
 
-/** Counters: mixed-case names, aggregate across station sides, capture M/E/N. */
+/**
+ * Counters (section 7). Mixed-case names (so "Enquiry" is captured), aggregate
+ * totals + M/E/N. When the section is split into station sides — lines like
+ * "PG Side: …", "AG side: …", "Chandni Chowk Side: …", "Bhogal side: …" — each
+ * counter's M/E/N is captured PER SIDE and stored in `sides[]`, so the fetch
+ * auto-fills the optional AG/PG breakdown. Counters without a per-side shift
+ * detail (e.g. ATVM, JTBS) keep just a total and no sides.
+ */
 function _parseCounterHeads(sec7: string, sec8: string): CounterHead[] {
-  const chMap: Record<string, CounterHead> = {};
   const NON_COUNTER = new Set(['M','E','N','L','G','AC','PG','AG','SL']);
-  const cRe = /([A-Za-z]{2,}(?:\/[A-Za-z]+)?)\s*[-–]\s*(\d+)(?:\s*\(M[-–](\d+)[^)]*E[-–](\d+)[^)]*N[-–](\d+)\))?/g;
-  let cm: RegExpExecArray | null;
-  while ((cm = cRe.exec(sec7)) !== null) {
-    const name = cm[1];
-    if (NON_COUNTER.has(name.toUpperCase())) continue;
-    if (chMap[name]) {
-      chMap[name].total = String(+chMap[name].total + +(cm[2] || 0));
-      if (cm[3]) chMap[name].M = String(+(chMap[name].M || 0) + +cm[3]);
-      if (cm[4]) chMap[name].E = String(+(chMap[name].E || 0) + +cm[4]);
-      if (cm[5]) chMap[name].N = String(+(chMap[name].N || 0) + +cm[5]);
-    } else {
+  // total captured in group 2; optional shift group captures M(3), E(4), N(5).
+  // N is optional so "(M-1, E-1)" still yields M/E.
+  const cRe = /([A-Za-z]{2,}(?:\/[A-Za-z]+)?)\s*[-–]\s*(\d+)(?:\s*\(M[-–](\d+)[^)]*E[-–](\d+)(?:[^)]*N[-–](\d+))?\))?/g;
+
+  const chMap: Record<string, CounterHead> = {};
+  const order: string[] = [];
+  const ensure = (name: string): CounterHead => {
+    if (!chMap[name]) {
       chMap[name] = {
-        name, total: cm[2] || '', M: cm[3] || '', E: cm[4] || '', N: cm[5] || '',
-        mpOnRoll: '', mpSanctioned: '', mpActual: '', extraFields: [], meta: mkMeta(),
+        name, total: '', M: '', E: '', N: '',
+        mpOnRoll: '', mpSanctioned: '', mpActual: '', sides: undefined,
+        extraFields: [], meta: mkMeta(),
       };
+      order.push(name);
+    }
+    return chMap[name];
+  };
+  const addShift = (ch: CounterHead, cm: RegExpExecArray) => {
+    if (cm[3] !== undefined) ch.M = String((+ch.M || 0) + +cm[3]);
+    if (cm[4] !== undefined) ch.E = String((+ch.E || 0) + +cm[4]);
+    if (cm[5] !== undefined) ch.N = String((+ch.N || 0) + +cm[5]);
+  };
+
+  // Detect side-structured lines ("<label> side: <counters…>").
+  const sideLines: { label: string; body: string }[] = [];
+  for (const line of sec7.split('\n').map(l => l.trim()).filter(Boolean)) {
+    const m = /^(.+?\bside)\s*:\s*(.+)$/i.exec(line);
+    if (m) sideLines.push({ label: m[1].replace(/\bside\b/i, 'Side').trim(), body: m[2] });
+  }
+
+  if (sideLines.length >= 1) {
+    for (const { label, body } of sideLines) {
+      cRe.lastIndex = 0;
+      let cm: RegExpExecArray | null;
+      while ((cm = cRe.exec(body)) !== null) {
+        const name = cm[1];
+        if (NON_COUNTER.has(name.toUpperCase())) continue;
+        const ch = ensure(name);
+        ch.total = String((+ch.total || 0) + +(cm[2] || 0));
+        addShift(ch, cm);
+        if (cm[3] !== undefined) {
+          (ch.sides ??= []).push({ label, M: cm[3] || '', E: cm[4] || '', N: cm[5] || '' });
+        }
+      }
+    }
+  } else {
+    cRe.lastIndex = 0;
+    let cm: RegExpExecArray | null;
+    while ((cm = cRe.exec(sec7)) !== null) {
+      const name = cm[1];
+      if (NON_COUNTER.has(name.toUpperCase())) continue;
+      const ch = ensure(name);
+      ch.total = String((+ch.total || 0) + +(cm[2] || 0));
+      addShift(ch, cm);
     }
   }
+
   if (sec8) {
     const mpRe = /([A-Za-z]{2,})\s*[-–]\s*(\d+)\/(\d+)/g;
     let mm: RegExpExecArray | null;
@@ -1269,7 +1315,11 @@ function _parseCounterHeads(sec7: string, sec8: string): CounterHead[] {
       if (chMap[n]) { chMap[n].mpOnRoll = mm[2]; chMap[n].mpSanctioned = mm[3]; }
     }
   }
-  return Object.values(chMap);
+  return order.map(n => {
+    const ch = chMap[n];
+    if (ch.sides && ch.sides.length === 0) ch.sides = undefined;
+    return ch;
+  });
 }
 
 /** Earning bifurcation: put UTS and PRS on their own lines. */
@@ -2220,7 +2270,9 @@ ${sheet('Station Earning',[
           for (const ch of extracted.counterHeads) {
             const key = ch.name.trim().toLowerCase();
             const existing = byName.get(key);
-            byName.set(key, existing ? { ...existing, ...ch, extraFields: existing.extraFields } : ch);
+            // For a matched counter, let freshly-parsed side data win (clears
+            // any stale empty AG/PG columns the user added before fetching).
+            byName.set(key, existing ? { ...existing, ...ch, extraFields: existing.extraFields, sides: ch.sides } : ch);
           }
           // Keep any blank user rows too (rows with no name), appended at the end.
           const named = [...byName.values()];
