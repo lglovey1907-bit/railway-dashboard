@@ -1131,13 +1131,46 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
   // ── Global cell config (applies to ALL handouts) ──────────────────────────
   const [cellConfig, setCellConfig] = useState<HandoutCellConfig>({});
   const [showCellConfig, setShowCellConfig] = useState(false);
+
+  // Dynamic options for Cell Config modal: cells from registry + sectional CMIs from staff
+  const [availableCells, setAvailableCells] = useState<{ name: string; head: string }[]>([]);
+  const [sectionalCMIs,  setSectionalCMIs]  = useState<{ name: string; designation: string }[]>([]);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    // Load cells from registry
+    try {
+      const BUILTIN_CELL_NAMES = [
+        'Planning','Manpower Planning','Security D&AR','Legal','Marketing',
+        'Ticket Checking','UTS PRS','JTBS/YTSK/STBA','Store','Sanitation',
+        'Catering','Parking','Publicity','License Porter','Complaint/RailMadad',
+        'Concession','PA','Commercial Control','Union/DRUCC','DAK',
+      ];
+      const raw = localStorage.getItem('rly_cell_registry');
+      const cells: { name: string; headDesignation: string; status: string }[] = raw
+        ? JSON.parse(raw)
+        : BUILTIN_CELL_NAMES.map(n => ({ name: n, headDesignation: '', status: 'active' }));
+      setAvailableCells(
+        cells.filter(c => c.status === 'active').map(c => ({ name: c.name, head: c.headDesignation ?? '' }))
+      );
+    } catch { /* ignore */ }
+    // Load sectional CMIs from staff master (role = 'incharge' or designation containing 'CMI'/'Sectional')
+    try {
+      const staff: any[] = JSON.parse(localStorage.getItem('rly_staff_master') ?? '[]');
+      const cmis = staff.filter(s => {
+        const role = (s.role ?? '').toLowerCase();
+        const desig = (s.designation ?? s.workingAs ?? '').toLowerCase();
+        return role === 'incharge' || desig.includes('cmi') || desig.includes('sectional');
+      }).map(s => ({ name: s.name ?? '', designation: s.designation ?? s.workingAs ?? '' }))
+        .filter(s => s.name);
+      setSectionalCMIs(cmis);
+    } catch { /* ignore */ }
+    // Load cell config
     try {
       const local = JSON.parse(localStorage.getItem(CELL_CFG_KEY) ?? '{}');
       setCellConfig(local);
     } catch { /* ignore */ }
-    // Also pull from KV for cross-device consistency
+    // Sync cell config from KV
     import('@/lib/config/sharedSync').then(({ sharedRead }) => {
       sharedRead(CELL_CFG_KEY).then((kv: unknown) => {
         if (kv && typeof kv === 'object') {
@@ -2319,18 +2352,20 @@ ${html}
                     if (v) next[sec] = v; else delete next[sec];
                     saveCellConfig(next);
                   }}
-                  placeholder="Cell name (e.g. UTS Cell)"
+                  placeholder="Select cell or CMI…"
                   list="handout-cells-datalist"
                   className="border border-slate-200 rounded-lg px-2 py-1 text-[11px] w-44 focus:outline-none focus:border-amber-400"/>
               </div>
             ))}
             <datalist id="handout-cells-datalist">
-              {Array.from(new Set([
-                'UTS Cell','PRS Cell','STBA/ATVM Cell','Marketing Cell',
-                'Sanitation Cell','Engineering Cell','Traffic Cell',
-                'Parking Cell','Catering Cell','Accounts Cell','Enquiry Cell',
-                ...Object.values(cellConfig),
-              ])).filter(Boolean).map(c=><option key={c} value={c}/>)}
+              {/* Active cells from Cell Management */}
+              {availableCells.map(c => <option key={`cell-${c.name}`} value={c.name}/>)}
+              {/* Sectional CMIs from Staff Master */}
+              {sectionalCMIs.map(s => <option key={`cmi-${s.name}`} value={s.name}/>)}
+              {/* Preserve any already-assigned values not in the above lists */}
+              {Object.values(cellConfig).filter(v =>
+                !availableCells.some(c => c.name === v) && !sectionalCMIs.some(s => s.name === v)
+              ).map(v => <option key={`existing-${v}`} value={v}/>)}
             </datalist>
           </div>
           <div className="px-5 py-3 border-t border-slate-100 flex justify-between items-center">
