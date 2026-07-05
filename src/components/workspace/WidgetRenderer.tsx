@@ -1649,6 +1649,7 @@ function fmtMeta(meta?: SectionMeta): { upd: string|null; chk: string|null } {
  */
 const CI = ({ val, onChange, ph }: { val: string; onChange: (v: string) => void; ph?: string }) => (
   <input value={val} onChange={e => onChange(e.target.value)} placeholder={ph}
+    onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
     className="w-full bg-amber-50 border border-amber-200 rounded px-1 py-0.5 text-[10px] text-center focus:outline-none focus:border-amber-400"/>
 );
 const TH = ({ cols }: { cols: string[] }) => (
@@ -2506,6 +2507,7 @@ ${sheet('Station Earning',[
             <input value={d.stationCode}
               onChange={e => { upd({stationCode:e.target.value}); setSugg(searchRows('code',e.target.value)); setSuggField('code'); }}
               onBlur={() => setTimeout(()=>setSugg([]),200)}
+              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
               placeholder="e.g. NDLS"
               className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
             {suggField==='code' && sugg.length>0 && (
@@ -2528,6 +2530,7 @@ ${sheet('Station Earning',[
             <input value={d.stationName}
               onChange={e => { upd({stationName:e.target.value}); setSugg(searchRows('name',e.target.value)); setSuggField('name'); }}
               onBlur={() => setTimeout(()=>setSugg([]),200)}
+              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
               placeholder="e.g. New Delhi"
               className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
             {suggField==='name' && sugg.length>0 && (
@@ -2548,6 +2551,7 @@ ${sheet('Station Earning',[
           <label className="flex flex-col gap-0.5">
             <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Category</span>
             <input value={d.category} onChange={e=>upd({category:e.target.value})} placeholder="e.g. NSG-1"
+              onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}
               className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
           </label>
 
@@ -2555,6 +2559,7 @@ ${sheet('Station Earning',[
           <label className="flex flex-col gap-0.5">
             <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">State</span>
             <input value={d.state} onChange={e=>upd({state:e.target.value})} placeholder="e.g. Delhi"
+              onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}
               className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
           </label>
 
@@ -2562,6 +2567,7 @@ ${sheet('Station Earning',[
           <label className="flex flex-col gap-0.5">
             <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Section</span>
             <input value={d.section} onChange={e=>upd({section:e.target.value})} placeholder="e.g. DLI-NDLS"
+              onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}
               className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
           </label>
 
@@ -2569,6 +2575,7 @@ ${sheet('Station Earning',[
           <label className="flex flex-col gap-0.5">
             <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">CMI</span>
             <input value={d.cmi} onChange={e=>upd({cmi:e.target.value})} placeholder="CMI name"
+              onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}
               className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
           </label>
 
@@ -2584,6 +2591,7 @@ ${sheet('Station Earning',[
           <label className="flex flex-col gap-0.5">
             <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Division</span>
             <input value={d.division} onChange={e=>upd({division:e.target.value})} placeholder="Delhi Division"
+              onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}
               className="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400"/>
           </label>
 
@@ -2705,6 +2713,7 @@ ${sheet('Station Earning',[
               </button>
               {/* Head name */}
               <input value={ch.name} onChange={e=>updCH(i,{name:e.target.value})} placeholder="Head (e.g. UTS)"
+                onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}
                 className="w-full text-[10px] font-bold bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5 focus:outline-none focus:border-amber-400 pr-4"/>
               {/* Total */}
               <label className="flex flex-col gap-0.5">
@@ -2753,6 +2762,7 @@ ${sheet('Station Earning',[
                         <div className="flex items-center gap-0.5">
                           <input value={sd.label} onChange={e=>updCHSide(i,si,{label:e.target.value})}
                             placeholder="Side"
+                            onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}
                             className="w-full text-[8px] font-semibold bg-amber-100 border border-amber-200 rounded px-1 py-0.5 focus:outline-none focus:border-amber-400"/>
                           <button onClick={()=>rmCHSide(i,si)} className="text-slate-300 hover:text-red-400 shrink-0"><X size={8}/></button>
                         </div>
@@ -3056,7 +3066,16 @@ ${sheet('Station Earning',[
   );
   if (!hasData) return <p className="text-xs text-slate-300 italic text-center py-4">No station data</p>;
 
-  const visibleCH = d.counterHeads.filter(ch => ch.name || ch.total);
+  // Only show a counter if it has at least one data value — hides rows like STBA or
+  // Announcement that exist in the list but were never filled in for this station.
+  const visibleCH = d.counterHeads.filter(ch =>
+    ch.name && (
+      ch.total || ch.M || ch.E || ch.N ||
+      ch.mpSanctioned || ch.mpOnRoll || ch.mpActual ||
+      (ch.sides && ch.sides.some(s => s.count || s.M || s.E || s.N)) ||
+      (ch.extraFields && ch.extraFields.some(ef => ef.value))
+    )
+  );
 
   /** Compact audit trail shown next to each section header */
   const SecMeta = ({ meta, sec }: { meta?: SectionMeta; sec: string }) => {
@@ -3279,8 +3298,8 @@ ${sheet('Station Earning',[
           <div className="overflow-x-auto">
             <div className="inline-flex border border-amber-200 rounded-lg overflow-hidden min-w-full">
               {visibleCH.map((ch, i) => (
-                <div key={i} className={`flex-1 ${ch.sides && ch.sides.length ? 'min-w-[130px]' : 'min-w-[90px]'} p-2 ${i < visibleCH.length-1 ? 'border-r border-amber-200' : ''}`}>
-                  <p className="text-[10px] font-bold text-amber-700 whitespace-nowrap leading-tight text-center bg-amber-100 rounded px-1 py-0.5 -mx-0.5">
+                <div key={i} className={`flex-1 ${ch.sides && ch.sides.length ? 'min-w-[160px]' : 'min-w-[90px]'} p-2 ${i < visibleCH.length-1 ? 'border-r border-amber-200' : ''}`}>
+                  <p className="text-[10px] font-bold text-amber-700 break-words leading-tight text-center bg-amber-100 rounded px-1 py-0.5 -mx-0.5">
                     {ch.name}{ch.total ? ` - ${ch.total}` : ''}
                   </p>
                   {(ch.sides && ch.sides.length > 0) ? (
@@ -3290,7 +3309,7 @@ ${sheet('Station Earning',[
                           <tr>
                             {ch.sideMode !== 'count' && <th className="text-left font-normal text-slate-400 pr-1"></th>}
                             {ch.sides.map((sd,si)=>(
-                              <th key={si} className="px-1 py-0.5 font-semibold text-amber-700 text-center border border-amber-200 bg-amber-50 whitespace-nowrap">{sd.label||`Side ${si+1}`}</th>
+                              <th key={si} className="px-1 py-0.5 font-semibold text-amber-700 text-center border border-amber-200 bg-amber-50 break-words">{sd.label||`Side ${si+1}`}</th>
                             ))}
                           </tr>
                         </thead>
