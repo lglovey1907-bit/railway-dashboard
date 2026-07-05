@@ -946,10 +946,15 @@ function ToggleWidget({ widget, onUpdate, canManage }: {
 type SectionMeta = { updatedBy: string; updatedAt: string; checkedBy: string; checkedAt: string };
 const mkMeta = (): SectionMeta => ({ updatedBy: '', updatedAt: '', checkedBy: '', checkedAt: '' });
 
+type CounterSide = { label: string; M: string; E: string; N: string };
 type CounterHead = {
   name: string; total: string;
   M: string; E: string; N: string;
   mpSanctioned: string; mpOnRoll: string; mpActual: string;
+  /** Optional per-side (e.g. AG Side / PG Side) shift breakdown. When present
+   *  and non-empty, the shift distribution is shown as side columns instead of
+   *  the single M/E/N. Purely optional — most counters won't use it. */
+  sides?: CounterSide[];
   extraFields: { key: string; value: string }[];
   meta: SectionMeta;
 };
@@ -1582,6 +1587,9 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
       counterHeads:   Array.isArray(s.counterHeads)
         ? s.counterHeads.map((ch: any) => ({ ...mkCH(ch.name), ...ch,
             extraFields: Array.isArray(ch.extraFields) ? ch.extraFields : [],
+            sides: Array.isArray(ch.sides) && ch.sides.length
+              ? ch.sides.map((sd: any) => ({ label: sd?.label ?? '', M: sd?.M ?? '', E: sd?.E ?? '', N: sd?.N ?? '' }))
+              : undefined,
             meta: ch.meta ?? mkMeta(),
           }))
         : base.counterHeads,
@@ -2251,6 +2259,21 @@ ${sheet('Station Earning',[
   const rmCHExtra  = (i: number, fi: number) =>
     setD(p => { const a=[...p.counterHeads]; a[i]={...a[i], extraFields:a[i].extraFields.filter((_,j)=>j!==fi)}; return {...p, counterHeads: a}; });
 
+  // ── Optional per-side (AG / PG) shift columns on a counter head ──
+  const addCHSide = (i: number) =>
+    setD(p => {
+      const a = [...p.counterHeads];
+      const sides = [...(a[i].sides ?? [])];
+      const defaults = ['AG Side', 'PG Side', 'Side 3', 'Side 4'];
+      sides.push({ label: defaults[sides.length] ?? `Side ${sides.length + 1}`, M: '', E: '', N: '' });
+      a[i] = { ...a[i], sides };
+      return { ...p, counterHeads: a };
+    });
+  const updCHSide = (i: number, si: number, patch: Partial<CounterSide>) =>
+    setD(p => { const a=[...p.counterHeads]; const s=[...(a[i].sides??[])]; s[si]={...s[si],...patch}; a[i]={...a[i],sides:s}; return {...p, counterHeads: a}; });
+  const rmCHSide = (i: number, si: number) =>
+    setD(p => { const a=[...p.counterHeads]; const s=(a[i].sides??[]).filter((_,j)=>j!==si); a[i]={...a[i],sides:s.length?s:undefined}; return {...p, counterHeads: a}; });
+
   const updCI  = (i: number, patch: Partial<CommercialItem>) =>
     setD(p => { const a=[...p.commercial]; a[i]={...a[i],...patch}; return {...p, commercial: a}; });
   const addCI  = () => setD(p => ({...p, commercial: [...p.commercial, mkCI()]}));
@@ -2499,15 +2522,52 @@ ${sheet('Station Earning',[
                 <span className="text-[9px] text-slate-400 uppercase tracking-wide">Total counters</span>
                 <CI val={ch.total} onChange={v=>updCH(i,{total:v})} ph="e.g. 2"/>
               </label>
-              {/* Shifts */}
-              <div className="grid grid-cols-3 gap-1">
-                {(['M','E','N'] as const).map(s=>(
-                  <label key={s} className="flex flex-col gap-0.5 items-center">
-                    <span className="text-[9px] text-slate-400">{s}</span>
-                    <CI val={ch[s]} onChange={v=>updCH(i,{[s]:v} as Partial<CounterHead>)} ph="0"/>
-                  </label>
-                ))}
-              </div>
+              {/* Shifts — either a single M/E/N grid, or optional per-side columns */}
+              {(!ch.sides || ch.sides.length === 0) ? (
+                <div className="space-y-1">
+                  <div className="grid grid-cols-3 gap-1">
+                    {(['M','E','N'] as const).map(s=>(
+                      <label key={s} className="flex flex-col gap-0.5 items-center">
+                        <span className="text-[9px] text-slate-400">{s}</span>
+                        <CI val={ch[s]} onChange={v=>updCH(i,{[s]:v} as Partial<CounterHead>)} ph="0"/>
+                      </label>
+                    ))}
+                  </div>
+                  <button onClick={()=>addCHSide(i)}
+                    className="w-full text-[9px] text-amber-600 hover:text-amber-700 py-0.5 rounded border border-dashed border-amber-300 hover:border-amber-400">
+                    ⇆ Split by side (AG / PG)
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <div className="flex items-start gap-1">
+                    {/* Row-label column: M / E / N */}
+                    <div className="flex flex-col gap-0.5 pt-3.5 shrink-0">
+                      {(['M','E','N'] as const).map(s=>(
+                        <span key={s} className="text-[9px] text-slate-400 h-[18px] flex items-center">{s}</span>
+                      ))}
+                    </div>
+                    {/* One editable column per side */}
+                    {ch.sides.map((sd, si)=>(
+                      <div key={si} className="flex-1 min-w-0 space-y-0.5">
+                        <div className="flex items-center gap-0.5">
+                          <input value={sd.label} onChange={e=>updCHSide(i,si,{label:e.target.value})}
+                            placeholder="Side"
+                            className="w-full text-[8px] font-semibold bg-amber-100 border border-amber-200 rounded px-1 py-0.5 focus:outline-none focus:border-amber-400"/>
+                          <button onClick={()=>rmCHSide(i,si)} className="text-slate-300 hover:text-red-400 shrink-0"><X size={8}/></button>
+                        </div>
+                        {(['M','E','N'] as const).map(s=>(
+                          <CI key={s} val={sd[s]} onChange={v=>updCHSide(i,si,{[s]:v} as Partial<CounterSide>)} ph="0"/>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={()=>addCHSide(i)}
+                    className="w-full text-[9px] text-amber-600 hover:text-amber-700 py-0.5 rounded border border-dashed border-amber-300 hover:border-amber-400">
+                    + Add side column
+                  </button>
+                </div>
+              )}
               {/* Manpower */}
               <div className="border-t border-amber-200 pt-1">
                 <p className="text-[9px] text-slate-400 uppercase tracking-wide mb-1">Manpower</p>
@@ -3015,15 +3075,40 @@ ${sheet('Station Earning',[
           <div className="overflow-x-auto">
             <div className="inline-flex border border-amber-200 rounded-lg overflow-hidden min-w-full">
               {visibleCH.map((ch, i) => (
-                <div key={i} className={`flex-1 min-w-[90px] p-2 ${i < visibleCH.length-1 ? 'border-r border-amber-200' : ''}`}>
+                <div key={i} className={`flex-1 ${ch.sides && ch.sides.length ? 'min-w-[130px]' : 'min-w-[90px]'} p-2 ${i < visibleCH.length-1 ? 'border-r border-amber-200' : ''}`}>
                   <p className="text-[10px] font-bold text-amber-700 whitespace-nowrap leading-tight">
                     {ch.name}{ch.total ? ` - ${ch.total}` : ''}
                   </p>
-                  <div className="mt-0.5">
-                    {ch.M && <p className="text-[10px] text-slate-600 leading-snug">M - {ch.M}</p>}
-                    {ch.E && <p className="text-[10px] text-slate-600 leading-snug">E - {ch.E}</p>}
-                    {ch.N && <p className="text-[10px] text-slate-600 leading-snug">N - {ch.N}</p>}
-                  </div>
+                  {(ch.sides && ch.sides.length > 0) ? (
+                    <div className="mt-0.5">
+                      <table className="text-[9px] w-full border-collapse">
+                        <thead>
+                          <tr>
+                            <th className="text-left font-normal text-slate-400 pr-1"></th>
+                            {ch.sides.map((sd,si)=>(
+                              <th key={si} className="px-1 font-semibold text-amber-700 text-center border-l border-amber-100 whitespace-nowrap">{sd.label||`Side ${si+1}`}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(['M','E','N'] as const).map(s=>(
+                            <tr key={s}>
+                              <td className="text-slate-400 pr-1">{s}</td>
+                              {ch.sides!.map((sd,si)=>(
+                                <td key={si} className="px-1 text-center border-l border-amber-100 text-slate-700 font-medium">{sd[s]||'—'}</td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="mt-0.5">
+                      {ch.M && <p className="text-[10px] text-slate-600 leading-snug">M - {ch.M}</p>}
+                      {ch.E && <p className="text-[10px] text-slate-600 leading-snug">E - {ch.E}</p>}
+                      {ch.N && <p className="text-[10px] text-slate-600 leading-snug">N - {ch.N}</p>}
+                    </div>
+                  )}
                   {(ch.mpSanctioned || ch.mpOnRoll || ch.mpActual) && (
                     <div className="mt-1 pt-1 border-t border-amber-100">
                       <p className="text-[9px] text-slate-400 uppercase tracking-wide leading-tight mb-0.5">Manpower</p>
