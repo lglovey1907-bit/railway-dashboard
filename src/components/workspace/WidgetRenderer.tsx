@@ -1641,6 +1641,28 @@ function fmtMeta(meta?: SectionMeta): { upd: string|null; chk: string|null } {
   };
 }
 
+/**
+ * Small presentational components used by HandoutWidget. These MUST live at
+ * module scope — if they were defined inside HandoutWidget they'd be recreated
+ * on every render, causing React to remount their <input> on each keystroke and
+ * lose focus after a single character.
+ */
+const CI = ({ val, onChange, ph }: { val: string; onChange: (v: string) => void; ph?: string }) => (
+  <input value={val} onChange={e => onChange(e.target.value)} placeholder={ph}
+    className="w-full bg-amber-50 border border-amber-200 rounded px-1 py-0.5 text-[10px] text-center focus:outline-none focus:border-amber-400"/>
+);
+const TH = ({ cols }: { cols: string[] }) => (
+  <tr className="bg-amber-600 text-white">
+    {cols.map((c, i) => <th key={i} className="px-2 py-1 text-[10px] font-bold border border-amber-500 text-center whitespace-nowrap">{c}</th>)}
+  </tr>
+);
+const TRow = ({ label, cells, hi }: { label: string; cells: string[]; hi?: boolean }) => (
+  <tr className={hi ? 'bg-amber-50 font-semibold' : 'hover:bg-amber-50/40'}>
+    <td className="px-2 py-1 text-[10px] border border-amber-200 font-medium text-slate-700 whitespace-nowrap">{label}</td>
+    {cells.map((c, i) => <td key={i} className="px-2 py-1 text-[10px] text-center border border-amber-200 text-slate-700">{c || '—'}</td>)}
+  </tr>
+);
+
 function HandoutWidget({ widget, onUpdate, canManage }: {
   widget: LayoutWidget; onUpdate: (p: Partial<LayoutWidget>) => void; canManage: boolean;
 }) {
@@ -2468,22 +2490,6 @@ ${sheet('Station Earning',[
   const TR_COLS = ['Orig.', 'Term.', 'Passing', 'Total'];
   const PR_ROWS = ['UTS', 'PRS', 'Total'];
   const PR_COLS = ['Tickets / day', 'Passengers / day', 'Earning / day'];
-
-  const TH = ({ cols }: { cols: string[] }) => (
-    <tr className="bg-amber-600 text-white">
-      {cols.map((c,i) => <th key={i} className="px-2 py-1 text-[10px] font-bold border border-amber-500 text-center whitespace-nowrap">{c}</th>)}
-    </tr>
-  );
-  const TRow = ({ label, cells, hi }: { label: string; cells: string[]; hi?: boolean }) => (
-    <tr className={hi ? 'bg-amber-50 font-semibold' : 'hover:bg-amber-50/40'}>
-      <td className="px-2 py-1 text-[10px] border border-amber-200 font-medium text-slate-700 whitespace-nowrap">{label}</td>
-      {cells.map((c,i) => <td key={i} className="px-2 py-1 text-[10px] text-center border border-amber-200 text-slate-700">{c||'—'}</td>)}
-    </tr>
-  );
-  const CI = ({ val, onChange, ph }: { val: string; onChange: (v:string)=>void; ph?: string }) => (
-    <input value={val} onChange={e=>onChange(e.target.value)} placeholder={ph}
-      className="w-full bg-amber-50 border border-amber-200 rounded px-1 py-0.5 text-[10px] text-center focus:outline-none focus:border-amber-400"/>
-  );
 
   // ── EDIT MODE ──────────────────────────────────────────────────────────────
   if (editing && canManage) return (
