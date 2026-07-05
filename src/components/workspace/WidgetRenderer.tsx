@@ -978,13 +978,8 @@ const SEC_LABELS: Record<string, string> = {
   ebif: 'Earning Bifurcation',
 };
 
-// ── CMI role options for Cell Assignment Configuration ────────────────────────
-const SECTIONAL_CMI_OPTIONS = [
-  'CMI/NDLS','CMI/DLI','CMI/NZM','CMI/ANVT',
-  'CMI/DSA','CMI/SZM','CMI/TKJ','CMI/DEE',
-  'CMI/SNP','CMI/ROK','CMI/PTR','CMI/RK',
-  'CMI/HNZ','CMI/BVH','CMI/GZB',
-] as const;
+// ── Divisional CMI role options for Cell Assignment Configuration ─────────────
+// (Sectional CMIs are read dynamically from the Overview sheet cache instead)
 const DIVISIONAL_CMI_OPTIONS = [
   'CMI/UTS-PRS','CMI/Sanitation','CMI/Planning','CMI/Marketing',
   'CMI/Traffic','CMI/Engineering','CMI/Security','CMI/Catering',
@@ -1298,6 +1293,12 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
   const colState= useMemo(() => findCol(ovHeaders, 'state'),    [ovHeaders]);
   const colSec  = useMemo(() => findCol(ovHeaders, 'section'),  [ovHeaders]);
   const colCMI  = useMemo(() => findCol(ovHeaders, 'cmi'),      [ovHeaders]);
+
+  // ── Unique CMI values from Overview sheet (replaces hardcoded station list) ─
+  const uniqueOvCMIs = useMemo(() => {
+    if (!colCMI || !ovRows.length) return [];
+    return [...new Set(ovRows.map(r => String(r[colCMI] ?? '').trim()).filter(Boolean))].sort();
+  }, [ovRows, colCMI]);
 
   const searchRows = (field: 'code'|'name', query: string) => {
     if (!query || query.length < 1) return [];
@@ -2598,8 +2599,8 @@ ${sheet('Station Earning',[
             <datalist id="handout-cells-datalist">
               {/* ── Active cells from Cell Management ── */}
               {availableCells.map(c => <option key={`cell-${c.name}`} value={c.name}/>)}
-              {/* ── Sectional CMIs (station-based) ── */}
-              {SECTIONAL_CMI_OPTIONS.map(c => <option key={`scmi-${c}`} value={c}/>)}
+              {/* ── Sectional CMIs — dynamic from Overview sheet cache ── */}
+              {uniqueOvCMIs.map(c => <option key={`scmi-${c}`} value={c}/>)}
               {/* ── Divisional CMIs (function-based) ── */}
               {DIVISIONAL_CMI_OPTIONS.map(c => <option key={`dcmi-${c}`} value={c}/>)}
               {/* ── CMIs from Staff Master (registered incharges) ── */}
@@ -2607,7 +2608,7 @@ ${sheet('Station Earning',[
               {/* ── Preserve any already-assigned values not in the above lists ── */}
               {Object.values(cellConfig).filter(v =>
                 !availableCells.some(c => c.name === v) &&
-                !(SECTIONAL_CMI_OPTIONS as readonly string[]).includes(v) &&
+                !uniqueOvCMIs.includes(v) &&
                 !(DIVISIONAL_CMI_OPTIONS as readonly string[]).includes(v) &&
                 !sectionalCMIs.some(s => s.name === v)
               ).map(v => <option key={`existing-${v}`} value={v}/>)}

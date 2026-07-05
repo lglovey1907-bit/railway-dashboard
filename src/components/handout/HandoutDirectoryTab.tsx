@@ -364,19 +364,6 @@ export function HandoutDirectoryTab({ initialCode }: { initialCode?: string }) {
 
   useEffect(() => { loadOvCache(); loadHandouts(); }, [loadOvCache, loadHandouts]);
 
-  // ── Auto-open by initialCode (from Overview click) ────────────────────────
-  useEffect(() => {
-    if (!initialCode) return;
-    const key  = initialCode.toUpperCase().trim();
-    const found = handouts[key];
-    if (found) { setViewHD(found); return; }
-    // Try to load from localStorage directly
-    try {
-      const raw = localStorage.getItem(handoutKey(key));
-      if (raw) setViewHD(JSON.parse(raw));
-    } catch { /* ignore */ }
-  }, [initialCode, handouts]);
-
   // ── Column detection ───────────────────────────────────────────────────────
   const colCode  = useMemo(() => findCol(ovHeaders, 'code'),    [ovHeaders]);
   const colName  = useMemo(() => findCol(ovHeaders, 'name'),    [ovHeaders]);
@@ -384,6 +371,40 @@ export function HandoutDirectoryTab({ initialCode }: { initialCode?: string }) {
   const colState = useMemo(() => findCol(ovHeaders, 'state'),   [ovHeaders]);
   const colSec   = useMemo(() => findCol(ovHeaders, 'section'), [ovHeaders]);
   const colCMI   = useMemo(() => findCol(ovHeaders, 'cmi'),     [ovHeaders]);
+
+  // ── Build skeleton HD from an Overview row ────────────────────────────────
+  const buildHDFromRow = useCallback((key: string, row: OvRow): HD => ({
+    stationCode:  String(row[colCode]  ?? key),
+    stationName:  colName  ? String(row[colName]  ?? '') : '',
+    category:     colCat   ? String(row[colCat]   ?? '') : '',
+    state:        colState ? String(row[colState] ?? '') : '',
+    section:      colSec   ? String(row[colSec]   ?? '') : '',
+    cmi:          colCMI   ? String(row[colCMI]   ?? '') : '',
+    date: '', division: 'Delhi Division',
+    ff: [['','','',''],['','','',''],['','','','']],
+    platforms: '', fob: '', waitingRooms: '',
+    trains: [['','','',''],['','','',''],['','','','']],
+    counterHeads: [], sanitation: '', commercial: [],
+    primes: [], stationEarning: [], earningBifurcation: '',
+  }), [colCode, colName, colCat, colState, colSec, colCMI]);
+
+  // ── Auto-open by initialCode (from Overview click) ────────────────────────
+  useEffect(() => {
+    if (!initialCode) return;
+    const key  = initialCode.toUpperCase().trim();
+    // 1. Handout already loaded in state
+    const found = handouts[key];
+    if (found) { setViewHD(found); return; }
+    // 2. Handout in localStorage
+    try {
+      const raw = localStorage.getItem(handoutKey(key));
+      if (raw) { setViewHD(JSON.parse(raw)); return; }
+    } catch { /* ignore */ }
+    // 3. No saved handout — pre-fill from Overview sheet cache
+    if (!colCode || !ovRows.length) return;
+    const row = ovRows.find(r => String(r[colCode] ?? '').trim().toUpperCase() === key);
+    if (row) setViewHD(buildHDFromRow(key, row));
+  }, [initialCode, handouts, ovRows, colCode, buildHDFromRow]);
 
   // ── Build merged station list ──────────────────────────────────────────────
   // Merge: overview rows (source of truth for station list) + handout data
@@ -473,13 +494,21 @@ export function HandoutDirectoryTab({ initialCode }: { initialCode?: string }) {
   };
 
   const viewStation = (code: string) => {
-    const hd = handouts[code];
+    const key = code.toUpperCase().trim();
+    // 1. Handout in state
+    const hd = handouts[key];
     if (hd) { setViewHD(hd); return; }
+    // 2. Handout in localStorage
     try {
-      const raw = localStorage.getItem(handoutKey(code));
-      if (raw) setViewHD(JSON.parse(raw));
-      else alert('No handout data found for this station. Fill it in via the Handout widget.');
+      const raw = localStorage.getItem(handoutKey(key));
+      if (raw) { setViewHD(JSON.parse(raw)); return; }
     } catch { /* ignore */ }
+    // 3. No saved handout — pre-fill from Overview sheet cache
+    if (colCode && ovRows.length) {
+      const row = ovRows.find(r => String(r[colCode] ?? '').trim().toUpperCase() === key);
+      if (row) { setViewHD(buildHDFromRow(key, row)); return; }
+    }
+    alert('No handout data found for this station. Fill it in via the Handout widget.');
   };
 
   // ── Category colour (matches dashboard) ───────────────────────────────────
