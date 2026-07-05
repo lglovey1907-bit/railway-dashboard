@@ -1067,11 +1067,32 @@ function _parsePrimesTable(tbl: Element): string[][] | null {
  * More reliable than innerText on DOMParser output (which may not be rendered).
  */
 function _htmlToText(html: string): string {
+  // DOMParser is available in browser context (parseDocForHandout already guards for SSR).
+  // Using it instead of regex is required because Google Docs' <style> block is a
+  // multi-kilobyte minified CSS blob that defeats lazy [\s\S]*? matching in practice.
+  if (typeof document !== 'undefined') {
+    try {
+      // Parse as a full document so the browser correctly places <style>/<head> elements.
+      // For fragments we wrap; for full docs (already has <html>) we parse directly.
+      const src = /<html[\s>]/i.test(html)
+        ? html
+        : `<!DOCTYPE html><html><head></head><body>${html}</body></html>`;
+      const dom = new DOMParser().parseFromString(src, 'text/html');
+      // Remove style, script, head, and meta/link nodes — we only want readable text.
+      dom.querySelectorAll('style, script, head, meta, link, noscript').forEach(el => el.remove());
+      html = dom.body ? dom.body.innerHTML : dom.documentElement.innerHTML;
+    } catch {
+      // DOMParser failed (should never happen in a browser) — fall through to regex below.
+    }
+  } else {
+    // SSR / Node.js fallback — regex-based strip (good enough for non-browser contexts
+    // since this function is only really used in parseDocForHandout which guards SSR).
+    html = html
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+  }
   return html
-    // Remove <style> and <script> blocks entirely (content + tags)
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-    // Block close/self-close → newline
+    // Block-level closing tags → newline (so sections end up on their own lines)
     .replace(/<\/(?:p|li|div|ul|ol|h[1-6]|tr|blockquote|section)[^>]*>/gi, '\n')
     .replace(/<br\s*\/?>/gi, '\n')
     // Strip all remaining tags
