@@ -994,6 +994,80 @@ type DataSource = {
   label: string;
 };
 
+/** Convert a Google Docs share/edit URL to an HTML export URL */
+function toDocHtmlUrl(url: string): string | null {
+  const m = url.match(/\/document\/d\/([a-zA-Z0-9-_]+)/);
+  if (!m) return null;
+  return `https://docs.google.com/document/d/${m[1]}/export?format=html`;
+}
+
+/** Fields we can safely extract from a Google Doc and paste into a handout */
+type DocFields = {
+  stationCode?: string; stationName?: string; category?: string;
+  state?: string; section?: string; cmi?: string; division?: string;
+  platforms?: string; fob?: string; waitingRooms?: string;
+  sanitation?: string; parking?: string; catering?: string;
+};
+
+/**
+ * Parse a Google Doc HTML export and extract handout header/field values.
+ * Works with both table-layout and colon-separated key: value documents.
+ */
+function parseDocForHandout(html: string): DocFields {
+  if (typeof document === 'undefined') return {};
+  const dom = new DOMParser().parseFromString(html, 'text/html');
+  const result: DocFields = {};
+
+  const trySet = <K extends keyof DocFields>(key: K, val: string) => {
+    if (!result[key] && val.trim()) result[key] = val.trim() as DocFields[K];
+  };
+
+  // ── 1. Parse table rows: first cell = label, rest = value ─────────────────
+  dom.querySelectorAll('table tr').forEach(row => {
+    const cells = [...row.querySelectorAll('td, th')].map(c => c.textContent?.trim() ?? '');
+    if (cells.length < 2) return;
+    const k = cells[0].toLowerCase().replace(/\s+/g, ' ');
+    const v = cells.slice(1).join(' ').trim();
+    if (!v) return;
+    if (k.includes('station name') || k === 'station') trySet('stationName', v);
+    if (k.includes('station code') || k === 'code' || k === 'stn code') trySet('stationCode', v);
+    if (k.includes('categor'))       trySet('category',     v);
+    if (k === 'state')               trySet('state',         v);
+    if (k.includes('section'))       trySet('section',       v);
+    if (k === 'cmi' || k.startsWith('cmi/')) trySet('cmi',   k.startsWith('cmi/') ? cells[0] : v);
+    if (k.includes('division'))      trySet('division',      v);
+    if (k.includes('platform'))      trySet('platforms',     v);
+    if (k.includes('fob') || k.includes('foot over')) trySet('fob', v);
+    if (k.includes('waiting room'))  trySet('waitingRooms',  v);
+    if (k.includes('sanitation'))    trySet('sanitation',    v);
+    if (k.includes('parking'))       trySet('parking',       v);
+    if (k.includes('catering'))      trySet('catering',      v);
+  });
+
+  // ── 2. Line-by-line "Key: Value" fallback ──────────────────────────────────
+  const lines = (dom.body?.innerText ?? '').split('\n');
+  for (const line of lines) {
+    const ci = line.indexOf(':');
+    if (ci <= 0) continue;
+    const k = line.slice(0, ci).trim().toLowerCase().replace(/\s+/g, ' ');
+    const v = line.slice(ci + 1).trim();
+    if (!v) continue;
+    if (k.includes('station name') || k === 'name') trySet('stationName',  v);
+    if (k.includes('station code') || k === 'code') trySet('stationCode',  v);
+    if (k.includes('categor'))                       trySet('category',     v);
+    if (k === 'state')                               trySet('state',        v);
+    if (k.includes('section'))                       trySet('section',      v);
+    if (k === 'cmi')                                 trySet('cmi',          v);
+    if (k.includes('division'))                      trySet('division',     v);
+    if (k.includes('platform'))                      trySet('platforms',    v);
+    if (k.includes('sanitation'))                    trySet('sanitation',   v);
+    if (k.includes('parking'))                       trySet('parking',      v);
+    if (k.includes('catering'))                      trySet('catering',     v);
+  }
+
+  return result;
+}
+
 type HD = {
   stationCode: string; stationName: string; category: string;
   state: string; section: string; cmi: string;
@@ -1653,6 +1727,48 @@ ${sheet('Station Earning',[
   };
   const SRC_ICONS: Record<DataSource['type'], string> = {
     sheets: '📊', docs: '📄', pdf: '📕', other: '🔗',
+  };
+
+  // ── Fetch & Fill from Google Doc ──────────────────────────────────────────
+  const [fetchingDocId, setFetchingDocId] = useState<string | null>(null);
+
+  const fetchAndFillFromDoc = async (src: DataSource) => {
+    const exportUrl = toDocHtmlUrl(src.url);
+    if (!exportUrl) {
+      setDsPreview({ id: src.id, text: '⚠ Invalid Google Doc URL. Use the standard docs.google.com/document/d/... link.', error: true });
+      return;
+    }
+    setFetchingDocId(src.id);
+    setDsPreview(null);
+    try {
+      const res = await fetch(`/api/fetch-doc?url=${encodeURIComponent(exportUrl)}`);
+      const data: { content?: string; error?: string } = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+
+      const extracted = parseDocForHandout(data.content ?? '');
+      const keys = Object.keys(extracted) as (keyof DocFields)[];
+
+      if (keys.length === 0) {
+        setDsPreview({
+          id: src.id,
+          text: '⚠ No handout fields found in this document.\n\nTips:\n• Share the doc with "Anyone with the link can view"\n• Make sure the doc has a table with rows like "Station Name | NDLS"\n  or lines like "Station Name: New Delhi"',
+          error: true,
+        });
+      } else {
+        const preview = keys.map(k => `${k}: ${extracted[k]}`).join('\n');
+        setDsPreview({ id: src.id, text: `✅ Filled ${keys.length} field(s) from document:\n\n${preview}` });
+        const merged = { ...d, ...extracted };
+        setD(merged);
+        persistHD(merged);
+      }
+    } catch (e) {
+      setDsPreview({
+        id: src.id,
+        text: `⚠ ${e instanceof Error ? e.message : String(e)}\n\nMake sure the document is shared with "Anyone with the link can view".`,
+        error: true,
+      });
+    }
+    setFetchingDocId(null);
   };
 
   const updFF  = (r: number, c: number, v: string) => setD(p => { const a = p.ff.map(x=>[...x]); a[r][c]=v; return {...p, ff: a}; });
@@ -2662,7 +2778,14 @@ ${sheet('Station Earning',[
                     {src.type === 'sheets' && (
                       <button onClick={()=>fetchDataSource(src)}
                         className="px-2 py-1 text-[10px] bg-amber-50 hover:bg-amber-100 rounded-lg text-amber-700">
-                        Preview
+                        Preview CSV
+                      </button>
+                    )}
+                    {src.type === 'docs' && (
+                      <button onClick={()=>fetchAndFillFromDoc(src)}
+                        disabled={fetchingDocId === src.id}
+                        className="px-2 py-1 text-[10px] bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 rounded-lg text-emerald-700 font-medium">
+                        {fetchingDocId === src.id ? '⏳ Fetching…' : '📥 Fetch & Fill'}
                       </button>
                     )}
                     <button onClick={()=>removeDataSource(src.id)}
