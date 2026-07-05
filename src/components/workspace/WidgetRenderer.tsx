@@ -1109,6 +1109,78 @@ function _htmlToText(html: string): string {
 }
 
 /**
+ * Split the plain-text of one station block into its numbered sections (1–14).
+ *
+ * CRITICAL: CMI handouts are authored as an ORDERED list (<ol> with
+ * list-style-type:none) whose "1..14" markers are CSS-generated counters
+ * (`li:before { content: counter(...) }`). Those numbers are NOT part of the
+ * DOM textContent, so after _htmlToText the lines read "Category NSG-1",
+ * "Footfall/day ...", etc. — with NO leading digit. Therefore section
+ * detection is anchored on the section KEYWORD at the start of each line, and
+ * any leading bullet/number is merely tolerated (for docs that DO type it).
+ *
+ * Returns a map of {sectionNumber → trimmed content text after the keyword}.
+ */
+function _splitNumberedSections(workText: string): Record<number, string> {
+  // Ordered keyword patterns → canonical CMI section number.
+  const SECTION_PATTERNS: [number, RegExp][] = [
+    [1,  /Category/i],
+    [2,  /Footfall/i],
+    [3,  /Platforms?\b/i],
+    [4,  /FOB\b/i],
+    [5,  /Waiting\s*Rooms?/i],
+    [6,  /Trains?\b/i],
+    [7,  /Counters?\b/i],
+    [8,  /Manpower/i],
+    [9,  /Sanitation/i],
+    [10, /Pay\s*&\s*Use|Pay\s+and\s+Use|Pay\s*&/i],
+    [11, /Parking/i],
+    [12, /Catering/i],
+    [13, /Publicity|NFR\b/i],
+    [14, /ATM\b/i],
+  ];
+  const matchAtLineStart = (line: string): { num: number; contentOffset: number } | null => {
+    // Tolerate a leading bullet and/or a literal number ("1 ", "1. ", "1) ").
+    const m = /^[ \t]*(?:[-•·▪]\s*)?(?:\d{1,2}[.)]?\s+)?(.*)$/.exec(line);
+    if (!m) return null;
+    const rest = m[1];
+    const prefixLen = line.length - rest.length;
+    for (const [num, kw] of SECTION_PATTERNS) {
+      const km = kw.exec(rest);
+      if (km && km.index === 0) return { num, contentOffset: prefixLen + km[0].length };
+    }
+    return null;
+  };
+
+  type SecMark = { num: number; lineStart: number; contentStart: number };
+  const marks: SecMark[] = [];
+  const seen = new Set<number>();
+  let pos = 0;
+  let primesBoundary = workText.length; // numbered sections end where the PRIMES table starts
+  for (const line of workText.split('\n')) {
+    if (primesBoundary === workText.length && /^\s*PRIMES\b/i.test(line)) {
+      primesBoundary = pos;
+    }
+    const hit = matchAtLineStart(line);
+    if (hit && !seen.has(hit.num)) {
+      seen.add(hit.num);
+      marks.push({ num: hit.num, lineStart: pos, contentStart: pos + hit.contentOffset });
+    }
+    pos += line.length + 1; // +1 for the consumed '\n'
+  }
+  marks.sort((a, b) => a.lineStart - b.lineStart);
+
+  const sections: Record<number, string> = {};
+  for (let i = 0; i < marks.length; i++) {
+    const from = marks[i].contentStart;
+    let to = i + 1 < marks.length ? marks[i + 1].lineStart : workText.length;
+    if (to > primesBoundary) to = primesBoundary; // don't let section 14 swallow table text
+    sections[marks[i].num] = workText.slice(from, Math.max(from, to)).trim();
+  }
+  return sections;
+}
+
+/**
  * Parse a Google Doc HTML export and extract all handout fields.
  * Understands the CMI numbered-section format:
  *   1=Category, 2=Footfall, 3=Platforms, 4=FOB, 5=Waiting Rooms, 6=Trains,
@@ -1150,34 +1222,7 @@ function parseDocForHandout(html: string, stationHint = ''): DocFields {
   }
 
   // ── 2. Split text into numbered sections (1–14) ───────────────────────────
-  // Sections appear at the start of lines as:  [optional bullet] N  Keyword
-  // e.g. "1 Category", "- 2 Footfall", "6 Trains Originating ..."
-  const KWORDS = 'Category|Footfall|Platform|FOB|Waiting|Train|Counter|Manpower|Sanitation|Pay|Parking|Catering|Publicity|NFR|ATM';
-  const secRe  = new RegExp(`^[ \\t]*(?:[-•]\\s*)?(\\d{1,2})[ \\t]+(${KWORDS})`, 'gim');
-
-  type SecMark = { num: number; lineStart: number; contentStart: number };
-  const allMarks: SecMark[] = [];
-  let sm: RegExpExecArray | null;
-  while ((sm = secRe.exec(workText)) !== null) {
-    const n = parseInt(sm[1]);
-    if (n >= 1 && n <= 14) {
-      allMarks.push({ num: n, lineStart: sm.index, contentStart: sm.index + sm[0].length });
-    }
-  }
-  // Keep only the first occurrence of each section number, sorted by position
-  const seenNums = new Set<number>();
-  const marks: SecMark[] = [];
-  for (const mk of allMarks) {
-    if (!seenNums.has(mk.num)) { seenNums.add(mk.num); marks.push(mk); }
-  }
-  marks.sort((a, b) => a.lineStart - b.lineStart);
-
-  const sections: Record<number, string> = {};
-  for (let i = 0; i < marks.length; i++) {
-    const from = marks[i].contentStart;
-    const to   = i + 1 < marks.length ? marks[i + 1].lineStart : workText.length;
-    sections[marks[i].num] = workText.slice(from, to).trim();
-  }
+  const sections = _splitNumberedSections(workText);
 
   // ── 3. Simple string sections ─────────────────────────────────────────────
   if (sections[1]) {
@@ -1259,8 +1304,11 @@ function parseDocForHandout(html: string, stationHint = ''): DocFields {
     const chMap: Record<string, CounterHead> = {};
     const cRe = /([A-Z]+(?:\/[A-Z]+)?)\s*[-–]\s*(\d+)(?:\s*\(M[-–](\d+)[^)]*E[-–](\d+)[^)]*N[-–](\d+)\))?/g;
     let cm: RegExpExecArray | null;
+    // Shift/room indicators that must never be treated as counter names.
+    const NON_COUNTER = new Set(['M', 'E', 'N', 'L', 'G', 'AC']);
     while ((cm = cRe.exec(sections[7])) !== null) {
       const name = cm[1];
+      if (NON_COUNTER.has(name.toUpperCase())) continue; // e.g. the "M-6, E-6, N-4" shift group
       if (chMap[name]) {
         chMap[name].total = String(+chMap[name].total + +(cm[2]||0));
         if (cm[3]) chMap[name].M = String(+chMap[name].M + +cm[3]);
@@ -2019,8 +2067,6 @@ ${sheet('Station Earning',[
 
       // Debug: count HR blocks and section marks for diagnostics
       const hrCount   = (rawHtml.match(/<hr[^>]*\/?>/gi) ?? []).length;
-      const KWORDS_D  = 'Category|Footfall|Platform|FOB|Waiting|Train|Counter|Manpower|Sanitation|Pay|Parking|Catering|Publicity|NFR|ATM';
-      const secReD    = new RegExp(`^[ \\t]*(?:[-•]\\s*)?(\\d{1,2})[ \\t]+(${KWORDS_D})`, 'gim');
       const stationHtml = (() => {
         if (!d.stationCode) return rawHtml;
         const codeRe = new RegExp(`\\(\\s*${d.stationCode}\\s*\\)`, 'i');
@@ -2028,13 +2074,10 @@ ${sheet('Station Earning',[
         return rawHtml;
       })();
       const wt = _htmlToText(stationHtml);
-      const secMatches: number[] = [];
-      let sm2: RegExpExecArray | null;
-      while ((sm2 = secReD.exec(wt)) !== null) {
-        const n = parseInt(sm2[1]);
-        if (n >= 1 && n <= 14 && !secMatches.includes(n)) secMatches.push(n);
-      }
-      const debugInfo = `[debug] htmlLen=${rawHtml.length} hrBlocks=${hrCount+1} stationIsolated=${hrCount > 0 && !!d.stationCode} sections=[${secMatches.sort((a,b)=>a-b).join(',')}] textPreview: ${wt.slice(0, 120).replace(/\n/g,' ↵ ')}…`;
+      // Use the SAME keyword-anchored splitter the parser uses (numbers may be
+      // CSS-generated and absent from text) so the debug count is accurate.
+      const secMatches = Object.keys(_splitNumberedSections(wt)).map(Number).sort((a,b)=>a-b);
+      const debugInfo = `[debug] htmlLen=${rawHtml.length} hrBlocks=${hrCount+1} stationIsolated=${hrCount > 0 && !!d.stationCode} sections=[${secMatches.join(',')}] textPreview: ${wt.slice(0, 120).replace(/\n/g,' ↵ ')}…`;
 
       // Count non-empty extracted fields (including arrays)
       const filledKeys = Object.keys(extracted).filter(k => {
