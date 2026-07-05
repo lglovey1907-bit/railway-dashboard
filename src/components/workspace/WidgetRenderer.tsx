@@ -1001,68 +1001,289 @@ function toDocHtmlUrl(url: string): string | null {
   return `https://docs.google.com/document/d/${m[1]}/export?format=html`;
 }
 
-/** Fields we can safely extract from a Google Doc and paste into a handout */
+/**
+ * All fields that can be extracted from a Google Doc and filled into a handout.
+ * Covers every HD field including arrays (ff, trains, primes, stationEarning,
+ * counterHeads, commercial) and earningBifurcation.
+ */
 type DocFields = {
   stationCode?: string; stationName?: string; category?: string;
   state?: string; section?: string; cmi?: string; division?: string;
-  platforms?: string; fob?: string; waitingRooms?: string;
-  sanitation?: string; parking?: string; catering?: string;
+  platforms?: string; fob?: string; waitingRooms?: string; sanitation?: string;
+  ff?: string[][];              // 3×4 : UTS/PRS/Total × Outward/Inward/PF/Total
+  trains?: string[][];          // 3×4 : Mail/Pass/Total × Orig/Term/Pass/Total
+  counterHeads?: CounterHead[]; // counter name, total, M/E/N shifts, manpower
+  commercial?: CommercialItem[]; // Pay&Use, Parking, Catering, Publicity, ATM
+  primes?: string[][];          // 3×3 : UTS/PRS/Total × Tickets/Passengers/Earning
+  stationEarning?: string[][];  // 3×3 : same structure (Counter/Station Earning)
+  earningBifurcation?: string;
 };
 
-/**
- * Parse a Google Doc HTML export and extract handout header/field values.
- * Works with both table-layout and colon-separated key: value documents.
- */
-function parseDocForHandout(html: string): DocFields {
-  if (typeof document === 'undefined') return {};
-  const dom = new DOMParser().parseFromString(html, 'text/html');
-  const result: DocFields = {};
+/* ─── Helpers used inside parseDocForHandout ─────────────────────────── */
+function _numStr(s: string) { return s.replace(/[,\s₹]/g, ''); }
 
-  const trySet = <K extends keyof DocFields>(key: K, val: string) => {
-    if (!result[key] && val.trim()) result[key] = val.trim() as DocFields[K];
-  };
-
-  // ── 1. Parse table rows: first cell = label, rest = value ─────────────────
-  dom.querySelectorAll('table tr').forEach(row => {
-    const cells = [...row.querySelectorAll('td, th')].map(c => c.textContent?.trim() ?? '');
+function _parseFFTable(tbl: Element): string[][] | null {
+  const rowMap: Record<string, number> = { uts: 0, prs: 1, total: 2 };
+  const ff: string[][] = [['','','',''],['','','',''],['','','','']];
+  let hit = false;
+  tbl.querySelectorAll('tr').forEach(tr => {
+    const cells = [...tr.querySelectorAll('td,th')].map(c => c.textContent?.trim() ?? '');
     if (cells.length < 2) return;
-    const k = cells[0].toLowerCase().replace(/\s+/g, ' ');
+    const ri = rowMap[cells[0].toLowerCase().replace(/\s/g,'')];
+    if (ri === undefined) return;
+    cells.slice(1).filter(c => c !== '').slice(0, 4).forEach((v, i) => { ff[ri][i] = _numStr(v); });
+    hit = true;
+  });
+  return hit ? ff : null;
+}
+
+function _parseTrTable(tbl: Element): string[][] | null {
+  const tr2: string[][] = [['','','',''],['','','',''],['','','','']];
+  let hit = false;
+  tbl.querySelectorAll('tr').forEach(row => {
+    const cells = [...row.querySelectorAll('td,th')].map(c => c.textContent?.trim() ?? '');
+    if (cells.length < 2) return;
+    const lbl = cells[0].toLowerCase().replace(/[\s.]/g,'');
+    let ri = -1;
+    if (lbl.includes('mail') || lbl.includes('exp')) ri = 0;
+    else if (lbl.startsWith('pass') && !lbl.includes('total')) ri = 1;
+    else if (lbl === 'total') ri = 2;
+    if (ri < 0) return;
+    cells.slice(1).filter(c => c !== '').slice(0, 4).forEach((v, i) => { tr2[ri][i] = _numStr(v); });
+    hit = true;
+  });
+  return hit ? tr2 : null;
+}
+
+function _parsePrimesTable(tbl: Element): string[][] | null {
+  const rowMap: Record<string, number> = { uts: 0, prs: 1, total: 2 };
+  const pr: string[][] = [['','',''],['','',''],['','','']];
+  let hit = false;
+  tbl.querySelectorAll('tr').forEach(row => {
+    const cells = [...row.querySelectorAll('td,th')].map(c => c.textContent?.trim() ?? '');
+    if (cells.length < 2) return;
+    const ri = rowMap[cells[0].toLowerCase().replace(/\s/g,'')];
+    if (ri === undefined) return;
+    cells.slice(1).filter(c => c !== '').slice(0, 3).forEach((v, i) => { pr[ri][i] = v.replace(/,/g,''); });
+    hit = true;
+  });
+  return hit ? pr : null;
+}
+
+/**
+ * Parse a Google Doc HTML export and extract all handout fields.
+ * Understands the CMI numbered-section format:
+ *   1=Category, 2=Footfall, 3=Platforms, 4=FOB, 5=Waiting Rooms, 6=Trains,
+ *   7=Counters, 8=Manpower, 9=Sanitation, 10=Pay&Use, 11=Parking,
+ *   12=Catering, 13=Publicity/NFR, 14=ATM  +  PRIMES + Station Earning + Bifurcation
+ *
+ * If the document contains multiple stations, stationHint (the station code)
+ * is used to extract only that station's block.
+ */
+function parseDocForHandout(html: string, stationHint = ''): DocFields {
+  if (typeof document === 'undefined') return {};
+  const dom  = new DOMParser().parseFromString(html, 'text/html');
+  const result: DocFields = {};
+  const bodyText = dom.body?.innerText ?? '';
+
+  // ── 0. Station isolation ─────────────────────────────────────────────────
+  // Multi-station docs repeat the pattern "StationName (CODE)\nAs on DD.MM.YYYY"
+  let workText = bodyText;
+  if (stationHint) {
+    const codeRe = new RegExp(`(?:^|\\n)([^\\n]*\\b${stationHint}\\b[^\\n]*)`, 'i');
+    const sm = codeRe.exec(bodyText);
+    if (sm) {
+      // End at the next station-code line (2-5 uppercase letters in parens)
+      const nextRe = /\n[^\n]*\([A-Z]{2,5}\)[^\n]*\n/g;
+      nextRe.lastIndex = sm.index + sm[0].length + 1;
+      const nm = nextRe.exec(bodyText);
+      workText = bodyText.slice(sm.index, nm ? nm.index : bodyText.length);
+    }
+  }
+
+  // ── 1. Station name + code from heading line ─────────────────────────────
+  const headM = /^(.+?)\s*\(([A-Z]{2,5})\)\s*(?:\n|$)/m.exec(workText);
+  if (headM) {
+    if (!result.stationName) result.stationName = headM[1].trim();
+    if (!result.stationCode) result.stationCode = headM[2].trim();
+  }
+
+  // ── 2. Split text into numbered sections (1–14) ──────────────────────────
+  // The pattern matches a section number that is NOT preceded by another digit.
+  // e.g. "3Platforms" or "3 Platforms" or "3\nPlatforms"
+  const KWORDS = 'Category|Footfall|Platform|FOB|Waiting Room|Train|Counter|Manpower|Sanitation|Pay|Parking|Catering|Publicity|NFR|ATM';
+  const secRe  = new RegExp(`(?:^|[^\\d])(\\d{1,2})\\s*(${KWORDS})`, 'gi');
+  const marks: Array<{ num: number; end: number }> = [];
+  let sm2: RegExpExecArray | null;
+  while ((sm2 = secRe.exec(workText)) !== null) {
+    const n = parseInt(sm2[1]);
+    if (n >= 1 && n <= 14) marks.push({ num: n, end: sm2.index + sm2[0].length });
+  }
+  const sections: Record<number, string> = {};
+  for (let i = 0; i < marks.length; i++) {
+    const from = marks[i].end;
+    const to   = i + 1 < marks.length ? marks[i + 1].end - marks[i + 1].end + marks[i + 1].end - (marks[i+1].end - marks[i+1].end) : workText.length;
+    // to = start of next marker (before the digit)
+    const nextStart = i + 1 < marks.length
+      ? workText.lastIndexOf(String(marks[i+1].num), marks[i+1].end)
+      : workText.length;
+    sections[marks[i].num] = workText.slice(from, nextStart).trim();
+  }
+
+  // ── 3. Simple string sections ────────────────────────────────────────────
+  // Sec 1: Category
+  if (sections[1]) {
+    const c = sections[1].match(/NSG[-–\s]*(\d)/i);
+    result.category = c ? `NSG-${c[1]}` : sections[1].replace(/^\d+/, '').trim().split(/\s/)[0];
+  }
+  // Sec 4: FOB
+  if (sections[4]) {
+    const f = sections[4].match(/Nil|(\d+)/i);
+    result.fob = f ? (f[1] ?? 'Nil') : sections[4].trim().split(/[\s\n]/)[0];
+  }
+  // Sec 5: Waiting Rooms
+  if (sections[5]) result.waitingRooms = sections[5].trim();
+  // Sec 9: Sanitation
+  if (sections[9]) result.sanitation = sections[9].trim();
+
+  // ── 4. Commercial items (sections 10-14) ─────────────────────────────────
+  const commercialNames: [number, string][] = [
+    [10,'Pay & Use Toilet'],[11,'Parking'],
+    [12,'Catering'],[13,'Publicity'],[14,'ATM'],
+  ];
+  const cItems: CommercialItem[] = [];
+  for (const [n, name] of commercialNames) {
+    if (!sections[n]) continue;
+    const t = sections[n].trim();
+    const em = t.match(/Earning\s*(?:₹|Rs\.?)\s*([\d,.]+)\s*lakhs?\s*PA/i);
+    cItems.push({ name, earning: em ? `₹ ${em[1]} lakhs PA` : '', status: t });
+  }
+  if (cItems.length) result.commercial = cItems;
+
+  // ── 5. HTML table-based parsing for array fields ─────────────────────────
+  const allTbls = [...dom.querySelectorAll('table')];
+  const primeCandidates: Element[] = [];
+
+  for (const tbl of allTbls) {
+    const tt = (tbl.textContent ?? '').toLowerCase();
+    const firstColVals = [...tbl.querySelectorAll('tr')].map(r =>
+      (r.querySelector('td,th')?.textContent ?? '').toLowerCase().replace(/\s/g,''));
+
+    // Footfall: has 'outward' or 'inward' + UTS/PRS row labels
+    if (!result.ff &&
+        (tt.includes('outward') || tt.includes('inward')) &&
+        firstColVals.some(v => v === 'uts')) {
+      const parsed = _parseFFTable(tbl);
+      if (parsed) result.ff = parsed;
+    }
+    // Trains: has 'originating'/'terminating' + 'mail'/'passenger'
+    else if (!result.trains &&
+        (tt.includes('originating') || tt.includes('terminating') || tt.includes('orig.')) &&
+        (tt.includes('mail') || tt.includes('passenger'))) {
+      const parsed = _parseTrTable(tbl);
+      if (parsed) result.trains = parsed;
+    }
+    // PRIMES / Station Earning: UTS/PRS/Total rows + Tickets or Earning columns
+    else if (firstColVals.some(v => v === 'uts') &&
+             (tt.includes('tickets') || (tt.includes('earning') && tt.includes('prs')))) {
+      primeCandidates.push(tbl);
+    }
+
+    // Outer section table: look for cells containing section numbers + keywords
+    // and parse platforms from section-3 cell text (avoids concatenation bug)
+    if (!result.platforms) {
+      tbl.querySelectorAll('tr').forEach(row => {
+        const cells = [...row.querySelectorAll('td,th')].map(c => c.textContent?.trim() ?? '');
+        if (cells.length < 2) return;
+        const k0 = cells[0].toLowerCase();
+        if (/\bplatform\b/.test(k0)) {
+          // Take the last cell content (the actual platform data cell)
+          const pfContent = cells[cells.length - 1];
+          if (pfContent && pfContent.length < 500) result.platforms = pfContent;
+        }
+        if (/\bfob\b/.test(k0) && !result.fob) {
+          const fNum = cells[1]?.match(/(\d+|Nil)/i);
+          if (fNum) result.fob = fNum[1];
+        }
+        if (/\bwaiting room\b/.test(k0) && !result.waitingRooms) {
+          result.waitingRooms = cells[1] ?? '';
+        }
+        if (/\bcategor\b/.test(k0) && !result.category) {
+          result.category = cells[1] ?? '';
+        }
+      });
+    }
+  }
+
+  // Assign the first two PRIMES-like tables to primes and stationEarning
+  if (primeCandidates[0]) { const p = _parsePrimesTable(primeCandidates[0]); if (p) result.primes = p; }
+  if (primeCandidates[1]) { const p = _parsePrimesTable(primeCandidates[1]); if (p) result.stationEarning = p; }
+
+  // ── 6. Counter heads from section 7 text ─────────────────────────────────
+  if (sections[7]) {
+    const chMap: Record<string, CounterHead> = {};
+    const cRe = /([A-Z]+(?:\/[A-Z]+)?)\s*[-–]\s*(\d+)(?:\s*\(M[-–](\d+)[^)]*E[-–](\d+)[^)]*N[-–](\d+)\))?/g;
+    let cm: RegExpExecArray | null;
+    while ((cm = cRe.exec(sections[7])) !== null) {
+      const name = cm[1];
+      if (chMap[name]) {
+        chMap[name].total = String(+chMap[name].total + +(cm[2]||0));
+        if (cm[3]) chMap[name].M = String(+chMap[name].M + +cm[3]);
+        if (cm[4]) chMap[name].E = String(+chMap[name].E + +cm[4]);
+        if (cm[5]) chMap[name].N = String(+chMap[name].N + +cm[5]);
+      } else {
+        chMap[name] = {
+          name, total: cm[2]||'', M: cm[3]||'', E: cm[4]||'', N: cm[5]||'',
+          mpOnRoll:'', mpSanctioned:'', mpActual:'', extraFields:[], meta: mkMeta(),
+        };
+      }
+    }
+    // Merge manpower (section 8) into mpOnRoll / mpSanctioned
+    if (sections[8]) {
+      const mpRe = /([A-Z]+)\s*[-–]\s*(\d+)\/(\d+)/g;
+      let mm: RegExpExecArray | null;
+      while ((mm = mpRe.exec(sections[8])) !== null) {
+        const n = mm[1];
+        if (chMap[n]) { chMap[n].mpOnRoll = mm[2]; chMap[n].mpSanctioned = mm[3]; }
+      }
+    }
+    const chs = Object.values(chMap);
+    if (chs.length) result.counterHeads = chs;
+  }
+
+  // ── 7. Earning bifurcation ────────────────────────────────────────────────
+  // Pattern: "UTS: ATVM- …" block that appears after the PRIMES tables
+  const bifM = workText.match(/(UTS\s*[:：]\s*ATVM[-–][\d,]+[^\n]*(?:\n(?!PRS:)[^\n]+)*\nPRS\s*[:：][^\n]*)/i)
+            ?? workText.match(/(UTS\s*[:：][^\n]+(?:\nPRS\s*[:：][^\n]+)?)/i);
+  if (bifM) result.earningBifurcation = bifM[1].trim();
+
+  // ── 8. Simple key-value fallbacks for header fields ──────────────────────
+  const trySet = (key: keyof DocFields, val: string) => {
+    if (!result[key] && val.trim()) (result as Record<string, unknown>)[key] = val.trim();
+  };
+  dom.querySelectorAll('table tr').forEach(row => {
+    const cells = [...row.querySelectorAll('td,th')].map(c => c.textContent?.trim() ?? '');
+    if (cells.length < 2) return;
+    const k = cells[0].toLowerCase().replace(/\s+/g,' ');
     const v = cells.slice(1).join(' ').trim();
     if (!v) return;
     if (k.includes('station name') || k === 'station') trySet('stationName', v);
-    if (k.includes('station code') || k === 'code' || k === 'stn code') trySet('stationCode', v);
-    if (k.includes('categor'))       trySet('category',     v);
-    if (k === 'state')               trySet('state',         v);
-    if (k.includes('section'))       trySet('section',       v);
-    if (k === 'cmi' || k.startsWith('cmi/')) trySet('cmi',   k.startsWith('cmi/') ? cells[0] : v);
-    if (k.includes('division'))      trySet('division',      v);
-    if (k.includes('platform'))      trySet('platforms',     v);
-    if (k.includes('fob') || k.includes('foot over')) trySet('fob', v);
-    if (k.includes('waiting room'))  trySet('waitingRooms',  v);
-    if (k.includes('sanitation'))    trySet('sanitation',    v);
-    if (k.includes('parking'))       trySet('parking',       v);
-    if (k.includes('catering'))      trySet('catering',      v);
+    if (k.includes('station code') || k === 'stn code') trySet('stationCode', v);
+    if (k === 'state') trySet('state', v);
+    if (k.includes('section') && !k.includes('sanit')) trySet('section', v);
+    if (k === 'cmi' || k.startsWith('cmi/')) trySet('cmi', k.startsWith('cmi/') ? cells[0] : v);
+    if (k.includes('division')) trySet('division', v);
   });
-
-  // ── 2. Line-by-line "Key: Value" fallback ──────────────────────────────────
-  const lines = (dom.body?.innerText ?? '').split('\n');
+  const lines = bodyText.split('\n');
   for (const line of lines) {
     const ci = line.indexOf(':');
     if (ci <= 0) continue;
-    const k = line.slice(0, ci).trim().toLowerCase().replace(/\s+/g, ' ');
-    const v = line.slice(ci + 1).trim();
+    const k = line.slice(0,ci).trim().toLowerCase().replace(/\s+/g,' ');
+    const v = line.slice(ci+1).trim();
     if (!v) continue;
-    if (k.includes('station name') || k === 'name') trySet('stationName',  v);
-    if (k.includes('station code') || k === 'code') trySet('stationCode',  v);
-    if (k.includes('categor'))                       trySet('category',     v);
-    if (k === 'state')                               trySet('state',        v);
-    if (k.includes('section'))                       trySet('section',      v);
-    if (k === 'cmi')                                 trySet('cmi',          v);
-    if (k.includes('division'))                      trySet('division',     v);
-    if (k.includes('platform'))                      trySet('platforms',    v);
-    if (k.includes('sanitation'))                    trySet('sanitation',   v);
-    if (k.includes('parking'))                       trySet('parking',      v);
-    if (k.includes('catering'))                      trySet('catering',     v);
+    if (k === 'state') trySet('state', v);
+    if (k.includes('division')) trySet('division', v);
+    if (k === 'cmi') trySet('cmi', v);
   }
 
   return result;
@@ -1745,19 +1966,45 @@ ${sheet('Station Earning',[
       const data: { content?: string; error?: string } = await res.json();
       if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
 
-      const extracted = parseDocForHandout(data.content ?? '');
-      const keys = Object.keys(extracted) as (keyof DocFields)[];
+      const extracted = parseDocForHandout(data.content ?? '', d.stationCode ?? '');
 
-      if (keys.length === 0) {
+      // Count non-empty extracted fields (including arrays)
+      const filledKeys = Object.keys(extracted).filter(k => {
+        const v = (extracted as Record<string,unknown>)[k];
+        return v !== undefined && v !== ''
+          && !(Array.isArray(v) && v.length === 0);
+      });
+
+      if (filledKeys.length === 0) {
         setDsPreview({
           id: src.id,
-          text: '⚠ No handout fields found in this document.\n\nTips:\n• Share the doc with "Anyone with the link can view"\n• Make sure the doc has a table with rows like "Station Name | NDLS"\n  or lines like "Station Name: New Delhi"',
+          text: '⚠ No handout fields found in this document.\n\nTips:\n• Share the doc with "Anyone with the link can view"\n• Make sure your doc uses the standard CMI numbered-section format\n  (1 Category, 2 Footfall/day, 3 Platforms … 14 ATM)',
           error: true,
         });
       } else {
-        const preview = keys.map(k => `${k}: ${extracted[k]}`).join('\n');
-        setDsPreview({ id: src.id, text: `✅ Filled ${keys.length} field(s) from document:\n\n${preview}` });
-        const merged = { ...d, ...extracted };
+        // Build preview summary
+        const previewLines: string[] = [];
+        const simpleKeys: (keyof DocFields)[] = ['stationCode','stationName','category','state','section','cmi','division','platforms','fob','waitingRooms','sanitation','earningBifurcation'];
+        simpleKeys.forEach(k => { if (extracted[k]) previewLines.push(`${k}: ${extracted[k]}`); });
+        if (extracted.ff)             previewLines.push('ff (footfall): ✓ parsed');
+        if (extracted.trains)         previewLines.push('trains: ✓ parsed');
+        if (extracted.primes)         previewLines.push('primes: ✓ parsed');
+        if (extracted.stationEarning) previewLines.push('stationEarning: ✓ parsed');
+        if (extracted.counterHeads?.length) previewLines.push(`counterHeads: ${extracted.counterHeads.length} counter(s)`);
+        if (extracted.commercial?.length)   previewLines.push(`commercial: ${extracted.commercial.length} item(s) (${extracted.commercial.map(c=>c.name).join(', ')})`);
+
+        setDsPreview({ id: src.id, text: `✅ Filled ${filledKeys.length} field(s) from document:\n\n${previewLines.join('\n')}` });
+
+        // Merge: simple string fields + guarded array fields
+        const merged: HD = { ...d };
+        simpleKeys.forEach(k => { if (extracted[k]) (merged as Record<string,unknown>)[k] = extracted[k]; });
+        if (extracted.ff)                   merged.ff             = extracted.ff;
+        if (extracted.trains)               merged.trains         = extracted.trains;
+        if (extracted.primes)               merged.primes         = extracted.primes;
+        if (extracted.stationEarning)       merged.stationEarning = extracted.stationEarning;
+        if (extracted.counterHeads?.length) merged.counterHeads   = extracted.counterHeads;
+        if (extracted.commercial?.length)   merged.commercial     = extracted.commercial;
+
         setD(merged);
         persistHD(merged);
       }
