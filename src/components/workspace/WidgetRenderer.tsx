@@ -1068,6 +1068,9 @@ function _parsePrimesTable(tbl: Element): string[][] | null {
  */
 function _htmlToText(html: string): string {
   return html
+    // Remove <style> and <script> blocks entirely (content + tags)
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
     // Block close/self-close → newline
     .replace(/<\/(?:p|li|div|ul|ol|h[1-6]|tr|blockquote|section)[^>]*>/gi, '\n')
     .replace(/<br\s*\/?>/gi, '\n')
@@ -1977,7 +1980,40 @@ ${sheet('Station Earning',[
       const data: { content?: string; error?: string } = await res.json();
       if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
 
-      const extracted = parseDocForHandout(data.content ?? '', d.stationCode ?? '');
+      const rawHtml = data.content ?? '';
+
+      // Detect Google login redirect (document not publicly shared)
+      if (rawHtml.includes('accounts.google.com') || rawHtml.includes('ServiceLogin') ||
+          rawHtml.includes('signin/oauth') || (rawHtml.length < 5000 && /sign.?in/i.test(rawHtml))) {
+        setDsPreview({
+          id: src.id,
+          text: '⚠ Google is asking for sign-in — the document is not publicly shared.\n\nFix: In Google Docs → Share → "Anyone with the link" → Viewer → Copy link, then paste that URL here.',
+          error: true,
+        });
+        setFetchingDocId(null);
+        return;
+      }
+
+      const extracted = parseDocForHandout(rawHtml, d.stationCode ?? '');
+
+      // Debug: count HR blocks and section marks for diagnostics
+      const hrCount   = (rawHtml.match(/<hr[^>]*\/?>/gi) ?? []).length;
+      const KWORDS_D  = 'Category|Footfall|Platform|FOB|Waiting|Train|Counter|Manpower|Sanitation|Pay|Parking|Catering|Publicity|NFR|ATM';
+      const secReD    = new RegExp(`^[ \\t]*(?:[-•]\\s*)?(\\d{1,2})[ \\t]+(${KWORDS_D})`, 'gim');
+      const stationHtml = (() => {
+        if (!d.stationCode) return rawHtml;
+        const codeRe = new RegExp(`\\(\\s*${d.stationCode}\\s*\\)`, 'i');
+        for (const blk of rawHtml.split(/<hr[^>]*\/?>/gi)) { if (codeRe.test(blk)) return blk; }
+        return rawHtml;
+      })();
+      const wt = _htmlToText(stationHtml);
+      const secMatches: number[] = [];
+      let sm2: RegExpExecArray | null;
+      while ((sm2 = secReD.exec(wt)) !== null) {
+        const n = parseInt(sm2[1]);
+        if (n >= 1 && n <= 14 && !secMatches.includes(n)) secMatches.push(n);
+      }
+      const debugInfo = `[debug] htmlLen=${rawHtml.length} hrBlocks=${hrCount+1} stationIsolated=${hrCount > 0 && !!d.stationCode} sections=[${secMatches.sort((a,b)=>a-b).join(',')}] textPreview: ${wt.slice(0, 120).replace(/\n/g,' ↵ ')}…`;
 
       // Count non-empty extracted fields (including arrays)
       const filledKeys = Object.keys(extracted).filter(k => {
@@ -1989,7 +2025,7 @@ ${sheet('Station Earning',[
       if (filledKeys.length === 0) {
         setDsPreview({
           id: src.id,
-          text: '⚠ No handout fields found in this document.\n\nTips:\n• Share the doc with "Anyone with the link can view"\n• Make sure your doc uses the standard CMI numbered-section format\n  (1 Category, 2 Footfall/day, 3 Platforms … 14 ATM)',
+          text: `⚠ No handout fields found in this document.\n\nTips:\n• Share the doc with "Anyone with the link can view"\n• Make sure your doc uses the standard CMI numbered-section format\n  (1 Category, 2 Footfall/day, 3 Platforms … 14 ATM)\n\n${debugInfo}`,
           error: true,
         });
       } else {
@@ -2004,7 +2040,7 @@ ${sheet('Station Earning',[
         if (extracted.counterHeads?.length) previewLines.push(`counterHeads: ${extracted.counterHeads.length} counter(s)`);
         if (extracted.commercial?.length)   previewLines.push(`commercial: ${extracted.commercial.length} item(s) (${extracted.commercial.map(c=>c.name).join(', ')})`);
 
-        setDsPreview({ id: src.id, text: `✅ Filled ${filledKeys.length} field(s) from document:\n\n${previewLines.join('\n')}` });
+        setDsPreview({ id: src.id, text: `✅ Filled ${filledKeys.length} field(s) from document:\n\n${previewLines.join('\n')}\n\n${debugInfo}` });
 
         // Merge: simple string fields + guarded array fields
         const merged: HD = { ...d };
