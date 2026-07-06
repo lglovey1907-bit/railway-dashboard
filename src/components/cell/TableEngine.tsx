@@ -9,7 +9,8 @@ import {
  Download, Upload, Clock, Undo2, Redo2, RotateCcw, Hash,
  DollarSign, Calendar, Mail, Globe, List, CheckSquare, Phone,
  Sigma, ChevronRight, SlidersHorizontal, Share2, History,
- WrapText, AlignJustify, Maximize2,
+ WrapText, AlignJustify, Maximize2, GripVertical,
+ ArrowUpAZ, ArrowDownAZ,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { TableDef, FieldDef, RowDef, FieldType, DropdownOption } from '@/lib/cellData/types';
@@ -523,7 +524,16 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  const [editFirstCol, setEditFirstCol] = useState<string | null>(null);
  const [colSettings, setColSettings] = useState<string | null>(null); // fieldId
  const [colFilter, setColFilter] = useState<string | null>(null);
- const [filterDraft, setFilterDraft] = useState('');
+ // Local filter state — independent per view (not persisted to hook so dashboard & database views filter separately)
+ const [localFilters, setLocalFilters] = useState<Record<string, string>>({});
+ // Local sort state — works even in SharedTablesView where hook.setSort/updateTable are no-ops
+ const [localSortField, setLocalSortField] = useState<string | undefined>(table.sortField);
+ const [localSortDir, setLocalSortDir] = useState<'asc' | 'desc'>(table.sortDir ?? 'asc');
+ // Drag-and-drop state for rows and columns
+ const [dragRowId, setDragRowId] = useState<string | null>(null);
+ const [dragOverRowId, setDragOverRowId] = useState<string | null>(null);
+ const [dragColId, setDragColId] = useState<string | null>(null);
+ const [dragOverColId, setDragOverColId] = useState<string | null>(null);
  const [showSheet, setShowSheet] = useState(false);
  const [showTableNominees, setShowTableNominees] = useState(false);
  const [showTableViewers, setShowTableViewers] = useState(false);
@@ -587,27 +597,26 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  return [...frozen, ...normal];
  }, [table.fields, table.columnOrder]);
 
- // Sorted + filtered rows
+ // Sorted + filtered rows (localFilters = per-view, not persisted, so dashboard & DB view filter independently)
  const visibleRows = useMemo(() => {
  let rows = [...table.rows].sort((a, b) => a.order - b.order);
- const filters = table.filters ?? {};
- Object.entries(filters).forEach(([fId, fVal]) => {
- if (!fVal) return;
+ Object.entries(localFilters).forEach(([fId, fVal]) => {
+ if (!fVal.trim()) return;
  rows = rows.filter(r => {
  const v = fId === '__label__' ? (table.values[`${r.id}:__label__`] ?? '') : (table.values[`${r.id}:${fId}`] ?? '');
  return v.toLowerCase().includes(fVal.toLowerCase());
  });
  });
- if (table.sortField) {
- const dir = table.sortDir === 'desc' ? -1 : 1;
+ if (localSortField) {
+ const dir = localSortDir === 'desc' ? -1 : 1;
  rows = [...rows].sort((a, b) => {
- const va = table.values[`${a.id}:${table.sortField}`] ?? table.values[`${a.id}:__label__`] ?? '';
- const vb = table.values[`${b.id}:${table.sortField}`] ?? table.values[`${b.id}:__label__`] ?? '';
+ const va = table.values[`${a.id}:${localSortField}`] ?? table.values[`${a.id}:__label__`] ?? '';
+ const vb = table.values[`${b.id}:${localSortField}`] ?? table.values[`${b.id}:__label__`] ?? '';
  return va.localeCompare(vb, undefined, { numeric: true }) * dir;
  });
  }
  return rows;
- }, [table.rows, table.values, table.filters, table.sortField, table.sortDir]);
+ }, [table.rows, table.values, localFilters, localSortField, localSortDir]);
 
  // Formula values
  const formulaValues = useMemo(() => {
@@ -652,8 +661,36 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
 
  const manualSync = async () => { setSyncing(true); await hook.syncSheet(table.id); setSyncing(false); };
 
- const activeFilters = table.filters ?? {};
- const hasFilters = Object.values(activeFilters).some(Boolean);
+ const activeFilters = localFilters;
+ const hasFilters = Object.values(localFilters).some(v => v.trim());
+
+ // ── Drag-and-drop row reordering ─────────────────────────────────────────
+ const handleRowDrop = useCallback((sourceId: string, targetId: string) => {
+ if (sourceId === targetId) return;
+ const allRows = [...table.rows].sort((a, b) => a.order - b.order);
+ const srcIdx = allRows.findIndex(r => r.id === sourceId);
+ const tgtIdx = allRows.findIndex(r => r.id === targetId);
+ if (srcIdx === -1 || tgtIdx === -1) return;
+ const newRows = [...allRows];
+ const [moved] = newRows.splice(srcIdx, 1);
+ newRows.splice(tgtIdx, 0, moved);
+ const updatedRows = newRows.map((r, i) => ({ ...r, order: i * 100 }));
+ hook.updateTable(table.id, { ...table, rows: updatedRows });
+ }, [table, hook]);
+
+ // ── Drag-and-drop column reordering ──────────────────────────────────────
+ const handleColDrop = useCallback((sourceId: string, targetId: string) => {
+ if (sourceId === targetId) return;
+ const currentOrder = table.columnOrder ?? table.fields.map(f => f.id);
+ const srcIdx = currentOrder.indexOf(sourceId);
+ const tgtIdx = currentOrder.indexOf(targetId);
+ if (srcIdx === -1 || tgtIdx === -1) return;
+ const newOrder = [...currentOrder];
+ const [moved] = newOrder.splice(srcIdx, 1);
+ newOrder.splice(tgtIdx, 0, moved);
+ hook.updateTable(table.id, { ...table, columnOrder: newOrder });
+ }, [table, hook]);
+
  const W = (f: FieldDef) => colWidths[f.id] ?? f.width;
  /** True when this column should wrap — per-column setting OR global Wrap All */
  const isWrapped = (f: FieldDef) => !!(f.wrapText || globalWrap);
@@ -743,8 +780,8 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  <tr className="bg-slate-100 border-b border-slate-200">
  <th className="w-8 border-r border-slate-200 bg-slate-100"/>
 
- {/* First col header */}
- <th className="border-r border-slate-200 bg-slate-100 relative"style={{ width: colWidths['__label__'] ?? 140 }}>
+ {/* First col header — not draggable (always first) */}
+ <th className="border-r border-slate-200 bg-slate-100 relative" style={{ width: colWidths['__label__'] ?? 140 }}>
  <div className="flex items-center gap-1 px-2 py-2">
  {editFirstCol === '__header__' ? (
  <input value={table.firstColLabel} onChange={e => hook.setFirstColLabel(table.id, e.target.value)}
@@ -752,16 +789,29 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  autoFocus className="bg-white border border-blue-500 rounded px-1 text-xs text-slate-900 outline-none w-full font-semibold"/>
  ) : (
  <button onDoubleClick={() => !isLinked && canManage && setEditFirstCol('__header__')}
- onClick={() => hook.setSort(table.id, '__label__')}
  className="flex items-center gap-1 font-semibold text-[11px] text-slate-600 hover:text-slate-900 flex-1 text-left">
  <span title="Double-click to rename">{table.firstColLabel}</span>
- {table.sortField === '__label__' && (table.sortDir==='asc' ? <ChevronUp size={10}/> : <ChevronDown size={10}/>)}
+ {localSortField === '__label__' && (localSortDir==='asc' ? <ChevronUp size={10}/> : <ChevronDown size={10}/>)}
  </button>
  )}
- <button onClick={() => setColFilter(f => f==='__label__' ? null : '__label__')} className={cn('shrink-0', activeFilters['__label__'] ? 'text-blue-500' : 'text-slate-300 hover:text-slate-500')}><Filter size={10}/></button>
+ <div className="flex items-center gap-0.5 shrink-0">
+ <button onClick={() => { setLocalSortField('__label__'); setLocalSortDir('asc'); hook.updateTable(table.id, { ...table, sortField: '__label__', sortDir: 'asc' }); }}
+  className={cn('p-px rounded', localSortField==='__label__' && localSortDir==='asc' ? 'text-blue-500 bg-blue-50' : 'text-slate-300 hover:text-slate-600')}
+  title="Sort A→Z"><ArrowUpAZ size={10}/></button>
+ <button onClick={() => { setLocalSortField('__label__'); setLocalSortDir('desc'); hook.updateTable(table.id, { ...table, sortField: '__label__', sortDir: 'desc' }); }}
+  className={cn('p-px rounded', localSortField==='__label__' && localSortDir==='desc' ? 'text-blue-500 bg-blue-50' : 'text-slate-300 hover:text-slate-600')}
+  title="Sort Z→A"><ArrowDownAZ size={10}/></button>
+ <button onClick={() => setColFilter(f => f==='__label__' ? null : '__label__')} className={cn('p-px', localFilters['__label__'] ? 'text-blue-500' : 'text-slate-300 hover:text-slate-500')} title="Filter"><Filter size={10}/></button>
+ </div>
  </div>
  {colFilter === '__label__' && (
- <div className="px-2 pb-1"><input value={activeFilters['__label__'] ?? ''} onChange={e => hook.setFilter(table.id, '__label__', e.target.value)} placeholder="Filter…"autoFocus onBlur={() => setColFilter(null)} className="w-full bg-white border border-blue-400 rounded px-1.5 py-0.5 text-xs outline-none"/></div>
+ <div className="px-2 pb-1 flex items-center gap-1">
+ <input value={localFilters['__label__'] ?? ''} onChange={e => setLocalFilters(p => ({ ...p, '__label__': e.target.value }))}
+  placeholder="Filter…" autoFocus
+  onKeyDown={e => e.key === 'Escape' && setColFilter(null)}
+  className="flex-1 bg-white border border-blue-400 rounded px-1.5 py-0.5 text-xs outline-none"/>
+ {localFilters['__label__'] && <button onClick={() => setLocalFilters(p => { const {['__label__']: _, ...rest} = p; return rest; })} className="text-slate-400 hover:text-red-500 shrink-0"><X size={10}/></button>}
+ </div>
  )}
  <div className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400"
  onMouseDown={e => startResize(e, '__label__')}
@@ -771,25 +821,45 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
 
  {/* Data cols */}
  {orderedFields.map((field, fi) => (
- <th key={field.id} className={cn("border-r border-slate-200 bg-slate-100 relative", field.frozen &&"sticky left-0 z-20")} style={{ width: W(field), minWidth: 80 }}>
+ <th key={field.id}
+  draggable={canManage && !isLinked}
+  onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('colId', field.id); setDragColId(field.id); }}
+  onDragEnd={() => { setDragColId(null); setDragOverColId(null); }}
+  onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverColId(field.id); }}
+  onDrop={e => { e.preventDefault(); const srcId = e.dataTransfer.getData('colId'); if (srcId) handleColDrop(srcId, field.id); setDragColId(null); setDragOverColId(null); }}
+  className={cn("border-r border-slate-200 bg-slate-100 relative transition-colors",
+   field.frozen && "sticky left-0 z-20",
+   dragOverColId === field.id && dragColId !== field.id && 'border-l-2 border-l-blue-400 bg-blue-50',
+   dragColId === field.id && 'opacity-50',
+  )} style={{ width: W(field), minWidth: 80 }}>
  <div className="flex items-center gap-1 px-2 py-2">
- <button onClick={() => hook.setSort(table.id, field.id)} className="flex items-center gap-1 font-semibold text-[11px] text-slate-600 hover:text-slate-900 flex-1 text-left min-w-0">
- <TypeIcon type={field.type} size={10}/>
- <span className="truncate">{field.label}</span>
- {table.sortField === field.id && (table.sortDir==='asc' ? <ChevronUp size={10}/> : <ChevronDown size={10}/>)}
- </button>
+ {canManage && !isLinked && <span title="Drag to reorder column"><GripVertical size={10} className="text-slate-300 cursor-grab shrink-0"/></span>}
+ <span className="flex items-center gap-1 font-semibold text-[11px] text-slate-600 flex-1 min-w-0">
+  <TypeIcon type={field.type} size={10}/>
+  <span className="truncate">{field.label}</span>
+ </span>
  <div className="flex items-center gap-0.5 shrink-0">
- <button onClick={() => { setColFilter(f => f===field.id ? null : field.id); setFilterDraft(activeFilters[field.id] ?? ''); }} className={cn(activeFilters[field.id] ? 'text-blue-500' : 'text-slate-300 hover:text-slate-500')}><Filter size={10}/></button>
- {canManage && !isLinked && <>
- <button onClick={() => hook.moveColumn(table.id, field.id, 'left')} disabled={fi===0} className="text-slate-300 hover:text-slate-600 disabled:opacity-30"><ArrowLeft size={10}/></button>
- <button onClick={() => hook.moveColumn(table.id, field.id, 'right')} disabled={fi===orderedFields.length-1} className="text-slate-300 hover:text-slate-600 disabled:opacity-30"><ArrowRight size={10}/></button>
- <button onClick={() => setColSettings(field.id)} className="text-slate-300 hover:text-slate-600"><Settings2 size={10}/></button>
- <button onClick={() => setConfirmDelete({ type: 'column', id: field.id, label: field.label })} className="text-slate-300 hover:text-red-500"><X size={10}/></button>
- </>}
+  <button onClick={() => { setLocalSortField(field.id); setLocalSortDir('asc'); hook.updateTable(table.id, { ...table, sortField: field.id, sortDir: 'asc' }); }}
+   className={cn('p-px rounded', localSortField===field.id && localSortDir==='asc' ? 'text-blue-500 bg-blue-50' : 'text-slate-300 hover:text-slate-600')}
+   title="Sort A→Z"><ArrowUpAZ size={10}/></button>
+  <button onClick={() => { setLocalSortField(field.id); setLocalSortDir('desc'); hook.updateTable(table.id, { ...table, sortField: field.id, sortDir: 'desc' }); }}
+   className={cn('p-px rounded', localSortField===field.id && localSortDir==='desc' ? 'text-blue-500 bg-blue-50' : 'text-slate-300 hover:text-slate-600')}
+   title="Sort Z→A"><ArrowDownAZ size={10}/></button>
+  <button onClick={() => setColFilter(f => f===field.id ? null : field.id)} className={cn('p-px', localFilters[field.id] ? 'text-blue-500' : 'text-slate-300 hover:text-slate-500')} title="Filter"><Filter size={10}/></button>
+  {canManage && !isLinked && <>
+  <button onClick={() => setColSettings(field.id)} className="text-slate-300 hover:text-slate-600"><Settings2 size={10}/></button>
+  <button onClick={() => setConfirmDelete({ type: 'column', id: field.id, label: field.label })} className="text-slate-300 hover:text-red-500"><X size={10}/></button>
+  </>}
  </div>
  </div>
  {colFilter === field.id && (
- <div className="px-2 pb-1"><input value={activeFilters[field.id] ?? ''} onChange={e => hook.setFilter(table.id, field.id, e.target.value)} placeholder="Filter…"autoFocus onBlur={() => setColFilter(null)} className="w-full bg-white border border-blue-400 rounded px-1.5 py-0.5 text-xs outline-none"/></div>
+ <div className="px-2 pb-1 flex items-center gap-1">
+  <input value={localFilters[field.id] ?? ''} onChange={e => setLocalFilters(p => ({ ...p, [field.id]: e.target.value }))}
+   placeholder="Filter…" autoFocus
+   onKeyDown={e => e.key === 'Escape' && setColFilter(null)}
+   className="flex-1 bg-white border border-blue-400 rounded px-1.5 py-0.5 text-xs outline-none"/>
+  {localFilters[field.id] && <button onClick={() => setLocalFilters(p => { const {[field.id]: _, ...rest} = p; return rest; })} className="text-slate-400 hover:text-red-500 shrink-0"><X size={10}/></button>}
+ </div>
  )}
  {field.nominatedUserIds.length > 0 && <div className="px-2 pb-1"><span className="text-[8px] bg-blue-100 text-blue-700 rounded-full px-1">{field.nominatedUserIds.length} nominee{field.nominatedUserIds.length>1?'s':''}</span></div>}
  <div className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400"
@@ -814,14 +884,23 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  {visibleRows.map((row, idx) => {
  const labelVal = table.values[`${row.id}:__label__`] || (isLinked ? '' : `Row ${idx+1}`);
  return (
- <tr key={row.id} className={cn('group hover:bg-blue-50/40 transition-colors border-b border-slate-100 ', idx%2===1 && 'bg-slate-50/30 ')}>
+ <tr key={row.id}
+  draggable={canManage && !isLinked}
+  onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('rowId', row.id); setDragRowId(row.id); }}
+  onDragEnd={() => { setDragRowId(null); setDragOverRowId(null); }}
+  onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverRowId(row.id); }}
+  onDrop={e => { e.preventDefault(); const srcId = e.dataTransfer.getData('rowId'); if (srcId) handleRowDrop(srcId, row.id); setDragRowId(null); setDragOverRowId(null); }}
+  className={cn('group hover:bg-blue-50/40 transition-colors border-b border-slate-100',
+   idx%2===1 && 'bg-slate-50/30',
+   dragOverRowId === row.id && dragRowId !== row.id && 'border-t-2 border-t-blue-400',
+   dragRowId === row.id && 'opacity-40',
+  )}>
  {/* Row # + controls */}
  <td className="w-8 border-r border-slate-100 px-1 text-center align-middle">
  <div className="flex flex-col items-center gap-0.5">
  {canManage && !isLinked ? (<>
- <button onClick={() => hook.moveRow(table.id, row.id, 'up')} disabled={idx===0} className="hidden group-hover:flex text-slate-300 hover:text-slate-600 disabled:opacity-20 p-px"><ChevronUp size={9}/></button>
+ <div className="hidden group-hover:flex items-center cursor-grab text-slate-300 hover:text-slate-500 p-px" title="Drag to reorder"><GripVertical size={10}/></div>
  <span className="text-[10px] text-slate-300 leading-none group-hover:hidden">{idx+1}</span>
- <button onClick={() => hook.moveRow(table.id, row.id, 'down')} disabled={idx===visibleRows.length-1} className="hidden group-hover:flex text-slate-300 hover:text-slate-600 disabled:opacity-20 p-px"><ChevronDown size={9}/></button>
  </>) : <span className="text-[10px] text-slate-300">{idx+1}</span>}
  </div>
  </td>
@@ -961,7 +1040,8 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  <span>{visibleRows.length} of {table.rows.length} row{table.rows.length!==1?'s':''}{hasFilters && ' (filtered)'}</span>
  <div className="flex items-center gap-3">
  <LastEditedBadge tableId={table.id} cell={cell}/>
- {hasFilters && <button onClick={() => { orderedFields.forEach(f => hook.clearFilter(table.id, f.id)); hook.clearFilter(table.id, '__label__'); }} className="text-blue-500 hover:text-blue-700 flex items-center gap-0.5"><RotateCcw size={9}/> Clear filters</button>}
+ {hasFilters && <button onClick={() => setLocalFilters({})} className="text-blue-500 hover:text-blue-700 flex items-center gap-0.5"><RotateCcw size={9}/> Clear filters</button>}
+ {localSortField && <button onClick={() => { setLocalSortField(undefined); setLocalSortDir('asc'); hook.updateTable(table.id, { ...table, sortField: undefined, sortDir: undefined }); }} className="text-slate-400 hover:text-slate-600 flex items-center gap-0.5"><RotateCcw size={9}/> Clear sort</button>}
  </div>
  </div>
 
