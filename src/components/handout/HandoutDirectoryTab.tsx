@@ -32,8 +32,7 @@ type HD = {
 type OvRow = Record<string, string>;
 
 // ─── Key helpers ──────────────────────────────────────────────────────────────
-const handoutKey  = (code: string) => `rly_handout_${code.toUpperCase().trim()}`;
-const ovCacheKey  = 'sheet_nsg_category_wise_cache';
+const ovCacheKey = 'sheet_nsg_category_wise_cache';
 
 function findCol(headers: string[], keyword: string): string {
   const kw = keyword.toLowerCase();
@@ -329,37 +328,58 @@ export function HandoutDirectoryTab({ initialCode }: { initialCode?: string }) {
   const [filterCMI, setFilterCMI] = useState('');
   const [viewHD,    setViewHD]    = useState<HD | null>(null);
 
-  // ── Load overview sheet cache ──────────────────────────────────────────────
+  // ── Load overview sheet cache (localStorage → Upstash fallback) ───────────
   const loadOvCache = useCallback(() => {
     if (typeof window === 'undefined') return;
+    // Try localStorage first
     try {
       const raw = localStorage.getItem(ovCacheKey);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (parsed?.rows?.length) {
-        setOvRows(parsed.rows);
-        setOvHeaders(parsed.headers ?? []);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.rows?.length) {
+          setOvRows(parsed.rows);
+          setOvHeaders(parsed.headers ?? []);
+          return;
+        }
       }
     } catch { /* ignore */ }
+    // Fallback: read from Upstash (cross-device — fresh Windows device)
+    import('@/lib/config/sharedSync').then(({ sharedRead }) => {
+      sharedRead(ovCacheKey).then((val: unknown) => {
+        if (!val || typeof val !== 'object') return;
+        const cached = val as { rows: OvRow[]; headers: string[] };
+        if (!Array.isArray(cached.rows) || cached.rows.length === 0) return;
+        setOvRows(cached.rows);
+        setOvHeaders(cached.headers ?? []);
+        try { localStorage.setItem(ovCacheKey, JSON.stringify(cached)); } catch { /* quota */ }
+      }).catch(() => {});
+    }).catch(() => {});
   }, []);
 
-  // ── Load all handout data from localStorage ────────────────────────────────
+  // ── Load all handout data from Upstash (server-side, cross-device) ─────────
   const loadHandouts = useCallback(() => {
     if (typeof window === 'undefined') return;
-    const result: Record<string, HD> = {};
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (!k?.startsWith('rly_handout_')) continue;
-      try {
-        const v = localStorage.getItem(k);
-        if (v) {
-          const hd: HD = JSON.parse(v);
-          const code = hd.stationCode?.toUpperCase().trim();
-          if (code) result[code] = hd;
-        }
-      } catch { /* ignore */ }
-    }
-    setHandouts(result);
+    import('@/lib/config/sharedSync').then(({ sharedRead }) => {
+      // Read the codes index first, then fetch each handout
+      sharedRead('handout_codes').then((codesVal: unknown) => {
+        const codes: string[] = Array.isArray(codesVal) ? codesVal : [];
+        if (codes.length === 0) return;
+        const result: Record<string, HD> = {};
+        let remaining = codes.length;
+        codes.forEach(code => {
+          sharedRead(`handout_${code}`).then((val: unknown) => {
+            if (val && typeof val === 'object') {
+              const hd = val as HD;
+              const c = (hd.stationCode ?? code).toUpperCase().trim();
+              if (c) result[c] = hd;
+            }
+          }).catch(() => {}).finally(() => {
+            remaining--;
+            if (remaining === 0) setHandouts({ ...result });
+          });
+        });
+      }).catch(() => {});
+    }).catch(() => {});
   }, []);
 
   useEffect(() => { loadOvCache(); loadHandouts(); }, [loadOvCache, loadHandouts]);
@@ -388,23 +408,36 @@ export function HandoutDirectoryTab({ initialCode }: { initialCode?: string }) {
     primes: [], stationEarning: [], earningBifurcation: '',
   }), [colCode, colName, colCat, colState, colSec, colCMI]);
 
+  // ── Enrich an HD with header fields from the Overview row if stationName is blank ──
+  const enrichFromOv = useCallback((hd: HD, key: string): HD => {
+    if (hd.stationName?.trim() || !colCode || !ovRows.length) return hd;
+    const row = ovRows.find(r => String(r[colCode] ?? '').trim().toUpperCase() === key);
+    if (!row) return hd;
+    const h = buildHDFromRow(key, row);
+    return { ...hd, stationName: h.stationName, category: h.category,
+             state: h.state, section: h.section, cmi: h.cmi };
+  }, [colCode, ovRows, buildHDFromRow]);
+
   // ── Auto-open by initialCode (from Overview click) ────────────────────────
   useEffect(() => {
     if (!initialCode) return;
-    const key  = initialCode.toUpperCase().trim();
-    // 1. Handout already loaded in state
+    const key = initialCode.toUpperCase().trim();
+    // 1. Handout already in state
     const found = handouts[key];
-    if (found) { setViewHD(found); return; }
-    // 2. Handout in localStorage
-    try {
-      const raw = localStorage.getItem(handoutKey(key));
-      if (raw) { setViewHD(JSON.parse(raw)); return; }
-    } catch { /* ignore */ }
-    // 3. No saved handout — pre-fill from Overview sheet cache
-    if (!colCode || !ovRows.length) return;
-    const row = ovRows.find(r => String(r[colCode] ?? '').trim().toUpperCase() === key);
-    if (row) setViewHD(buildHDFromRow(key, row));
-  }, [initialCode, handouts, ovRows, colCode, buildHDFromRow]);
+    if (found) { setViewHD(enrichFromOv(found, key)); return; }
+    // 2. Try Upstash
+    import('@/lib/config/sharedSync').then(({ sharedRead }) => {
+      sharedRead(`handout_${key}`).then((val: unknown) => {
+        if (val && typeof val === 'object') {
+          setViewHD(enrichFromOv(val as HD, key)); return;
+        }
+        // 3. No saved handout — build skeleton from Overview
+        if (!colCode || !ovRows.length) return;
+        const row = ovRows.find(r => String(r[colCode] ?? '').trim().toUpperCase() === key);
+        if (row) setViewHD(buildHDFromRow(key, row));
+      }).catch(() => {});
+    }).catch(() => {});
+  }, [initialCode, handouts, ovRows, colCode, buildHDFromRow, enrichFromOv]);
 
   // ── Build merged station list ──────────────────────────────────────────────
   // Merge: overview rows (source of truth for station list) + handout data
@@ -495,20 +528,28 @@ export function HandoutDirectoryTab({ initialCode }: { initialCode?: string }) {
 
   const viewStation = (code: string) => {
     const key = code.toUpperCase().trim();
-    // 1. Handout in state
+    // 1. Handout already loaded in state
     const hd = handouts[key];
-    if (hd) { setViewHD(hd); return; }
-    // 2. Handout in localStorage
-    try {
-      const raw = localStorage.getItem(handoutKey(key));
-      if (raw) { setViewHD(JSON.parse(raw)); return; }
-    } catch { /* ignore */ }
-    // 3. No saved handout — pre-fill from Overview sheet cache
-    if (colCode && ovRows.length) {
-      const row = ovRows.find(r => String(r[colCode] ?? '').trim().toUpperCase() === key);
-      if (row) { setViewHD(buildHDFromRow(key, row)); return; }
-    }
-    alert('No handout data found for this station. Fill it in via the Handout widget.');
+    if (hd) { setViewHD(enrichFromOv(hd, key)); return; }
+    // 2. Try Upstash (cross-device)
+    import('@/lib/config/sharedSync').then(({ sharedRead }) => {
+      sharedRead(`handout_${key}`).then((val: unknown) => {
+        if (val && typeof val === 'object') {
+          const loaded = val as HD;
+          setHandouts(prev => ({ ...prev, [key]: loaded }));
+          setViewHD(enrichFromOv(loaded, key));
+          return;
+        }
+        // 3. No saved handout — build skeleton from Overview
+        if (colCode && ovRows.length) {
+          const row = ovRows.find(r => String(r[colCode] ?? '').trim().toUpperCase() === key);
+          if (row) { setViewHD(buildHDFromRow(key, row)); return; }
+        }
+        alert('No handout data found for this station. Fill it in via the Handout widget.');
+      }).catch(() => {
+        alert('No handout data found for this station. Fill it in via the Handout widget.');
+      });
+    }).catch(() => {});
   };
 
   // ── Category colour (matches dashboard) ───────────────────────────────────

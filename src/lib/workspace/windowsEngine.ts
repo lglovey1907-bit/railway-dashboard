@@ -66,7 +66,11 @@ export function getWindowStore(cell: string, userId = 'system', userName = 'Syst
   } catch {}
   const def = makeDefaultWindow(cell, userId, userName);
   const store: CellWindowStore = { cell, windows: [def], activeWindowId: def.id };
-  saveWindowStore(store);
+  // IMPORTANT: Save to localStorage only — do NOT call saveWindowStore (which also
+  // writes to Upstash). Writing an empty default to Upstash would overwrite real
+  // workspace data saved from another device. The server copy will be fetched and
+  // applied by WorkspaceBuilder's cloud rehydration effect.
+  try { localStorage.setItem(WIN_KEY(cell), JSON.stringify(store)); } catch { /* ignore */ }
   return store;
 }
 

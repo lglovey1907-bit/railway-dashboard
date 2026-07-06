@@ -76,6 +76,7 @@ export function usePageSheet(storageKey: string, userId?: string): PageSheetStat
       }
     } catch { /* ignore */ }
 
+    // Try localStorage cache first (instant on return visits)
     try {
       const rawCache = localStorage.getItem(cacheKey(storageKey));
       if (rawCache) {
@@ -84,9 +85,23 @@ export function usePageSheet(storageKey: string, userId?: string): PageSheetStat
           setRows(cached.rows);
           setHeaders(cached.headers ?? []);
           setFetchedAt(cached.fetchedAt ?? null);
+          return; // localStorage hit — Upstash will be checked below in background
         }
       }
     } catch { /* ignore */ }
+    // No localStorage cache (fresh device) — try Upstash for cross-device data
+    import('@/lib/config/sharedSync').then(({ sharedRead }) => {
+      sharedRead(cacheKey(storageKey)).then((val: unknown) => {
+        if (!val || typeof val !== 'object') return;
+        const cached = val as { rows: unknown[]; headers: string[]; fetchedAt: string };
+        if (!Array.isArray(cached.rows) || cached.rows.length === 0) return;
+        setRows(cached.rows as SheetRow[]);
+        setHeaders(cached.headers ?? []);
+        setFetchedAt(cached.fetchedAt ?? null);
+        // Warm localStorage for next visit
+        try { localStorage.setItem(cacheKey(storageKey), JSON.stringify(cached)); } catch { /* quota */ }
+      }).catch(() => {});
+    }).catch(() => {});
   }, [storageKey]);
 
   // ── Step 2: Apply Upstash value when it arrives ───────────────────────────
@@ -121,11 +136,12 @@ export function usePageSheet(storageKey: string, userId?: string): PageSheetStat
       setHeaders(result.headers);
       setFetchedAt(result.fetchedAt);
       setError(null);
-      try {
-        localStorage.setItem(cacheKey(storageKey), JSON.stringify({
-          rows: result.rows, headers: result.headers, fetchedAt: result.fetchedAt,
-        }));
-      } catch { /* quota */ }
+      const cachePayload = { rows: result.rows, headers: result.headers, fetchedAt: result.fetchedAt };
+      try { localStorage.setItem(cacheKey(storageKey), JSON.stringify(cachePayload)); } catch { /* quota */ }
+      // Sync to Upstash so other devices (Windows, etc.) can read the sheet data
+      import('@/lib/config/sharedSync').then(({ sharedWrite }) => {
+        sharedWrite(cacheKey(storageKey), cachePayload);
+      }).catch(() => {});
     } else {
       if (result.error) setError(result.error);
       setFetchedAt(result.fetchedAt);

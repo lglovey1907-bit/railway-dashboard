@@ -1837,15 +1837,28 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    // Try localStorage first (fast)
     try {
       const raw = localStorage.getItem('sheet_nsg_category_wise_cache');
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (parsed?.rows?.length) {
-        setOvRows(parsed.rows);
-        setOvHeaders(parsed.headers ?? []);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.rows?.length) {
+          setOvRows(parsed.rows);
+          setOvHeaders(parsed.headers ?? []);
+          return;
+        }
       }
     } catch { /* ignore */ }
+    // Fallback: read from Upstash (cross-device, fires on fresh devices)
+    import('@/lib/config/sharedSync').then(({ sharedRead }) => {
+      sharedRead('sheet_nsg_category_wise_cache').then((val: unknown) => {
+        if (!val || typeof val !== 'object') return;
+        const cached = val as { rows: unknown[]; headers: string[] };
+        if (!Array.isArray(cached.rows) || cached.rows.length === 0) return;
+        setOvRows(cached.rows as Record<string, string>[]);
+        setOvHeaders(cached.headers ?? []);
+      }).catch(() => {});
+    }).catch(() => {});
   }, [editing]);
 
   const colCode = useMemo(() => findCol(ovHeaders, 'code'),     [ovHeaders]);
@@ -1897,9 +1910,18 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
     onUpdate({ handoutData: h } as any);
     const code = h.stationCode?.toUpperCase().trim();
     if (code) {
-      try { localStorage.setItem(`rly_handout_${code}`, JSON.stringify(h)); } catch { /* ignore */ }
-      import('@/lib/config/sharedSync').then(({ sharedWrite }) => {
+      import('@/lib/config/sharedSync').then(({ sharedWrite, sharedRead }) => {
+        // 1. Save the handout data itself (cross-device)
         sharedWrite(`handout_${code}`, h);
+        // 2. Maintain an index of all saved codes so HandoutDirectoryTab can enumerate them
+        sharedRead('handout_codes').then((existing: unknown) => {
+          const codes: string[] = Array.isArray(existing) ? existing : [];
+          if (!codes.includes(code)) {
+            sharedWrite('handout_codes', [...codes, code]);
+          }
+        }).catch(() => {
+          sharedWrite('handout_codes', [code]);
+        });
       }).catch(() => {});
     }
   };
