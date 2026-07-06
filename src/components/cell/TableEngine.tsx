@@ -699,14 +699,17 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  ? 'whitespace-pre-wrap break-words leading-relaxed'
  : 'truncate block';
 
+
  return (
- <div className="rounded-xl border border-slate-200 overflow-hidden bg-white">
- {/* Toolbar */}
- <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border-b border-slate-200 flex-wrap">
+ <div className="rounded-xl border border-slate-200 overflow-hidden bg-white shadow-sm">
+
+ {/* ── Toolbar ── */}
+ <div className="flex items-center gap-2 px-3 py-2 bg-white border-b border-slate-200 flex-wrap">
+ {/* Left: status badges */}
  <div className="flex items-center gap-1.5 flex-1 min-w-0">
  {isLinked && (
- <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-100 border border-emerald-300 text-emerald-700 rounded-full px-2 py-0.5">
- <Link2 size={9}/> Live
+ <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-full px-2 py-0.5">
+ <Link2 size={9}/> Live Sheet
  {table.sheet?.lastSynced && <span className="opacity-60 ml-0.5">· {new Date(table.sheet.lastSynced).toLocaleTimeString()}</span>}
  {syncing && <RefreshCw size={9} className="animate-spin ml-0.5"/>}
  </span>
@@ -716,213 +719,356 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  <Download size={9}/> Imported
  </span>
  )}
- {hasFilters && <span className="text-[10px] bg-amber-100 border border-amber-300 text-amber-700 rounded-full px-2 py-0.5 flex items-center gap-1"><Filter size={9}/> Filtered</span>}
+ {hasFilters && (
+ <span className="inline-flex items-center gap-1 text-[10px] bg-violet-50 border border-violet-200 text-violet-700 rounded-full px-2 py-0.5">
+ <Filter size={9}/> {Object.values(localFilters).filter(Boolean).length} filter{Object.values(localFilters).filter(Boolean).length !== 1 ? 's' : ''} active
+ </span>
+ )}
+ {localSortField && (
+ <span className="inline-flex items-center gap-1 text-[10px] bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-full px-2 py-0.5">
+ {localSortDir === 'asc' ? <ArrowUpAZ size={9}/> : <ArrowDownAZ size={9}/>} Sorted
+ </span>
+ )}
  {table.sheet?.syncError && <span className="text-[10px] text-red-600 flex items-center gap-1"><AlertCircle size={9}/> Sync error</span>}
  </div>
+
+ {/* Right: controls */}
  <div className="flex items-center gap-1">
- {isLinked && <button onClick={manualSync} disabled={syncing} title="Refresh now"className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-slate-700"><RefreshCw size={12} className={syncing ? 'animate-spin' : ''}/></button>}
- {/* Wrap All toggle */}
- <button
- onClick={() => setGlobalWrap(v => !v)}
- title={globalWrap ? 'Disable wrap for all columns' : 'Wrap text in all columns'}
- className={cn('flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] transition-colors',
- globalWrap
- ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 '
- : 'hover:bg-slate-200 text-slate-400 hover:text-slate-700 ')}>
- <WrapText size={12}/>{globalWrap ? 'Wrapped' : 'Wrap All'}
+ {isLinked && (
+ <button onClick={manualSync} disabled={syncing} title="Refresh now"
+ className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors">
+ <RefreshCw size={12} className={syncing ? 'animate-spin' : ''}/>
  </button>
- {/* Row height mode */}
+ )}
+
+ {/* Comfortable / Compact row height */}
  <button
  onClick={() => setRowHeightMode(m => m === 'auto' ? 'fixed' : 'auto')}
- title={rowHeightMode === 'auto' ? 'Switch to fixed row height' : 'Switch to auto row height'}
- className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-slate-700 text-[10px]">
- <AlignJustify size={12}/>{rowHeightMode === 'auto' ? 'Auto' : 'Fixed'}
+ title={rowHeightMode === 'auto' ? 'Switch to compact rows' : 'Switch to comfortable rows'}
+ className={cn('flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-colors',
+ rowHeightMode === 'auto'
+ ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
+ : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700')}>
+ <AlignJustify size={12}/>{rowHeightMode === 'auto' ? 'Comfortable' : 'Compact'}
  </button>
- {/* Auto-fit columns */}
+
+ {/* Reset column widths */}
  {canManage && (
  <button
- title="Auto-fit all column widths to content (double-click any header to auto-fit that column)"
- onClick={() => {
- // Reset all manual widths — columns snap back to their field.width defaults
- setColWidths({});
- }}
- className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-slate-700 text-[10px]">
- <Maximize2 size={12}/> Auto-fit
+ title="Reset all column widths to default"
+ onClick={() => setColWidths({})}
+ className="flex items-center gap-1 px-2 py-1 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 text-[10px] font-medium transition-colors">
+ <Maximize2 size={12}/> Reset Widths
  </button>
  )}
+
+ {/* Divider */}
+ <div className="w-px h-4 bg-slate-200 mx-0.5"/>
+
  {canManage && <>
- <button onClick={() => setShowTableNominees(true)} title="Table-level access"className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-blue-100 text-slate-400 hover:text-blue-600 text-[10px]">
- <Users size={12}/> Access{table.nominatedUserIds.length > 0 && <span className="bg-blue-100 text-blue-700 rounded-full px-1 ml-0.5">{table.nominatedUserIds.length}</span>}
+ <button onClick={() => setShowTableNominees(true)} title="Table access"
+ className="p-1.5 rounded-lg hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-colors relative">
+ <Users size={13}/>
+ {table.nominatedUserIds.length > 0 && <span className="absolute -top-0.5 -right-0.5 text-[8px] bg-blue-500 text-white rounded-full w-3 h-3 flex items-center justify-center">{table.nominatedUserIds.length}</span>}
  </button>
- <button onClick={() => setShowTableViewers(true)} title="Choose who can view this table"className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-blue-100 text-slate-400 hover:text-blue-600 text-[10px]">
- <Users size={12}/> Viewers{(table.viewerIds?.length ?? 0) > 0 && <span className="bg-blue-100 text-blue-700 rounded-full px-1 ml-0.5">{table.viewerIds!.length}</span>}
+ <button onClick={() => setShowSheet(true)} title={isLinked ? 'Sheet settings' : 'Connect a spreadsheet'}
+ className="p-1.5 rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-colors">
+ <FileSpreadsheet size={13}/>
  </button>
- <button onClick={() => setShowTableEditors(true)} title="Choose who can edit this table"className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-emerald-100 text-slate-400 hover:text-emerald-600 text-[10px]">
- <Users size={12}/> Editors{(table.editorIds?.length ?? 0) > 0 && <span className="bg-emerald-100 text-emerald-700 rounded-full px-1 ml-0.5">{table.editorIds!.length}</span>}
- </button>
- <button onClick={() => setShowSheet(true)} className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-emerald-100 text-slate-400 hover:text-emerald-600 text-[10px]">
- <FileSpreadsheet size={12}/> {isLinked ? 'Sheet' : 'Connect Sheet'}
- </button>
- <button onClick={() => setShowCollab(true)} className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-purple-100 text-slate-400 hover:text-purple-600 text-[10px]">
- <Share2 size={12}/> Share
+ <button onClick={() => setShowCollab(true)} title="Share & collaborate"
+ className="p-1.5 rounded-lg hover:bg-purple-50 text-slate-400 hover:text-purple-600 transition-colors">
+ <Share2 size={13}/>
  </button>
  </>}
- <button onClick={() => setShowHistory(true)} className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-indigo-100 text-slate-400 hover:text-indigo-600 text-[10px]">
- <History size={12}/> History
+ <button onClick={() => setShowHistory(true)} title="Version history"
+ className="p-1.5 rounded-lg hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 transition-colors">
+ <History size={13}/>
  </button>
+
+ {/* Add Row — prominent CTA */}
+ {canManage && !isLinked && (
+ <button
+ onClick={() => hook.addRow(table.id)}
+ className="flex items-center gap-1 ml-1 px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-[11px] font-semibold transition-colors shadow-sm">
+ <Plus size={11}/> Add Row
+ </button>
+ )}
  </div>
  </div>
 
- {/* Grid */}
+ {/* ── Grid ── */}
  <div className="overflow-auto max-h-[600px]">
- <table className="border-collapse text-xs"style={{ minWidth: '100%' }}>
+ <table className="border-collapse text-xs" style={{ minWidth: '100%' }}>
  <thead className="sticky top-0 z-10">
- <tr className="bg-slate-100 border-b border-slate-200">
- <th className="w-8 border-r border-slate-200 bg-slate-100"/>
 
- {/* First col header — not draggable (always first) */}
- <th className="border-r border-slate-200 bg-slate-100 relative" style={{ width: colWidths['__label__'] ?? 140 }}>
- <div className="flex items-center gap-1 px-2 py-2">
+ {/* ── Row 1: Column headers ── */}
+ <tr className="bg-slate-50 border-b border-slate-100">
+ {/* Row handle column */}
+ <th className="w-8 bg-slate-50 border-r border-slate-100 shrink-0"/>
+
+ {/* Label column header */}
+ <th className="bg-slate-50 border-r border-slate-100 relative group/col"
+ style={{ width: colWidths['__label__'] ?? 140, minWidth: 80 }}>
+ <div className="flex items-center gap-1 px-2 py-2 min-w-0">
  {editFirstCol === '__header__' ? (
- <input value={table.firstColLabel} onChange={e => hook.setFirstColLabel(table.id, e.target.value)}
- onBlur={() => setEditFirstCol(null)} onKeyDown={e => (e.key==='Enter'||e.key==='Escape') && setEditFirstCol(null)}
- autoFocus className="bg-white border border-blue-500 rounded px-1 text-xs text-slate-900 outline-none w-full font-semibold"/>
+ <input value={table.firstColLabel}
+ onChange={e => hook.setFirstColLabel(table.id, e.target.value)}
+ onBlur={() => setEditFirstCol(null)}
+ onKeyDown={e => (e.key === 'Enter' || e.key === 'Escape') && setEditFirstCol(null)}
+ autoFocus
+ className="bg-white border border-indigo-400 rounded px-1 text-xs text-slate-900 outline-none w-full font-semibold"/>
  ) : (
- <button onDoubleClick={() => !isLinked && canManage && setEditFirstCol('__header__')}
- className="flex items-center gap-1 font-semibold text-[11px] text-slate-600 hover:text-slate-900 flex-1 text-left">
- <span title="Double-click to rename">{table.firstColLabel}</span>
- {localSortField === '__label__' && (localSortDir==='asc' ? <ChevronUp size={10}/> : <ChevronDown size={10}/>)}
+ <button
+ onClick={() => {
+ if (localSortField === '__label__') {
+ if (localSortDir === 'asc') setLocalSortDir('desc');
+ else { setLocalSortField(undefined); setLocalSortDir('asc'); }
+ } else {
+ setLocalSortField('__label__'); setLocalSortDir('asc');
+ }
+ }}
+ onDoubleClick={() => !isLinked && canManage && setEditFirstCol('__header__')}
+ className="flex items-center gap-1 font-semibold text-[11px] text-slate-600 hover:text-indigo-700 flex-1 text-left min-w-0 select-none"
+ title="Click to sort · Double-click to rename">
+ <span className="truncate">{table.firstColLabel}</span>
+ {localSortField === '__label__' && (
+ localSortDir === 'asc'
+ ? <ChevronUp size={10} className="text-indigo-500 shrink-0"/>
+ : <ChevronDown size={10} className="text-indigo-500 shrink-0"/>
+ )}
  </button>
  )}
- <div className="flex items-center gap-0.5 shrink-0">
- <button onClick={() => { setLocalSortField('__label__'); setLocalSortDir('asc'); hook.updateTable(table.id, { ...table, sortField: '__label__', sortDir: 'asc' }); }}
-  className={cn('p-px rounded', localSortField==='__label__' && localSortDir==='asc' ? 'text-blue-500 bg-blue-50' : 'text-slate-300 hover:text-slate-600')}
-  title="Sort A→Z"><ArrowUpAZ size={10}/></button>
- <button onClick={() => { setLocalSortField('__label__'); setLocalSortDir('desc'); hook.updateTable(table.id, { ...table, sortField: '__label__', sortDir: 'desc' }); }}
-  className={cn('p-px rounded', localSortField==='__label__' && localSortDir==='desc' ? 'text-blue-500 bg-blue-50' : 'text-slate-300 hover:text-slate-600')}
-  title="Sort Z→A"><ArrowDownAZ size={10}/></button>
- <button onClick={() => setColFilter(f => f==='__label__' ? null : '__label__')} className={cn('p-px', localFilters['__label__'] ? 'text-blue-500' : 'text-slate-300 hover:text-slate-500')} title="Filter"><Filter size={10}/></button>
  </div>
- </div>
- {colFilter === '__label__' && (
- <div className="px-2 pb-1 flex items-center gap-1">
- <input value={localFilters['__label__'] ?? ''} onChange={e => setLocalFilters(p => ({ ...p, '__label__': e.target.value }))}
-  placeholder="Filter…" autoFocus
-  onKeyDown={e => e.key === 'Escape' && setColFilter(null)}
-  className="flex-1 bg-white border border-blue-400 rounded px-1.5 py-0.5 text-xs outline-none"/>
- {localFilters['__label__'] && <button onClick={() => setLocalFilters(p => { const {['__label__']: _, ...rest} = p; return rest; })} className="text-slate-400 hover:text-red-500 shrink-0"><X size={10}/></button>}
- </div>
- )}
- <div className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400"
+ {/* Resize handle */}
+ <div className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize opacity-0 group-hover/col:opacity-100 bg-indigo-400 transition-opacity"
  onMouseDown={e => startResize(e, '__label__')}
- onDoubleClick={() => setColWidths(p => { const {['__label__']: _, ...rest} = p; return rest; })}
+ onDoubleClick={() => setColWidths(p => { const { ['__label__']: _, ...rest } = p; return rest; })}
  title="Drag to resize · Double-click to auto-fit"/>
  </th>
 
- {/* Data cols */}
- {orderedFields.map((field, fi) => (
+ {/* Data column headers */}
+ {orderedFields.map((field) => (
  <th key={field.id}
-  draggable={canManage && !isLinked}
-  onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('colId', field.id); setDragColId(field.id); }}
-  onDragEnd={() => { setDragColId(null); setDragOverColId(null); }}
-  onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverColId(field.id); }}
-  onDrop={e => { e.preventDefault(); const srcId = e.dataTransfer.getData('colId'); if (srcId) handleColDrop(srcId, field.id); setDragColId(null); setDragOverColId(null); }}
-  className={cn("border-r border-slate-200 bg-slate-100 relative transition-colors",
-   field.frozen && "sticky left-0 z-20",
-   dragOverColId === field.id && dragColId !== field.id && 'border-l-2 border-l-blue-400 bg-blue-50',
-   dragColId === field.id && 'opacity-50',
-  )} style={{ width: W(field), minWidth: 80 }}>
- <div className="flex items-center gap-1 px-2 py-2">
- {canManage && !isLinked && <span title="Drag to reorder column"><GripVertical size={10} className="text-slate-300 cursor-grab shrink-0"/></span>}
- <span className="flex items-center gap-1 font-semibold text-[11px] text-slate-600 flex-1 min-w-0">
-  <TypeIcon type={field.type} size={10}/>
-  <span className="truncate">{field.label}</span>
- </span>
- <div className="flex items-center gap-0.5 shrink-0">
-  <button onClick={() => { setLocalSortField(field.id); setLocalSortDir('asc'); hook.updateTable(table.id, { ...table, sortField: field.id, sortDir: 'asc' }); }}
-   className={cn('p-px rounded', localSortField===field.id && localSortDir==='asc' ? 'text-blue-500 bg-blue-50' : 'text-slate-300 hover:text-slate-600')}
-   title="Sort A→Z"><ArrowUpAZ size={10}/></button>
-  <button onClick={() => { setLocalSortField(field.id); setLocalSortDir('desc'); hook.updateTable(table.id, { ...table, sortField: field.id, sortDir: 'desc' }); }}
-   className={cn('p-px rounded', localSortField===field.id && localSortDir==='desc' ? 'text-blue-500 bg-blue-50' : 'text-slate-300 hover:text-slate-600')}
-   title="Sort Z→A"><ArrowDownAZ size={10}/></button>
-  <button onClick={() => setColFilter(f => f===field.id ? null : field.id)} className={cn('p-px', localFilters[field.id] ? 'text-blue-500' : 'text-slate-300 hover:text-slate-500')} title="Filter"><Filter size={10}/></button>
-  {canManage && !isLinked && <>
-  <button onClick={() => setColSettings(field.id)} className="text-slate-300 hover:text-slate-600"><Settings2 size={10}/></button>
-  <button onClick={() => setConfirmDelete({ type: 'column', id: field.id, label: field.label })} className="text-slate-300 hover:text-red-500"><X size={10}/></button>
-  </>}
- </div>
- </div>
- {colFilter === field.id && (
- <div className="px-2 pb-1 flex items-center gap-1">
-  <input value={localFilters[field.id] ?? ''} onChange={e => setLocalFilters(p => ({ ...p, [field.id]: e.target.value }))}
-   placeholder="Filter…" autoFocus
-   onKeyDown={e => e.key === 'Escape' && setColFilter(null)}
-   className="flex-1 bg-white border border-blue-400 rounded px-1.5 py-0.5 text-xs outline-none"/>
-  {localFilters[field.id] && <button onClick={() => setLocalFilters(p => { const {[field.id]: _, ...rest} = p; return rest; })} className="text-slate-400 hover:text-red-500 shrink-0"><X size={10}/></button>}
- </div>
+ onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverColId(field.id); }}
+ onDragLeave={() => setDragOverColId(null)}
+ onDrop={e => {
+ e.preventDefault();
+ const srcId = e.dataTransfer.getData('colId');
+ if (srcId && srcId !== field.id) handleColDrop(srcId, field.id);
+ setDragColId(null); setDragOverColId(null);
+ }}
+ className={cn(
+ 'bg-slate-50 border-r border-slate-100 relative group/col transition-colors',
+ field.frozen && 'sticky left-0 z-20',
+ dragOverColId === field.id && dragColId !== field.id && 'border-l-2 border-l-indigo-400 bg-indigo-50/60',
+ dragColId === field.id && 'opacity-40 bg-indigo-50',
  )}
- {field.nominatedUserIds.length > 0 && <div className="px-2 pb-1"><span className="text-[8px] bg-blue-100 text-blue-700 rounded-full px-1">{field.nominatedUserIds.length} nominee{field.nominatedUserIds.length>1?'s':''}</span></div>}
- <div className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-400"
+ style={{ width: W(field), minWidth: 80 }}>
+ <div className="flex items-center gap-1 px-2 py-2 min-w-0">
+ {/* Grip handle — only this span is draggable for column reordering */}
+ {canManage && !isLinked && (
+ <span
+ draggable
+ onDragStart={e => {
+ e.stopPropagation();
+ e.dataTransfer.effectAllowed = 'move';
+ e.dataTransfer.setData('colId', field.id);
+ setDragColId(field.id);
+ }}
+ onDragEnd={() => { setDragColId(null); setDragOverColId(null); }}
+ className="cursor-grab text-slate-300 hover:text-indigo-500 shrink-0 opacity-0 group-hover/col:opacity-100 transition-opacity"
+ title="Drag to reorder column">
+ <GripVertical size={10}/>
+ </span>
+ )}
+ {/* Column name — click to sort */}
+ <button
+ onClick={() => {
+ if (localSortField === field.id) {
+ if (localSortDir === 'asc') setLocalSortDir('desc');
+ else { setLocalSortField(undefined); setLocalSortDir('asc'); }
+ } else {
+ setLocalSortField(field.id); setLocalSortDir('asc');
+ }
+ }}
+ className="flex items-center gap-1 font-semibold text-[11px] text-slate-600 hover:text-indigo-700 flex-1 text-left min-w-0 select-none"
+ title="Click to sort">
+ <TypeIcon type={field.type} size={10} className="shrink-0"/>
+ <span className="truncate">{field.label}</span>
+ {localSortField === field.id && (
+ localSortDir === 'asc'
+ ? <ChevronUp size={10} className="text-indigo-500 shrink-0"/>
+ : <ChevronDown size={10} className="text-indigo-500 shrink-0"/>
+ )}
+ {field.nominatedUserIds.length > 0 && (
+ <span className="text-[8px] bg-blue-100 text-blue-700 rounded-full px-1 shrink-0">{field.nominatedUserIds.length}</span>
+ )}
+ </button>
+ {/* Hover actions */}
+ <div className="hidden group-hover/col:flex items-center gap-0.5 shrink-0">
+ {canManage && !isLinked && <>
+ <button onClick={() => setColSettings(field.id)} className="p-px text-slate-300 hover:text-slate-600 transition-colors" title="Column settings"><Settings2 size={10}/></button>
+ <button onClick={() => setConfirmDelete({ type: 'column', id: field.id, label: field.label })} className="p-px text-slate-300 hover:text-red-500 transition-colors" title="Delete column"><X size={10}/></button>
+ </>}
+ </div>
+ </div>
+ {/* Resize handle */}
+ <div className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize opacity-0 group-hover/col:opacity-100 bg-indigo-400 transition-opacity"
  onMouseDown={e => startResize(e, field.id)}
- onDoubleClick={() => setColWidths(p => { const {[field.id]: _, ...rest} = p; return rest; })}
+ onDoubleClick={() => setColWidths(p => { const { [field.id]: _, ...rest } = p; return rest; })}
  title="Drag to resize · Double-click to auto-fit"/>
  </th>
  ))}
 
- {/* Add col */}
+ {/* Add column button */}
  {canManage && !isLinked && (
- <th className="w-8 border-r-0 border-slate-200 bg-slate-100">
- <button onClick={() => hook.addColumn(table.id)} className="w-full h-full flex items-center justify-center py-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors">
- <Plus size={13}/>
+ <th className="w-8 bg-slate-50">
+ <button onClick={() => hook.addColumn(table.id)}
+ className="w-full h-full flex items-center justify-center py-2 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors">
+ <Plus size={12}/>
  </button>
  </th>
  )}
+ </tr>
+
+ {/* ── Row 2: Always-visible filter row ── */}
+ <tr className="bg-white border-b border-slate-200">
+ {/* Filter icon indicator */}
+ <td className="w-8 bg-white border-r border-slate-100">
+ <div className="flex items-center justify-center p-1.5">
+ <Filter size={9} className={cn('transition-colors', hasFilters ? 'text-violet-500' : 'text-slate-200')}/>
+ </div>
+ </td>
+
+ {/* Label column filter */}
+ <td className="bg-white border-r border-slate-100 px-1 py-1"
+ style={{ width: colWidths['__label__'] ?? 140 }}>
+ <div className="relative">
+ <input
+ value={localFilters['__label__'] ?? ''}
+ onChange={e => setLocalFilters(p => ({ ...p, '__label__': e.target.value }))}
+ placeholder="Filter…"
+ className={cn(
+ 'w-full text-[10px] px-1.5 py-0.5 rounded border outline-none transition-colors placeholder-slate-300',
+ localFilters['__label__']
+ ? 'border-violet-400 bg-white text-slate-700 shadow-sm'
+ : 'border-slate-100 bg-slate-50 hover:border-slate-200 focus:border-violet-300 text-slate-600'
+ )}/>
+ {localFilters['__label__'] && (
+ <button
+ onClick={() => setLocalFilters(p => { const { ['__label__']: _, ...rest } = p; return rest; })}
+ className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-300 hover:text-red-400 transition-colors">
+ <X size={8}/>
+ </button>
+ )}
+ </div>
+ </td>
+
+ {/* Per-column filters */}
+ {orderedFields.map(field => (
+ <td key={field.id} className="bg-white border-r border-slate-100 px-1 py-1"
+ style={{ width: W(field) }}>
+ <div className="relative">
+ <input
+ value={localFilters[field.id] ?? ''}
+ onChange={e => setLocalFilters(p => ({ ...p, [field.id]: e.target.value }))}
+ placeholder="Filter…"
+ className={cn(
+ 'w-full text-[10px] px-1.5 py-0.5 rounded border outline-none transition-colors placeholder-slate-300',
+ localFilters[field.id]
+ ? 'border-violet-400 bg-white text-slate-700 shadow-sm'
+ : 'border-slate-100 bg-slate-50 hover:border-slate-200 focus:border-violet-300 text-slate-600'
+ )}/>
+ {localFilters[field.id] && (
+ <button
+ onClick={() => setLocalFilters(p => { const { [field.id]: _, ...rest } = p; return rest; })}
+ className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-300 hover:text-red-400 transition-colors">
+ <X size={8}/>
+ </button>
+ )}
+ </div>
+ </td>
+ ))}
+
+ {/* Spacer for add-col column */}
+ {canManage && !isLinked && <td className="bg-white w-8 border-r border-slate-100"/>}
  </tr>
  </thead>
 
  <tbody>
  {visibleRows.map((row, idx) => {
- const labelVal = table.values[`${row.id}:__label__`] || (isLinked ? '' : `Row ${idx+1}`);
+ const labelVal = table.values[`${row.id}:__label__`] || (isLinked ? '' : `Row ${idx + 1}`);
  return (
  <tr key={row.id}
-  draggable={canManage && !isLinked}
-  onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('rowId', row.id); setDragRowId(row.id); }}
-  onDragEnd={() => { setDragRowId(null); setDragOverRowId(null); }}
-  onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverRowId(row.id); }}
-  onDrop={e => { e.preventDefault(); const srcId = e.dataTransfer.getData('rowId'); if (srcId) handleRowDrop(srcId, row.id); setDragRowId(null); setDragOverRowId(null); }}
-  className={cn('group hover:bg-blue-50/40 transition-colors border-b border-slate-100',
-   idx%2===1 && 'bg-slate-50/30',
-   dragOverRowId === row.id && dragRowId !== row.id && 'border-t-2 border-t-blue-400',
-   dragRowId === row.id && 'opacity-40',
-  )}>
- {/* Row # + controls */}
- <td className="w-8 border-r border-slate-100 px-1 text-center align-middle">
- <div className="flex flex-col items-center gap-0.5">
- {canManage && !isLinked ? (<>
- <div className="hidden group-hover:flex items-center cursor-grab text-slate-300 hover:text-slate-500 p-px" title="Drag to reorder"><GripVertical size={10}/></div>
- <span className="text-[10px] text-slate-300 leading-none group-hover:hidden">{idx+1}</span>
- </>) : <span className="text-[10px] text-slate-300">{idx+1}</span>}
+ onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverRowId(row.id); }}
+ onDragLeave={() => setDragOverRowId(null)}
+ onDrop={e => {
+ e.preventDefault();
+ const srcId = e.dataTransfer.getData('rowId');
+ if (srcId && srcId !== row.id) handleRowDrop(srcId, row.id);
+ setDragRowId(null); setDragOverRowId(null);
+ }}
+ className={cn(
+ 'group/row hover:bg-indigo-50/20 transition-colors border-b border-slate-100',
+ idx % 2 === 1 && 'bg-slate-50/30',
+ dragOverRowId === row.id && dragRowId !== row.id && 'border-t-2 border-t-indigo-400 bg-indigo-50/40',
+ dragRowId === row.id && 'opacity-40',
+ )}>
+
+ {/* Row number + drag handle (only handle is draggable) */}
+ <td className="w-8 border-r border-slate-100 align-middle">
+ <div className="relative flex items-center justify-center min-h-[28px]">
+ {canManage && !isLinked ? (
+ <>
+ <span className="text-[10px] text-slate-300 leading-none group-hover/row:opacity-0 transition-opacity select-none absolute">{idx + 1}</span>
+ <div
+ draggable
+ onDragStart={e => {
+ e.dataTransfer.effectAllowed = 'move';
+ e.dataTransfer.setData('rowId', row.id);
+ setDragRowId(row.id);
+ }}
+ onDragEnd={() => { setDragRowId(null); setDragOverRowId(null); }}
+ className="text-slate-300 hover:text-indigo-500 cursor-grab opacity-0 group-hover/row:opacity-100 transition-opacity p-px absolute"
+ title="Drag to reorder row">
+ <GripVertical size={12}/>
+ </div>
+ </>
+ ) : (
+ <span className="text-[10px] text-slate-300 select-none">{idx + 1}</span>
+ )}
  </div>
  </td>
 
  {/* Label cell */}
- <td className="border-r border-slate-100 px-2 py-1.5 font-medium text-slate-700"style={{ width: colWidths['__label__'] ?? 140 }}>
+ <td className="border-r border-slate-100 px-2 py-1.5 font-medium text-slate-700"
+ style={{ width: colWidths['__label__'] ?? 140 }}>
  {isLinked ? (
- <span className="whitespace-pre-wrap break-words block">{labelVal}</span>
+ <span className="whitespace-pre-wrap break-words block text-xs">{labelVal}</span>
  ) : editFirstCol === row.id ? (
  <input value={table.values[`${row.id}:__label__`] ?? ''}
- autoFocus onChange={e => hook.setCellValue(table.id, row.id, '__label__', e.target.value)}
- onBlur={() => setEditFirstCol(null)} onKeyDown={e => { if (e.key==='Enter'||e.key==='Escape') setEditFirstCol(null); }}
- className="w-full bg-white border border-blue-500 rounded px-1.5 py-0.5 text-xs text-slate-900 outline-none"/>
+ autoFocus
+ onChange={e => hook.setCellValue(table.id, row.id, '__label__', e.target.value)}
+ onBlur={() => setEditFirstCol(null)}
+ onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setEditFirstCol(null); }}
+ className="w-full bg-white border border-indigo-400 rounded px-1.5 py-0.5 text-xs text-slate-900 outline-none"/>
  ) : (
  <div className="flex items-center gap-1 group/lbl">
- <button onDoubleClick={() => setEditFirstCol(row.id)} className="flex-1 text-left truncate">{labelVal || <span className="text-slate-300 italic">double-click</span>}</button>
+ <button onDoubleClick={() => setEditFirstCol(row.id)} className="flex-1 text-left text-xs truncate">
+ {labelVal || <span className="text-slate-300 italic text-[10px]">double-click to edit</span>}
+ </button>
  {canManage && (
- <button onClick={() => setShowRowNominees(row.id)} className="opacity-0 group-hover/lbl:opacity-100 text-slate-300 hover:text-blue-500 shrink-0"><Users size={10}/></button>
+ <button onClick={() => setShowRowNominees(row.id)}
+ className="opacity-0 group-hover/lbl:opacity-100 text-slate-300 hover:text-blue-500 shrink-0 transition-opacity"
+ title="Row access"><Users size={10}/></button>
  )}
- {row.nominatedUserIds.length > 0 && <span className="text-[8px] bg-blue-100 text-blue-700 rounded-full px-1">{row.nominatedUserIds.length}</span>}
+ {row.nominatedUserIds.length > 0 && (
+ <span className="text-[8px] bg-blue-100 text-blue-700 rounded-full px-1 shrink-0">{row.nominatedUserIds.length}</span>
+ )}
  {canManage && !isLinked && (
- <button onClick={() => setConfirmDelete({ type: 'row', id: row.id, label: labelVal || `Row ${idx+1}` })} className="opacity-0 group-hover/lbl:opacity-100 text-slate-300 hover:text-red-500 shrink-0"><Trash2 size={10}/></button>
+ <button onClick={() => setConfirmDelete({ type: 'row', id: row.id, label: labelVal || `Row ${idx + 1}` })}
+ className="opacity-0 group-hover/lbl:opacity-100 text-slate-300 hover:text-red-500 shrink-0 transition-opacity"
+ title="Delete row"><Trash2 size={10}/></button>
  )}
  </div>
  )}
@@ -936,29 +1082,31 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  const isEditing = editing?.rId === row.id && editing?.fId === field.id;
  return (
  <td key={field.id}
- className={cn('border-r border-slate-100 px-2',
+ className={cn(
+ 'border-r border-slate-100 px-2',
  field.frozen ? 'sticky left-0 bg-white z-[1]' : '',
- // vertical padding: more when auto-height with wrap
- isWrapped(field) && rowHeightMode === 'auto' ? 'py-2 align-top' : 'py-1.5 align-middle'
+ isWrapped(field) && rowHeightMode === 'auto' ? 'py-2 align-top' : 'py-1.5 align-middle',
+ cellEditable && !isEditing && 'cursor-text',
  )}
  style={{ width: W(field) }}
  onDoubleClick={() => cellEditable && setEditing({ rId: row.id, fId: field.id })}>
  {isEditing ? (
- <CellEditor value={val} field={field} onSave={v => { hook.setCellValue(table.id, row.id, field.id, v); setEditing(null); }} onCancel={() => setEditing(null)}/>
+ <CellEditor value={val} field={field}
+ onSave={v => { hook.setCellValue(table.id, row.id, field.id, v); setEditing(null); }}
+ onCancel={() => setEditing(null)}/>
  ) : (
- <div className={cn('min-h-[20px]',
+ <div className={cn(
+ 'min-h-[20px]',
  isFormula && 'text-indigo-600 font-medium',
  !val && cellEditable && 'text-slate-200 italic',
- // fixed height: clamp to 2 lines with"…show more"hint
  !isWrapped(field) || rowHeightMode === 'fixed' ? 'max-h-10 overflow-hidden' : '',
  )}>
  {isFormula && !val
  ? <span className="text-[10px] opacity-50">={field.formula}</span>
  : <CellView value={val} field={{ ...field, wrapText: isWrapped(field) }}/>
  }
- {/*"…more"hint in fixed-height mode when content overflows */}
  {rowHeightMode === 'fixed' && isWrapped(field) && val.length > 60 && (
- <span className="text-[9px] text-blue-500">…more</span>
+ <span className="text-[9px] text-indigo-400">…more</span>
  )}
  </div>
  )}
@@ -970,87 +1118,135 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  );
  })}
 
- {/* Add row */}
+ {/* Empty state */}
+ {!visibleRows.length && (
+ <tr>
+ <td colSpan={orderedFields.length + 3} className="text-center py-12">
+ <div className="flex flex-col items-center gap-2 text-slate-300">
+ {hasFilters ? (
+ <>
+ <Filter size={22}/>
+ <span className="text-xs font-medium">No rows match the current filters</span>
+ <button onClick={() => setLocalFilters({})}
+ className="text-xs text-violet-500 hover:text-violet-700 font-medium transition-colors flex items-center gap-1">
+ <RotateCcw size={10}/> Clear all filters
+ </button>
+ </>
+ ) : (
+ <>
+ <FileSpreadsheet size={22}/>
+ <span className="text-xs font-medium">No rows yet</span>
  {canManage && !isLinked && (
+ <button onClick={() => hook.addRow(table.id)}
+ className="text-xs text-indigo-500 hover:text-indigo-700 font-medium transition-colors flex items-center gap-1">
+ <Plus size={11}/> Add the first row
+ </button>
+ )}
+ </>
+ )}
+ </div>
+ </td>
+ </tr>
+ )}
+
+ {/* Inline Add Row (when rows exist) */}
+ {canManage && !isLinked && visibleRows.length > 0 && (
  <tr>
  <td colSpan={orderedFields.length + 3}>
- <button onClick={() => hook.addRow(table.id)} className="w-full flex items-center gap-1.5 px-3 py-2 text-xs text-slate-400 hover:text-indigo-600 hover:bg-indigo-50/50 transition-colors">
- <Plus size={12}/> Add row
+ <button onClick={() => hook.addRow(table.id)}
+ className="w-full flex items-center gap-1.5 px-3 py-2 text-[11px] text-slate-300 hover:text-indigo-600 hover:bg-indigo-50/40 transition-colors border-t border-slate-100">
+ <Plus size={11}/> Add row
  </button>
  </td>
  </tr>
  )}
- {!visibleRows.length && (
- <tr><td colSpan={orderedFields.length + 3} className="text-center text-slate-300 py-8 text-xs italic">{hasFilters ? 'No rows match the current filter' : 'No rows yet'}</td></tr>
+
+ {/* ── Aggregation footer ── */}
+ <tr className="border-t-2 border-slate-200 bg-slate-50/70">
+ <td className="w-8 px-1"/>
+ <td className="px-2 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap select-none">
+ ∑ Totals
+ </td>
+ {orderedFields.map(field => {
+ const agg = (colAgg[field.id] ?? 'none') as Parameters<typeof computeAgg>[1];
+ const result = computeAgg(field.id, agg);
+ const isOpen = aggOpen === field.id;
+ return (
+ <td key={field.id} className="relative px-2 py-1 text-right">
+ <button
+ onClick={() => setAggOpen(isOpen ? null : field.id)}
+ className={cn(
+ 'text-[10px] font-medium rounded px-1.5 py-0.5 transition-colors w-full text-right',
+ agg === 'none'
+ ? 'text-slate-300 hover:text-indigo-500 hover:bg-indigo-50'
+ : 'text-indigo-600 hover:bg-indigo-50'
+ )}>
+ {agg === 'none' ? (
+ <span className="text-slate-300 hover:text-indigo-400">+ Aggregate</span>
+ ) : (
+ <span className="flex items-center justify-end gap-1">
+ <span className="text-slate-400 font-normal">{AGG_LABELS[agg]}</span>
+ <span className="font-semibold">{result}</span>
+ </span>
  )}
- {/* ── Aggregation footer row (Notion-style) ── */}
- <tr className="border-t-2 border-slate-200 bg-slate-50/80">
-  <td className="w-7 px-1"/>
-  <td className="px-2 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap select-none">
-   Calculate
-  </td>
-  {orderedFields.map(field => {
-   const agg = (colAgg[field.id] ?? 'none') as Parameters<typeof computeAgg>[1];
-   const result = computeAgg(field.id, agg);
-   const isOpen = aggOpen === field.id;
-   return (
-    <td key={field.id} className="relative px-2 py-1 text-right">
-     <button
-      onClick={() => setAggOpen(isOpen ? null : field.id)}
-      className={`text-[10px] font-medium rounded px-1 py-0.5 transition-colors w-full text-right ${
-       agg === 'none'
-        ? 'text-slate-300 hover:text-indigo-500 hover:bg-indigo-50'
-        : 'text-indigo-600 hover:bg-indigo-50'
-      }`}
-     >
-      {agg === 'none' ? 'Calculate' : (
-       <span className="flex items-center justify-end gap-1">
-        <span className="text-slate-400 font-normal">{AGG_LABELS[agg]}</span>
-        <span className="font-semibold">{result}</span>
-       </span>
-      )}
-     </button>
-     {isOpen && (
-      <>
-       <div className="fixed inset-0 z-[2200]" onClick={() => setAggOpen(null)}/>
-       <div className="absolute right-0 bottom-full mb-1 z-[2201] bg-white border border-slate-200 rounded-xl shadow-xl py-1 w-36 text-left">
-        {AGG_CYCLE.map(opt => (
-         <button key={opt} onClick={() => setFieldAgg(field.id, opt)}
-          className={`w-full flex items-center justify-between px-3 py-1.5 text-xs hover:bg-indigo-50 transition-colors ${
-           agg === opt ? 'text-indigo-600 font-semibold' : 'text-slate-700'
-          }`}>
-          <span>{AGG_LABELS[opt]}</span>
-          {agg === opt && <span className="text-indigo-400">✓</span>}
-         </button>
-        ))}
-       </div>
-      </>
-     )}
-    </td>
-   );
-  })}
-  {canManage && !isLinked && <td/>}
+ </button>
+ {isOpen && (
+ <>
+ <div className="fixed inset-0 z-[2200]" onClick={() => setAggOpen(null)}/>
+ <div className="absolute right-0 bottom-full mb-1 z-[2201] bg-white border border-slate-200 rounded-xl shadow-xl py-1 w-36 text-left">
+ {AGG_CYCLE.map(opt => (
+ <button key={opt} onClick={() => setFieldAgg(field.id, opt)}
+ className={cn(
+ 'w-full flex items-center justify-between px-3 py-1.5 text-xs hover:bg-indigo-50 transition-colors',
+ agg === opt ? 'text-indigo-600 font-semibold' : 'text-slate-700'
+ )}>
+ <span>{AGG_LABELS[opt]}</span>
+ {agg === opt && <span className="text-indigo-400">✓</span>}
+ </button>
+ ))}
+ </div>
+ </>
+ )}
+ </td>
+ );
+ })}
+ {canManage && !isLinked && <td/>}
  </tr>
  </tbody>
  </table>
  </div>
 
- {/* Row count footer */}
+ {/* ── Footer ── */}
  <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 border-t border-slate-200 text-[10px] text-slate-400">
- <span>{visibleRows.length} of {table.rows.length} row{table.rows.length!==1?'s':''}{hasFilters && ' (filtered)'}</span>
+ <span>
+ {hasFilters
+ ? <><span className="font-semibold text-slate-600">{visibleRows.length}</span> of {table.rows.length} row{table.rows.length !== 1 ? 's' : ''} <span className="text-violet-500 font-medium">· filtered</span></>
+ : <><span className="font-semibold text-slate-600">{table.rows.length}</span> row{table.rows.length !== 1 ? 's' : ''}</>
+ }
+ </span>
  <div className="flex items-center gap-3">
  <LastEditedBadge tableId={table.id} cell={cell}/>
- {hasFilters && <button onClick={() => setLocalFilters({})} className="text-blue-500 hover:text-blue-700 flex items-center gap-0.5"><RotateCcw size={9}/> Clear filters</button>}
- {localSortField && <button onClick={() => { setLocalSortField(undefined); setLocalSortDir('asc'); hook.updateTable(table.id, { ...table, sortField: undefined, sortDir: undefined }); }} className="text-slate-400 hover:text-slate-600 flex items-center gap-0.5"><RotateCcw size={9}/> Clear sort</button>}
+ {hasFilters && (
+ <button onClick={() => setLocalFilters({})}
+ className="text-violet-500 hover:text-violet-700 flex items-center gap-0.5 transition-colors font-medium">
+ <RotateCcw size={9}/> Clear filters
+ </button>
+ )}
+ {localSortField && (
+ <button onClick={() => { setLocalSortField(undefined); setLocalSortDir('asc'); }}
+ className="text-slate-400 hover:text-slate-600 flex items-center gap-0.5 transition-colors">
+ <RotateCcw size={9}/> Clear sort
+ </button>
+ )}
  </div>
  </div>
 
- {/* Modals */}
+ {/* ── Modals ── */}
  <AnimatePresence>
  {confirmDelete && (
  <ConfirmDialog
  title={`Delete ${confirmDelete.type}?`}
- message={`"${confirmDelete.label}"will be deleted and moved to Trash. You can restore it from the trash.`}
+ message={`"${confirmDelete.label}" will be deleted and moved to Trash. You can restore it from the trash.`}
  onConfirm={() => {
  if (confirmDelete.type === 'column') hook.removeColumn(table.id, confirmDelete.id);
  else if (confirmDelete.type === 'row') hook.removeRow(table.id, confirmDelete.id);
@@ -1061,10 +1257,10 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  )}
  {showSheet && <SheetModal table={table} hook={hook} onClose={() => setShowSheet(false)}/>}
  {colSettings && <ColSettingsModal field={orderedFields.find(f => f.id === colSettings)!} tableId={table.id} hook={hook} cellStaff={cellStaff} onClose={() => setColSettings(null)}/>}
- {showTableNominees && <NomineePickerModal title="Whole-table access"current={table.nominatedUserIds} cellStaff={cellStaff} onClose={() => setShowTableNominees(false)} onSave={ids => hook.setTableNominees(table.id, ids)}/>}
- {showTableViewers && <NomineePickerModal title="Who can view this table"current={table.viewerIds ?? []} cellStaff={cellStaff} onClose={() => setShowTableViewers(false)} onSave={ids => hook.setTableViewers(table.id, ids)}/>}
- {showTableEditors && <NomineePickerModal title="Who can edit this table"current={table.editorIds ?? []} cellStaff={cellStaff} onClose={() => setShowTableEditors(false)} onSave={ids => hook.setTableEditors(table.id, ids)}/>}
- {showRowNominees && <NomineePickerModal title={`Row:"${table.values[`${showRowNominees}:__label__`] ?? 'this row'}"`} current={table.rows.find(r => r.id === showRowNominees)?.nominatedUserIds ?? []} cellStaff={cellStaff} onClose={() => setShowRowNominees(null)} onSave={ids => hook.setRowNominees(table.id, showRowNominees, ids)}/>}
+ {showTableNominees && <NomineePickerModal title="Whole-table access" current={table.nominatedUserIds} cellStaff={cellStaff} onClose={() => setShowTableNominees(false)} onSave={ids => hook.setTableNominees(table.id, ids)}/>}
+ {showTableViewers && <NomineePickerModal title="Who can view this table" current={table.viewerIds ?? []} cellStaff={cellStaff} onClose={() => setShowTableViewers(false)} onSave={ids => hook.setTableViewers(table.id, ids)}/>}
+ {showTableEditors && <NomineePickerModal title="Who can edit this table" current={table.editorIds ?? []} cellStaff={cellStaff} onClose={() => setShowTableEditors(false)} onSave={ids => hook.setTableEditors(table.id, ids)}/>}
+ {showRowNominees && <NomineePickerModal title={`Row: "${table.values[`${showRowNominees}:__label__`] ?? 'this row'}"`} current={table.rows.find(r => r.id === showRowNominees)?.nominatedUserIds ?? []} cellStaff={cellStaff} onClose={() => setShowRowNominees(null)} onSave={ids => hook.setRowNominees(table.id, showRowNominees, ids)}/>}
  {showCollab && (
  <CollaborationPanel table={table} cell={cell} userId={userId} userName={userName} canManage={canManage}
  onLockToggle={() => hook.updateTable(table.id, { locked: !table.locked })}
