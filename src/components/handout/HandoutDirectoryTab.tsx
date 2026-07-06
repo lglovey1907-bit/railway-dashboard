@@ -356,17 +356,57 @@ export function HandoutDirectoryTab({ initialCode }: { initialCode?: string }) {
     }).catch(() => {});
   }, []);
 
-  // ── Load all handout data from Upstash (server-side, cross-device) ─────────
+  // ── Load all handout data — localStorage migration + Upstash ──────────────
   const loadHandouts = useCallback(() => {
     if (typeof window === 'undefined') return;
-    import('@/lib/config/sharedSync').then(({ sharedRead }) => {
-      // Read the codes index first, then fetch each handout
+
+    // Step 1: Read any OLD-format handouts from localStorage (rly_handout_*)
+    // These were saved by the previous code version that used localStorage only.
+    // We migrate them to Upstash so they appear on every device.
+    const localHDs: Record<string, HD> = {};
+    const migratedCodes: string[] = [];
+    try {
+      Object.keys(localStorage)
+        .filter(k => k.startsWith('rly_handout_'))
+        .forEach(key => {
+          try {
+            const raw = localStorage.getItem(key);
+            if (!raw) return;
+            const hd = JSON.parse(raw) as HD;
+            const code = (hd.stationCode ?? key.replace('rly_handout_', '')).toUpperCase().trim();
+            if (code) { localHDs[code] = hd; migratedCodes.push(code); }
+          } catch { /* ignore */ }
+        });
+    } catch { /* ignore */ }
+
+    // Step 2: Read from Upstash (server-side, cross-device)
+    import('@/lib/config/sharedSync').then(({ sharedRead, sharedWrite }) => {
       sharedRead('handout_codes').then((codesVal: unknown) => {
-        const codes: string[] = Array.isArray(codesVal) ? codesVal : [];
-        if (codes.length === 0) return;
-        const result: Record<string, HD> = {};
-        let remaining = codes.length;
-        codes.forEach(code => {
+        const serverCodes: string[] = Array.isArray(codesVal) ? codesVal : [];
+
+        // Merge local + server codes (deduplicated)
+        const allCodes = [...new Set([...serverCodes, ...migratedCodes])];
+
+        // Migrate local-only handouts to Upstash (one-time sync)
+        const newCodes = migratedCodes.filter(c => !serverCodes.includes(c));
+        if (newCodes.length > 0) {
+          sharedWrite('handout_codes', allCodes);
+          migratedCodes.forEach(code => {
+            if (!serverCodes.includes(code)) sharedWrite(`handout_${code}`, localHDs[code]);
+          });
+        }
+
+        // Seed result with instantly-available local data
+        const result: Record<string, HD> = { ...localHDs };
+
+        if (allCodes.length === 0) { setHandouts({ ...result }); return; }
+
+        // Fetch server-only codes from Upstash
+        const serverOnlyCodes = allCodes.filter(c => !localHDs[c]);
+        if (serverOnlyCodes.length === 0) { setHandouts({ ...result }); return; }
+
+        let remaining = serverOnlyCodes.length;
+        serverOnlyCodes.forEach(code => {
           sharedRead(`handout_${code}`).then((val: unknown) => {
             if (val && typeof val === 'object') {
               const hd = val as HD;
@@ -378,15 +418,52 @@ export function HandoutDirectoryTab({ initialCode }: { initialCode?: string }) {
             if (remaining === 0) setHandouts({ ...result });
           });
         });
-      }).catch(() => {});
-    }).catch(() => {});
+      }).catch(() => {
+        // Server unavailable — use local only
+        if (Object.keys(localHDs).length > 0) setHandouts(localHDs);
+      });
+    }).catch(() => {
+      if (Object.keys(localHDs).length > 0) setHandouts(localHDs);
+    });
   }, []);
 
   useEffect(() => { loadOvCache(); loadHandouts(); }, [loadOvCache, loadHandouts]);
 
   // ── Column detection ───────────────────────────────────────────────────────
-  const colCode  = useMemo(() => findCol(ovHeaders, 'code'),    [ovHeaders]);
-  const colName  = useMemo(() => findCol(ovHeaders, 'name'),    [ovHeaders]);
+  // colCode: "Station Code" / "Stn Code" / "Code" — prefer headers that also
+  // contain "station"/"stn" so we don't accidentally pick up a Name column.
+  const colCode = useMemo(() => {
+    const p1 = ovHeaders.find(h => {
+      const l = h.toLowerCase();
+      return (l.includes('station') || l.includes('stn') || l.includes('sta')) && l.includes('code');
+    });
+    if (p1) return p1;
+    return ovHeaders.find(h => h.toLowerCase().includes('code')) ?? '';
+  }, [ovHeaders]);
+
+  // colName: "Station Name" / "Stn Name" / "Name" — exclude headers that
+  // also contain "code" so we don't accidentally pick up the code column.
+  const colName = useMemo(() => {
+    // Priority 1: header contains both "station"/"stn" and "name"
+    const p1 = ovHeaders.find(h => {
+      const l = h.toLowerCase().replace(/[_\-]+/g, ' ');
+      return (l.includes('station') || l.includes('stn')) && l.includes('name');
+    });
+    if (p1) return p1;
+    // Priority 2: contains "name" but not "code"
+    const p2 = ovHeaders.find(h => {
+      const l = h.toLowerCase();
+      return l.includes('name') && !l.includes('code');
+    });
+    if (p2) return p2;
+    // Priority 3: just "station" but not "code"
+    const p3 = ovHeaders.find(h => {
+      const l = h.toLowerCase();
+      return l.includes('station') && !l.includes('code');
+    });
+    return p3 ?? '';
+  }, [ovHeaders]);
+
   const colCat   = useMemo(() => findCol(ovHeaders, 'categor'), [ovHeaders]);
   const colState = useMemo(() => findCol(ovHeaders, 'state'),   [ovHeaders]);
   const colSec   = useMemo(() => findCol(ovHeaders, 'section'), [ovHeaders]);
