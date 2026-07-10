@@ -1405,11 +1405,6 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
         </div>
       )}
 
-      {/* ── Custom Injections ────────────────────────────────────────────── */}
-      {cell === 'Sanitation' && winStore?.windows.find(w => w.id === winStore.activeWindowId)?.label === 'Station Cleanliness Status' && (
-        <SanitationStatusWidget />
-      )}
-
       {/* ── Rows ─────────────────────────────────────────────────────────── */}
       <div className="space-y-3">
         {layout.rows.map((row, rowIdx) => (

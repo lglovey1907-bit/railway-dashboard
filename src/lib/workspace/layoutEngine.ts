@@ -15,7 +15,8 @@ export type WidgetType =
  | 'database' | 'ai_assistant' | 'knowledge_base' | 'task_manager'
  | 'financial'
  | 'monthly_report'
- | 'handout';
+ | 'handout'
+ | 'sanitation_status';
 
 /** A single data source for an advanced KPI card */
 export type KpiAggregation = 'count' | 'sum' | 'avg' | 'min' | 'max' | 'unique';
@@ -397,6 +398,7 @@ export const AVAILABLE_WIDGETS: { type: WidgetType; label: string; description: 
   { type: 'quick_links',    label: 'Quick Links',      description: 'Configurable shortcut links',                 icon: 'ExternalLink',    group: 'Embed' },
   // Enterprise blocks
   { type: 'database',       label: 'Database',         description: 'Full database with Table, Board, Calendar, Gallery, Chart views', icon: 'Database',      group: 'Enterprise' },
+  { type: 'sanitation_status', label: 'Sanitation Live Status', description: 'Live tracking of station cleanliness checkpoints', icon: 'Sparkles', group: 'Data' },
   { type: 'ai_assistant',   label: 'AI Assistant',     description: 'AI chat that searches your workspace data',   icon: 'Bot',             group: 'Enterprise' },
   { type: 'knowledge_base', label: 'Knowledge Base',   description: 'Policies, circulars, SOPs and documents',     icon: 'BookOpen',        group: 'Enterprise' },
   { type: 'task_manager',   label: 'Task Manager',     description: 'Kanban task management with assignments',      icon: 'CheckSquare',     group: 'Enterprise' },
