@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const today = new Date().toISOString().slice(0, 10);
