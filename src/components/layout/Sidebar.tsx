@@ -198,7 +198,7 @@ export function Sidebar() {
             {visibleCells.length === 0
               ? <p className="text-[11px] text-slate-300 px-3 py-1">No active cells</p>
               : visibleCells.map(c => {
-                  const href = c.slug === 'sanitation' ? '/dashboard/sanitation' : `/dashboard/cell/${c.slug}`;
+                  const href = `/dashboard/cell/${c.slug}`;
                   const Icon = ICON_MAP[c.iconKey] ?? Folder;
                   return <NavBtn key={c.id} href={href} label={c.name} icon={Icon}
                     active={pathname === href} onClick={onLinkClick}/>;
@@ -247,7 +247,7 @@ export function Sidebar() {
       {/* Cell icons */}
       <div className="w-full flex flex-col items-center gap-1">
         {visibleCells.map(c => {
-          const href  = c.slug === 'sanitation' ? '/dashboard/sanitation' : `/dashboard/cell/${c.slug}`;
+          const href  = `/dashboard/cell/${c.slug}`;
           const Icon  = ICON_MAP[c.iconKey] ?? Folder;
           return <RailBtn key={c.id} href={href} label={c.name} icon={Icon} active={pathname === href}/>;
         })}

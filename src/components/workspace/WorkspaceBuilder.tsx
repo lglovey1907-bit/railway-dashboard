@@ -15,6 +15,7 @@ import { canManageCellStructure } from '@/lib/cellData/useCellDataStructure';
 import { useWorkspace } from '@/lib/cellData/useWorkspace';
 import { WidgetRenderer } from './WidgetRenderer';
 import { CellDataManager } from '@/components/cell/CellDataManager';
+import { SanitationStatusWidget } from '@/components/dashboard/SanitationStatusWidget';
 import { loadWindowLayoutFromCloud, loadWindowStoreFromCloud } from '@/lib/workspace/windowsEngine';
 import {
   getRowLayout, saveRowLayout, addRow, removeRow, moveRow, updateRow,
@@ -1402,6 +1403,11 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
             Edit mode — drag widgets between columns, use the column buttons to change layout
           </p>
         </div>
+      )}
+
+      {/* ── Custom Injections ────────────────────────────────────────────── */}
+      {cell === 'Sanitation' && (
+        <SanitationStatusWidget />
       )}
 
       {/* ── Rows ─────────────────────────────────────────────────────────── */}
