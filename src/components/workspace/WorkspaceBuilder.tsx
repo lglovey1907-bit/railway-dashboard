@@ -372,6 +372,7 @@ const BLOCK_TEMPLATES: { type: WidgetType; label: string; icon: string; desc: st
   { type: 'financial',     label: 'Revenue Dashboard',  icon: '💰', desc: 'Financial performance overview' },
   { type: 'monthly_report',label: 'Monthly Statement',  icon: '📋', desc: 'Revenue comparative report' },
   { type: 'handout',       label: 'Station Handout',    icon: '🗂️', desc: 'Station info card — footfall, trains, commercial' },
+  { type: 'sanitation_status', label: 'Sanitation Dashboard', icon: '✨', desc: 'Live station cleanliness status' },
 ];
 
 const BLOCK_FUNCTIONS: { type: WidgetType; label: string; icon: string; desc: string }[] = [
