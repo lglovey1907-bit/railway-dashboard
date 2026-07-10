@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { AlertCircle, CheckCircle2, Clock, XCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
 
 type Status = "green" | "yellow" | "red" | "pending";
 
@@ -26,6 +26,11 @@ function StatusIcon({ status, className, size = 20 }: { status: Status; classNam
 export function SanitationStatusWidget() {
   const [data, setData] = useState<StationStatus[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+  const toggle = (stationCode: string) => {
+    setExpanded(prev => ({ ...prev, [stationCode]: !prev[stationCode] }));
+  };
 
   useEffect(() => {
     fetch('/api/checklist/status')
@@ -50,39 +55,55 @@ export function SanitationStatusWidget() {
         <div className="text-sm text-slate-500">No stations configured or data available.</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {data.map((station) => (
-            <div key={station.station} className="border border-slate-200 rounded-xl p-4 flex flex-col">
-              <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
-                <div>
-                  <h3 className="font-semibold text-slate-900">{station.name}</h3>
-                  <p className="text-xs text-slate-500">{station.station}</p>
-                </div>
-                <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 rounded-full border border-slate-100">
-                  <StatusIcon status={station.overall} size={18} />
-                  <span className="text-xs font-medium capitalize text-slate-700">{station.overall}</span>
-                </div>
-              </div>
-
-              <div className="flex-1 space-y-3">
-                {station.cells.map((cell, idx) => (
-                  <div key={idx} className="flex items-center justify-between text-sm">
-                    <div className="flex flex-col">
-                      <span className="text-slate-700 font-medium">{cell.checkpoint}</span>
-                      <span className="text-xs text-slate-400">{cell.window} Window</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {cell.aiScore !== null && (
-                        <span className={`text-xs font-bold ${cell.aiScore >= 6 ? 'text-green-600' : 'text-red-600'}`}>
-                          Score: {cell.aiScore}/10
-                        </span>
-                      )}
-                      <StatusIcon status={cell.status} size={16} />
-                    </div>
+          {data.map((station) => {
+            const isExpanded = expanded[station.station];
+            return (
+              <div key={station.station} className="border border-slate-200 rounded-xl p-4 flex flex-col">
+                <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+                  <div>
+                    <h3 className="font-semibold text-slate-900">{station.name}</h3>
+                    <p className="text-xs text-slate-500">{station.station}</p>
                   </div>
-                ))}
+                  <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 rounded-full border border-slate-100">
+                    <StatusIcon status={station.overall} size={18} />
+                    <span className="text-xs font-medium capitalize text-slate-700">{station.overall}</span>
+                  </div>
+                </div>
+
+                <button 
+                  onClick={() => toggle(station.station)}
+                  className="w-full py-2 flex items-center justify-center gap-1.5 text-xs font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200"
+                >
+                  {isExpanded ? (
+                    <><ChevronUp size={14} /> Hide Details</>
+                  ) : (
+                    <><ChevronDown size={14} /> View Details ({station.cells.length} Checkpoints)</>
+                  )}
+                </button>
+
+                {isExpanded && (
+                  <div className="flex-1 space-y-3 mt-4 pt-4 border-t border-slate-100">
+                    {station.cells.map((cell, idx) => (
+                      <div key={idx} className="flex items-center justify-between text-sm">
+                        <div className="flex flex-col">
+                          <span className="text-slate-700 font-medium">{cell.checkpoint}</span>
+                          <span className="text-xs text-slate-400">{cell.window} Window</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {cell.aiScore !== null && (
+                            <span className={`text-xs font-bold ${cell.aiScore >= 6 ? 'text-green-600' : 'text-red-600'}`}>
+                              Score: {cell.aiScore}/10
+                            </span>
+                          )}
+                          <StatusIcon status={cell.status} size={16} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
