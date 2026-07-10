@@ -27,13 +27,15 @@ export function SanitationStatusWidget() {
   const [data, setData] = useState<StationStatus[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
 
   const toggle = (stationCode: string) => {
     setExpanded(prev => ({ ...prev, [stationCode]: !prev[stationCode] }));
   };
 
   useEffect(() => {
-    fetch('/api/checklist/status')
+    setLoading(true);
+    fetch(`/api/checklist/status?date=${selectedDate}`)
       .then((res) => res.json())
       .then((d) => {
         setData(d);
@@ -43,20 +45,35 @@ export function SanitationStatusWidget() {
         console.error("Failed to fetch status:", err);
         setLoading(false);
       });
-  }, []);
+  }, [selectedDate]);
 
   return (
     <div className="rounded-2xl border border-slate-900/8 bg-white p-6 shadow-sm mb-6">
-      <h2 className="text-xl font-bold text-slate-900 mb-6">Live Sanitation Status (Today)</h2>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <h2 className="text-xl font-bold text-slate-900">Sanitation Status</h2>
+        <input 
+          type="date" 
+          value={selectedDate}
+          onChange={(e) => setSelectedDate(e.target.value)}
+          className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-rail-500 focus:border-rail-500 outline-none transition-all"
+        />
+      </div>
       
       {loading ? (
         <div className="text-sm text-slate-500 animate-pulse">Loading live status...</div>
       ) : !data || data.length === 0 ? (
-        <div className="text-sm text-slate-500">No stations configured or data available.</div>
+        <div className="text-sm text-slate-500">No stations configured or data available for this date.</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {data.map((station) => {
             const isExpanded = expanded[station.station];
+            
+            const morning = station.cells.filter(c => c.window.toLowerCase().includes('morning'));
+            const evening = station.cells.filter(c => c.window.toLowerCase().includes('evening'));
+            
+            const mUpdated = morning.filter(c => c.status === 'green' || c.status === 'yellow').length;
+            const eUpdated = evening.filter(c => c.status === 'green' || c.status === 'yellow').length;
+
             return (
               <div key={station.station} className="border border-slate-200 rounded-xl p-4 flex flex-col">
                 <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
@@ -70,6 +87,19 @@ export function SanitationStatusWidget() {
                   </div>
                 </div>
 
+                {!isExpanded && (
+                  <div className="flex flex-col gap-2 mb-4 text-sm">
+                    <div className="flex justify-between items-center bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
+                      <span className="font-semibold text-slate-700">M - {morning.length}</span>
+                      <span className="text-slate-500">Status - <span className="font-medium text-slate-900">{mUpdated} updated</span></span>
+                    </div>
+                    <div className="flex justify-between items-center bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
+                      <span className="font-semibold text-slate-700">E - {evening.length}</span>
+                      <span className="text-slate-500">Status - <span className="font-medium text-slate-900">{eUpdated} updated</span></span>
+                    </div>
+                  </div>
+                )}
+
                 <button 
                   onClick={() => toggle(station.station)}
                   className="w-full py-2 flex items-center justify-center gap-1.5 text-xs font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200"
@@ -77,7 +107,7 @@ export function SanitationStatusWidget() {
                   {isExpanded ? (
                     <><ChevronUp size={14} /> Hide Details</>
                   ) : (
-                    <><ChevronDown size={14} /> View Details ({station.cells.length} Checkpoints)</>
+                    <><ChevronDown size={14} /> View All {station.cells.length} Checkpoints</>
                   )}
                 </button>
 

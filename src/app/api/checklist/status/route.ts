@@ -9,10 +9,15 @@ import { sql } from "@vercel/postgres";
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
-  const today = new Date().toISOString().slice(0, 10);
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const dateParam = searchParams.get('date');
+  const targetDate = dateParam || new Date().toISOString().slice(0, 10);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const isPastDate = targetDate < todayStr;
+  const isFutureDate = targetDate > todayStr;
 
-  // Fetch today's submissions
+  // Fetch target date's submissions
   const { rows } = await sql`
     SELECT s.code AS station_code, c.label AS checkpoint, w.label AS window,
            sub.within_geofence, sub.within_window, sub.ai_score, sub.captured_at
@@ -20,10 +25,10 @@ export async function GET() {
     JOIN stations s ON s.id = sub.station_id
     JOIN checkpoints c ON c.id = sub.checkpoint_id
     JOIN windows w ON w.id = sub.window_id
-    WHERE sub.captured_at::date = ${today}
+    WHERE sub.captured_at::date = ${targetDate}
   `;
 
-  // Fetch stations and their checkpoints from DB (replaces STATIONS static array)
+  // Fetch stations and their checkpoints from DB
   const { rows: stationRows } = await sql`
     SELECT s.id, s.code, s.name, c.label AS checkpoint
     FROM stations s
@@ -31,7 +36,7 @@ export async function GET() {
     ORDER BY s.code, c.sort_order
   `;
 
-  // Fetch windows from DB (replaces WINDOWS static array)
+  // Fetch windows from DB
   const { rows: windowRows } = await sql`
     SELECT label, end_time AS end FROM windows ORDER BY start_time
   `;
@@ -54,7 +59,10 @@ export async function GET() {
           (r) => r.checkpoint === checkpoint && r.window === w.label
         );
 
-        const windowClosed = isWindowClosed(w.end);
+        let windowClosed = false;
+        if (isPastDate) windowClosed = true;
+        else if (isFutureDate) windowClosed = false;
+        else windowClosed = isWindowClosedToday(w.end);
 
         let status: "green" | "yellow" | "red" | "pending";
         if (!match) {
@@ -87,10 +95,10 @@ export async function GET() {
   return NextResponse.json(result);
 }
 
-function isWindowClosed(end: string): boolean {
+function isWindowClosedToday(end: string): boolean {
   const [eh, em] = end.split(":").map(Number);
   const now = new Date();
   const closeTime = new Date();
-  closeTime.setHours(eh, em + 15, 0, 0); // 15-min grace, matches lib/geo.ts
+  closeTime.setHours(eh, em + 15, 0, 0); // 15-min grace
   return now > closeTime;
 }
