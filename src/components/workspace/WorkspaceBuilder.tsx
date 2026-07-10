@@ -1406,7 +1406,7 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
       )}
 
       {/* ── Custom Injections ────────────────────────────────────────────── */}
-      {cell === 'Sanitation' && (
+      {cell === 'Sanitation' && winStore?.windows.find(w => w.id === winStore.activeWindowId)?.label === 'Station Cleanliness Status' && (
         <SanitationStatusWidget />
       )}
 
