@@ -78,6 +78,15 @@ export async function GET(request: Request) {
           status = "green";
         }
 
+        let parsedAiNotes = null;
+        if (match?.ai_notes) {
+          try {
+            parsedAiNotes = typeof match.ai_notes === 'string' ? JSON.parse(match.ai_notes) : match.ai_notes;
+          } catch(e) {
+            parsedAiNotes = match.ai_notes;
+          }
+        }
+
         return { 
           checkpoint, 
           window: w.label, 
@@ -88,7 +97,7 @@ export async function GET(request: Request) {
           submittedBy: match?.submitted_by ?? null,
           capturedAt: match?.captured_at ?? null,
           aiScoredAt: match?.ai_scored_at ?? null,
-          aiNotes: match?.ai_notes ?? null
+          aiNotes: parsedAiNotes
         };
       })
     );
