@@ -419,6 +419,8 @@ function WorkspaceRow({
   const [pickCol, setPickCol]   = useState<string | null>(null);
   const [pickerQuery, setPickerQuery] = useState('');
 
+  const { user } = useAuthStore();
+
   // ── Double-click rename state ─────────────────────────────────────────────
   const [editingTitle, setEditingTitle] = useState<string | null>(null); // widget.id being renamed
   const [titleDraft,   setTitleDraft]   = useState('');
@@ -482,10 +484,23 @@ function WorkspaceRow({
     const isFunctionOnly = lower.startsWith('/f-');
     const searchTerm     = lower.replace(/^\/[tf]-/, '').trim();
 
-    const filter = (items: typeof BLOCK_TEMPLATES) =>
-      searchTerm
-        ? items.filter(b => b.label.toLowerCase().includes(searchTerm) || b.desc.toLowerCase().includes(searchTerm))
-        : items;
+    const filter = (items: typeof BLOCK_TEMPLATES) => {
+      let hasSanitationAccess = false;
+      if (user?.role === 'admin' || user?.role === 'maintenance') hasSanitationAccess = true;
+      else if ((user as any)?.cells?.includes('Sanitation') || user?.cell === 'Sanitation') hasSanitationAccess = true;
+      else {
+        try {
+          const mems = JSON.parse(localStorage.getItem('rly_cell_memberships') ?? '[]');
+          const approved = mems.filter((m: any) => m.employeeId === user?.id && m.approvalStatus === 'approved').map((m: any) => m.cellName);
+          if (approved.includes('Sanitation')) hasSanitationAccess = true;
+        } catch {}
+      }
+      
+      const allowed = items.filter(b => b.type !== 'sanitation_status' || hasSanitationAccess);
+      return searchTerm
+        ? allowed.filter(b => b.label.toLowerCase().includes(searchTerm) || b.desc.toLowerCase().includes(searchTerm))
+        : allowed;
+    };
 
     const templates = !isFunctionOnly ? filter(BLOCK_TEMPLATES) : [];
     const functions  = !isTemplateOnly ? filter(BLOCK_FUNCTIONS)  : [];

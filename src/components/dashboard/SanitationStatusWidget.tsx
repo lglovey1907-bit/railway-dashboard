@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, Clock, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { useAuthStore } from '@/store/authStore';
 
 type Status = "green" | "yellow" | "red" | "pending";
 
@@ -118,11 +119,32 @@ export function SanitationStatusWidget() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
 
+  const { user } = useAuthStore();
+  const [hasSanitationAccess, setHasSanitationAccess] = useState(false);
+
   const toggle = (stationCode: string) => {
     setExpanded(prev => ({ ...prev, [stationCode]: !prev[stationCode] }));
   };
 
   useEffect(() => {
+    let access = false;
+    if (user?.role === 'admin' || user?.role === 'maintenance') access = true;
+    else if ((user as any)?.cells?.includes('Sanitation') || user?.cell === 'Sanitation') access = true;
+    else {
+      try {
+        const mems = JSON.parse(localStorage.getItem('rly_cell_memberships') ?? '[]');
+        const approved = mems.filter((m: any) => m.employeeId === user?.id && m.approvalStatus === 'approved').map((m: any) => m.cellName);
+        if (approved.includes('Sanitation')) access = true;
+      } catch {}
+    }
+    setHasSanitationAccess(access);
+  }, [user]);
+
+  useEffect(() => {
+    if (!hasSanitationAccess) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     fetch(`/api/checklist/status?date=${selectedDate}`)
       .then((res) => res.json())
@@ -134,7 +156,7 @@ export function SanitationStatusWidget() {
         console.error("Failed to fetch status:", err);
         setLoading(false);
       });
-  }, [selectedDate]);
+  }, [selectedDate, hasSanitationAccess]);
 
   return (
     <div className="rounded-2xl border border-slate-900/8 bg-white p-6 shadow-sm mb-6">
@@ -148,7 +170,12 @@ export function SanitationStatusWidget() {
         />
       </div>
       
-      {loading ? (
+      <div className="flex flex-col gap-4">
+      {!hasSanitationAccess ? (
+        <div className="bg-slate-50 border border-slate-100 rounded-xl p-6 text-center text-slate-500 text-sm">
+          You do not have permission to view the Sanitation Dashboard. Only Admins, Maintenance, and Sanitation Cell members can access this widget.
+        </div>
+      ) : loading ? (
         <div className="text-sm text-slate-500 animate-pulse">Loading live status...</div>
       ) : !data || data.length === 0 ? (
         <div className="text-sm text-slate-500">No stations configured or data available for this date.</div>
