@@ -158,6 +158,10 @@ export function SanitationStatusWidget() {
       });
   }, [selectedDate, hasSanitationAccess]);
 
+  if (!hasSanitationAccess) {
+    return null;
+  }
+
   return (
     <div className="rounded-2xl border border-slate-900/8 bg-white p-6 shadow-sm mb-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -171,11 +175,7 @@ export function SanitationStatusWidget() {
       </div>
       
       <div className="flex flex-col gap-4">
-      {!hasSanitationAccess ? (
-        <div className="bg-slate-50 border border-slate-100 rounded-xl p-6 text-center text-slate-500 text-sm">
-          You do not have permission to view the Sanitation Dashboard. Only Admins, Maintenance, and Sanitation Cell members can access this widget.
-        </div>
-      ) : loading ? (
+      {loading ? (
         <div className="text-sm text-slate-500 animate-pulse">Loading live status...</div>
       ) : !data || data.length === 0 ? (
         <div className="text-sm text-slate-500">No stations configured or data available for this date.</div>
