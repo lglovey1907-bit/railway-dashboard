@@ -9,7 +9,7 @@ export default async function ChecklistPage({ params }: { params: { stationCode:
   if (!station) return notFound();
 
   const { rows: checkpointRows } = await sql`
-    SELECT label FROM checkpoints WHERE station_id = ${station.id} ORDER BY sort_order
+    SELECT label, latitude, longitude FROM checkpoints WHERE station_id = ${station.id} ORDER BY sort_order
   `;
   const { rows: windowRows } = await sql`SELECT label, start_time, end_time FROM windows`;
 
@@ -17,7 +17,7 @@ export default async function ChecklistPage({ params }: { params: { stationCode:
     <PhotoChecklistForm
       stationCode={station.code}
       stationName={station.name}
-      checkpoints={checkpointRows.map((c) => c.label)}
+      checkpoints={checkpointRows.map((c) => ({ label: c.label, lat: c.latitude, lng: c.longitude }))}
       windows={windowRows.map((w) => ({ label: w.label, start: w.start_time, end: w.end_time }))}
     />
   );

@@ -1,16 +1,15 @@
 "use client";
 
 // components/PhotoChecklistForm.tsx
-// Field-facing form. Deliberately minimal: staff open a QR-coded link on
-// their phone, pick a checkpoint, take a photo, submit. GPS + timestamp are
-// captured automatically — there's no field for them to type either.
+import { useState, useRef } from "react";
+import { distanceMeters } from "@/lib/geo";
 
-import { useState } from "react";
+type Checkpoint = { label: string; lat: number | null; lng: number | null };
 
 type Props = {
   stationCode: string;
   stationName: string;
-  checkpoints: string[];
+  checkpoints: Checkpoint[];
   windows: { label: string; start: string; end: string }[];
 };
 
@@ -20,11 +19,13 @@ export default function PhotoChecklistForm({
   checkpoints,
   windows,
 }: Props) {
-  const [checkpoint, setCheckpoint] = useState(checkpoints[0]);
+  const [checkpoint, setCheckpoint] = useState(checkpoints[0]?.label || "");
   const [submittedBy, setSubmittedBy] = useState("");
   const [photo, setPhoto] = useState<File | null>(null);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  
   const [status, setStatus] = useState<
-    { type: "idle" | "sending" | "ok" | "flagged" | "error"; message?: string }
+    { type: "idle" | "sending" | "processing" | "ok" | "flagged" | "error"; message?: string }
   >({ type: "idle" });
 
   const currentWindow = () => {
@@ -38,6 +39,90 @@ export default function PhotoChecklistForm({
     return match?.label ?? windows[0].label;
   };
 
+  const processPhoto = (file: File) => {
+    setStatus({ type: "processing", message: "Acquiring GPS & watermarking..." });
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const userLat = pos.coords.latitude;
+        const userLng = pos.coords.longitude;
+
+        // Auto-select nearest checkpoint within 50m
+        let bestMatch = checkpoint;
+        let minDistance = 50; 
+        for (const cp of checkpoints) {
+          if (cp.lat !== null && cp.lng !== null) {
+            const dist = distanceMeters(userLat, userLng, cp.lat, cp.lng);
+            if (dist < minDistance) {
+              minDistance = dist;
+              bestMatch = cp.label;
+            }
+          }
+        }
+        setCheckpoint(bestMatch);
+
+        // Watermark the image
+        const img = new Image();
+        const objUrl = URL.createObjectURL(file);
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return;
+          
+          // Draw original
+          ctx.drawImage(img, 0, 0);
+          
+          // Draw watermark
+          const dateStr = new Date().toLocaleString();
+          const watermarkText = `${bestMatch} | ${dateStr}`;
+          
+          // Background bar for readability
+          const barHeight = Math.max(100, img.height * 0.08);
+          ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+          ctx.fillRect(0, img.height - barHeight, img.width, barHeight);
+          
+          // Text
+          const fontSize = Math.max(30, img.height * 0.04);
+          ctx.font = `${fontSize}px sans-serif`;
+          ctx.fillStyle = "white";
+          ctx.fillText(watermarkText, 40, img.height - (barHeight / 2) + (fontSize / 3));
+
+          canvas.toBlob((blob) => {
+            if (blob) {
+              const newFile = new File([blob], file.name, { type: file.type });
+              setPhoto(newFile);
+              setPhotoUrl(URL.createObjectURL(newFile));
+              setStatus({ type: "idle" });
+            }
+          }, file.type);
+        };
+        img.onerror = () => {
+          setStatus({ type: "error", message: "Failed to process photo." });
+        };
+        img.src = objUrl;
+      },
+      () => {
+        setStatus({
+          type: "error",
+          message: "Location permission is required. Please allow it and re-select the photo.",
+        });
+      },
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processPhoto(file);
+    } else {
+      setPhoto(null);
+      setPhotoUrl(null);
+    }
+  };
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!photo || !submittedBy) {
@@ -45,7 +130,7 @@ export default function PhotoChecklistForm({
       return;
     }
 
-    setStatus({ type: "sending" });
+    setStatus({ type: "sending", message: "Uploading..." });
 
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
@@ -71,6 +156,7 @@ export default function PhotoChecklistForm({
           message: data.message,
         });
         setPhoto(null);
+        setPhotoUrl(null);
       },
       () => {
         setStatus({
@@ -96,22 +182,8 @@ export default function PhotoChecklistForm({
               value={submittedBy}
               onChange={(e) => setSubmittedBy(e.target.value)}
               placeholder="e.g. Ramesh Kumar"
+              disabled={status.type === "processing" || status.type === "sending"}
             />
-          </label>
-
-          <label style={styles.label}>
-            Checkpoint
-            <select
-              style={styles.input}
-              value={checkpoint}
-              onChange={(e) => setCheckpoint(e.target.value)}
-            >
-              {checkpoints.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
           </label>
 
           <label style={styles.label}>
@@ -121,18 +193,45 @@ export default function PhotoChecklistForm({
               type="file"
               accept="image/*"
               capture="environment"
-              onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
+              onChange={handleFileChange}
+              disabled={status.type === "processing" || status.type === "sending"}
             />
+          </label>
+
+          {photoUrl && (
+            <div style={{ marginTop: 8, marginBottom: 8 }}>
+              <p style={{ fontSize: 12, color: "#666", marginBottom: 4 }}>Watermarked Preview:</p>
+              <img src={photoUrl} alt="Preview" style={{ width: "100%", borderRadius: 8, border: "1px solid #ccc" }} />
+            </div>
+          )}
+
+          <label style={styles.label}>
+            Checkpoint (Auto-selected if near)
+            <select
+              style={styles.input}
+              value={checkpoint}
+              onChange={(e) => setCheckpoint(e.target.value)}
+              disabled={status.type === "processing" || status.type === "sending"}
+            >
+              {checkpoints.map((c) => (
+                <option key={c.label} value={c.label}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
           </label>
 
           <button
             type="submit"
-            disabled={status.type === "sending"}
+            disabled={status.type === "processing" || status.type === "sending"}
             style={styles.button}
           >
-            {status.type === "sending" ? "Submitting…" : "Submit"}
+            {status.type === "sending" ? "Submitting…" : status.type === "processing" ? "Processing…" : "Submit"}
           </button>
 
+          {status.type === "processing" && (
+            <p style={{ ...styles.notice, color: "#b8860b" }}>{status.message}</p>
+          )}
           {status.type === "ok" && (
             <p style={{ ...styles.notice, color: "#1a7f4c" }}>✓ {status.message}</p>
           )}
