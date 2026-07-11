@@ -44,6 +44,8 @@ export default function LoginPage() {
  const [otpSending, setOtpSending] = useState(false);
  const [localError, setLocalError] = useState('');
 
+ const [roleMode, setRoleMode] = useState<'drm' | 'cleanliness'>('drm');
+
  // Change-password fields
  const [newPwd, setNewPwd] = useState('');
  const [confirmPwd, setConfirmPwd] = useState('');
@@ -206,55 +208,73 @@ export default function LoginPage() {
  {step === 'login' && (
  <motion.div key="login"initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
  className="bg-white/5 backdrop-blur-2xl border border-white/10 rounded-3xl p-8 shadow-2xl">
- <h2 className="text-white text-xl font-bold mb-1">Sign In</h2>
- <p className="text-white/40 text-xs mb-6">Use your Email or HRMS ID with your password</p>
+   
+   <div className="flex bg-white/10 rounded-xl p-1 mb-6">
+     <button type="button" onClick={() => setRoleMode('drm')} className={`flex-1 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors ${roleMode === 'drm' ? 'bg-white text-rail-900 shadow-sm' : 'text-white/60 hover:text-white'}`}>DRM Office Staff</button>
+     <button type="button" onClick={() => setRoleMode('cleanliness')} className={`flex-1 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors ${roleMode === 'cleanliness' ? 'bg-white text-rail-900 shadow-sm' : 'text-white/60 hover:text-white'}`}>Station Cleanliness</button>
+   </div>
 
- <form onSubmit={handleLogin} className="space-y-4">
- <div>
- <label className="text-white/50 text-xs font-medium mb-1.5 block">Email Address or HRMS ID</label>
- <input value={email} onChange={e => setEmail(e.target.value)} type="text"autoFocus required
- placeholder="email@delhi.nr.in or HRMS ID"
- className="w-full px-3.5 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-sm placeholder-white/25 focus:outline-none focus:border-rail-400/60 transition-all"/>
- </div>
- <div>
- <label className="text-white/50 text-xs font-medium mb-1.5 block">Password</label>
- <div className="relative">
- <input value={password} onChange={e => setPassword(e.target.value)} type={showPwd ? 'text' : 'password'} required
- placeholder="Enter your password"
- className="w-full px-3.5 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-sm placeholder-white/25 focus:outline-none focus:border-rail-400/60 transition-all pr-10"/>
- <button type="button"onClick={() => setShowPwd(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60">
- {showPwd ? <EyeOff size={14}/> : <Eye size={14}/>}
- </button>
- </div>
- <div className="flex justify-end mt-1.5">
- <a href="/forgot-password" className="text-rail-400 hover:text-rail-300 text-[11px] transition-colors">Forgot password?</a>
- </div>
- </div>
+   {roleMode === 'drm' ? (
+     <>
+       <h2 className="text-white text-xl font-bold mb-1">Sign In</h2>
+       <p className="text-white/40 text-xs mb-6">Use your Email or HRMS ID with your password</p>
 
- {(error || localError) && (
- <div className="flex items-center gap-2 px-3 py-2.5 bg-red-500/15 border border-red-500/30 rounded-xl">
- <AlertCircle size={14} className="text-red-400 shrink-0"/>
- <p className="text-red-300 text-xs">{localError || error}</p>
- </div>
- )}
+       <form onSubmit={handleLogin} className="space-y-4">
+       <div>
+       <label className="text-white/50 text-xs font-medium mb-1.5 block">Email Address or HRMS ID</label>
+       <input value={email} onChange={e => setEmail(e.target.value)} type="text"autoFocus required
+       placeholder="email@delhi.nr.in or HRMS ID"
+       className="w-full px-3.5 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-sm placeholder-white/25 focus:outline-none focus:border-rail-400/60 transition-all"/>
+       </div>
+       <div>
+       <label className="text-white/50 text-xs font-medium mb-1.5 block">Password</label>
+       <div className="relative">
+       <input value={password} onChange={e => setPassword(e.target.value)} type={showPwd ? 'text' : 'password'} required
+       placeholder="Enter your password"
+       className="w-full px-3.5 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-sm placeholder-white/25 focus:outline-none focus:border-rail-400/60 transition-all pr-10"/>
+       <button type="button"onClick={() => setShowPwd(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60">
+       {showPwd ? <EyeOff size={14}/> : <Eye size={14}/>}
+       </button>
+       </div>
+       <div className="flex justify-end mt-1.5">
+       <a href="/forgot-password" className="text-rail-400 hover:text-rail-300 text-[11px] transition-colors">Forgot password?</a>
+       </div>
+       </div>
 
- <button type="submit"disabled={isLoading || otpSending}
- className="w-full py-3 rounded-xl font-semibold text-sm bg-gradient-to-r from-rail-600 to-rail-500 text-white shadow-lg hover:from-rail-500 hover:to-rail-400 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
- {(isLoading || otpSending) ? <><Loader2 size={15} className="animate-spin"/> Signing in…</> : <><Lock size={15}/> Sign In</>}
- </button>
-          <div className="flex items-center gap-3 py-1">
-            <div className="flex-1 h-px bg-white/10"/>
-            <span className="text-white/30 text-[11px]">or</span>
-            <div className="flex-1 h-px bg-white/10"/>
-          </div>
-          <a href="/signup" className="w-full border border-white/20 hover:border-white/40 hover:bg-white/5 text-white/70 hover:text-white font-semibold py-3 px-4 rounded-xl transition-all text-sm flex items-center justify-center gap-2">
-            <UserPlus size={15}/> Create Account / Sign Up
-          </a>
- </form>
+       {(error || localError) && (
+       <div className="flex items-center gap-2 px-3 py-2.5 bg-red-500/15 border border-red-500/30 rounded-xl">
+       <AlertCircle size={14} className="text-red-400 shrink-0"/>
+       <p className="text-red-300 text-xs">{localError || error}</p>
+       </div>
+       )}
 
- <p className="mt-6 text-center text-white/20 text-[11px]">
- Contact your In-Charge if you need access
- </p>
+       <button type="submit"disabled={isLoading || otpSending}
+       className="w-full py-3 rounded-xl font-semibold text-sm bg-gradient-to-r from-rail-600 to-rail-500 text-white shadow-lg hover:from-rail-500 hover:to-rail-400 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+       {(isLoading || otpSending) ? <><Loader2 size={15} className="animate-spin"/> Signing in…</> : <><Lock size={15}/> Sign In</>}
+       </button>
+                <div className="flex items-center gap-3 py-1">
+                  <div className="flex-1 h-px bg-white/10"/>
+                  <span className="text-white/30 text-[11px]">or</span>
+                  <div className="flex-1 h-px bg-white/10"/>
+                </div>
+                <a href="/signup" className="w-full border border-white/20 hover:border-white/40 hover:bg-white/5 text-white/70 hover:text-white font-semibold py-3 px-4 rounded-xl transition-all text-sm flex items-center justify-center gap-2">
+                  <UserPlus size={15}/> Create Account / Sign Up
+                </a>
+       </form>
+
+       <p className="mt-6 text-center text-white/20 text-[11px]">
+       Contact your In-Charge if you need access
+       </p>
+     </>
+   ) : (
+     <div className="text-center py-4">
+        <h2 className="text-white text-xl font-bold mb-3">Sanitation Management</h2>
+        <p className="text-white/60 text-sm mb-8">Access the administrative tools for the station cleanliness module.</p>
+        <a href="/admin/stations" className="w-full py-3 rounded-xl font-semibold text-sm bg-gradient-to-r from-emerald-600 to-emerald-500 text-white shadow-lg hover:from-emerald-500 hover:to-emerald-400 transition-all flex items-center justify-center gap-2">
+           Manage Stations
+        </a>
+     </div>
+   )}
  </motion.div>
  )}
 
