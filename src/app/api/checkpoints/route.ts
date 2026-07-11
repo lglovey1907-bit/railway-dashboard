@@ -10,7 +10,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    const { rows: stationRows } = await sql`SELECT id FROM stations WHERE code = ${stationCode}`;
+    const cleanStationCode = decodeURIComponent(stationCode).toUpperCase();
+    const { rows: stationRows } = await sql`SELECT id FROM stations WHERE code = ${cleanStationCode}`;
     const station = stationRows[0];
     if (!station) {
       return NextResponse.json({ error: "Station not found" }, { status: 404 });

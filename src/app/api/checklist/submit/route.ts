@@ -26,7 +26,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    const { rows } = await sql`SELECT * FROM stations WHERE code = ${stationCode}`;
+    const cleanStationCode = decodeURIComponent(stationCode).toUpperCase();
+    const { rows } = await sql`SELECT * FROM stations WHERE code = ${cleanStationCode}`;
     const station = rows[0];
     if (!station) {
       return NextResponse.json({ error: "Unknown station" }, { status: 400 });
