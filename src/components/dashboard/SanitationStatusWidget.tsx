@@ -13,6 +13,12 @@ type StationStatus = {
     window: string;
     status: Status;
     aiScore: number | null;
+    photoUrl: string | null;
+    distance: number | null;
+    submittedBy: string | null;
+    capturedAt: string | null;
+    aiScoredAt: string | null;
+    aiNotes: any | null;
   }[];
 };
 
@@ -21,6 +27,89 @@ function StatusIcon({ status, className, size = 20 }: { status: Status; classNam
   if (status === 'yellow') return <AlertCircle size={size} className={`text-yellow-500 ${className || ''}`} />;
   if (status === 'red') return <XCircle size={size} className={`text-red-500 ${className || ''}`} />;
   return <Clock size={size} className={`text-slate-400 ${className || ''}`} />;
+}
+
+function CheckpointRow({ cell }: { cell: StationStatus['cells'][0] }) {
+  const [open, setOpen] = useState(false);
+  const hasData = cell.status !== 'pending' && cell.status !== 'red';
+
+  return (
+    <div className="border border-slate-100 rounded-lg overflow-hidden transition-all bg-white">
+      <div 
+        onClick={() => hasData && setOpen(!open)}
+        className={`flex items-center justify-between p-3 ${hasData ? 'cursor-pointer hover:bg-slate-50' : 'opacity-75'}`}
+      >
+        <div className="flex flex-col gap-0.5">
+          <span className="text-slate-700 font-medium text-sm flex items-center gap-2">
+            {cell.checkpoint}
+            {hasData && (
+              <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                {open ? <ChevronUp size={10}/> : <ChevronDown size={10}/>} Details
+              </span>
+            )}
+          </span>
+          <span className="text-xs text-slate-400">{cell.window} Window</span>
+        </div>
+        <div className="flex items-center gap-3">
+          {cell.aiScore !== null && (
+            <span className={`text-xs font-bold ${cell.aiScore >= 6 ? 'text-green-600' : 'text-red-600'}`}>
+              Score: {cell.aiScore}/10
+            </span>
+          )}
+          <StatusIcon status={cell.status} size={16} />
+        </div>
+      </div>
+      
+      {open && hasData && (
+        <div className="p-3 bg-slate-50 border-t border-slate-100 text-xs text-slate-600 flex flex-col gap-3">
+          
+          <div className="grid grid-cols-2 gap-2">
+            {cell.photoUrl && (
+              <div className="col-span-2 sm:col-span-1">
+                <p className="font-semibold text-slate-700 mb-1">Photo Evidence</p>
+                <img src={cell.photoUrl} alt="Checkpoint" className="w-full h-32 object-cover rounded-md border border-slate-200" />
+                <a href={cell.photoUrl} target="_blank" rel="noreferrer" className="text-rail-600 hover:underline mt-1 inline-block">View Full Image</a>
+              </div>
+            )}
+            
+            <div className="col-span-2 sm:col-span-1 flex flex-col gap-2">
+              <div>
+                <p className="font-semibold text-slate-700">Distance from location</p>
+                <p>{cell.distance !== null ? `${Math.round(cell.distance)} meters` : 'Unknown'}</p>
+              </div>
+              <div>
+                <p className="font-semibold text-slate-700">Submitted By</p>
+                <p>{cell.submittedBy || 'Unknown Staff'}</p>
+              </div>
+              <div>
+                <p className="font-semibold text-slate-700">Captured At</p>
+                <p>{cell.capturedAt ? new Date(cell.capturedAt).toLocaleString() : 'Unknown'}</p>
+              </div>
+              <div>
+                <p className="font-semibold text-slate-700">Received At</p>
+                <p>{cell.aiScoredAt ? new Date(cell.aiScoredAt).toLocaleString() : 'Processing...'}</p>
+              </div>
+            </div>
+          </div>
+
+          {cell.aiNotes && (
+            <div className="mt-2 bg-white p-3 rounded-md border border-slate-100 shadow-sm">
+              <p className="font-semibold text-slate-700 mb-1">AI Notes</p>
+              {cell.aiNotes.issues && cell.aiNotes.issues.length > 0 && (
+                <ul className="list-disc list-inside text-red-600 mb-2">
+                  {cell.aiNotes.issues.map((issue: string, i: number) => <li key={i}>{issue}</li>)}
+                </ul>
+              )}
+              {cell.aiNotes.notes && (
+                <p className="text-slate-600">{cell.aiNotes.notes}</p>
+              )}
+            </div>
+          )}
+
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function SanitationStatusWidget() {
@@ -112,22 +201,9 @@ export function SanitationStatusWidget() {
                 </button>
 
                 {isExpanded && (
-                  <div className="flex-1 space-y-3 mt-4 pt-4 border-t border-slate-100">
+                  <div className="flex-1 space-y-2 mt-4 pt-4 border-t border-slate-100">
                     {station.cells.map((cell, idx) => (
-                      <div key={idx} className="flex items-center justify-between text-sm">
-                        <div className="flex flex-col">
-                          <span className="text-slate-700 font-medium">{cell.checkpoint}</span>
-                          <span className="text-xs text-slate-400">{cell.window} Window</span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          {cell.aiScore !== null && (
-                            <span className={`text-xs font-bold ${cell.aiScore >= 6 ? 'text-green-600' : 'text-red-600'}`}>
-                              Score: {cell.aiScore}/10
-                            </span>
-                          )}
-                          <StatusIcon status={cell.status} size={16} />
-                        </div>
-                      </div>
+                      <CheckpointRow key={idx} cell={cell} />
                     ))}
                   </div>
                 )}

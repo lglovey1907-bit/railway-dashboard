@@ -20,7 +20,8 @@ export async function GET(request: Request) {
   // Fetch target date's submissions
   const { rows } = await sql`
     SELECT s.code AS station_code, c.label AS checkpoint, w.label AS window,
-           sub.within_geofence, sub.within_window, sub.ai_score, sub.captured_at
+           sub.within_geofence, sub.within_window, sub.ai_score, sub.captured_at,
+           sub.photo_url, sub.distance_m, sub.submitted_by, sub.ai_notes, sub.ai_scored_at
     FROM submissions sub
     JOIN stations s ON s.id = sub.station_id
     JOIN checkpoints c ON c.id = sub.checkpoint_id
@@ -77,7 +78,18 @@ export async function GET(request: Request) {
           status = "green";
         }
 
-        return { checkpoint, window: w.label, status, aiScore: match?.ai_score ?? null };
+        return { 
+          checkpoint, 
+          window: w.label, 
+          status, 
+          aiScore: match?.ai_score ?? null,
+          photoUrl: match?.photo_url ?? null,
+          distance: match?.distance_m ?? null,
+          submittedBy: match?.submitted_by ?? null,
+          capturedAt: match?.captured_at ?? null,
+          aiScoredAt: match?.ai_scored_at ?? null,
+          aiNotes: match?.ai_notes ?? null
+        };
       })
     );
 
