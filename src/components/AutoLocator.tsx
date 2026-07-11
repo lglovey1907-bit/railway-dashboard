@@ -66,7 +66,7 @@ export default function AutoLocator() {
 
           setStatus(`Matched with ${closestStation.name}! Redirecting...`);
           setTimeout(() => {
-            router.replace(`/checklist/${closestStation.code}`);
+            window.location.href = `/checklist/${closestStation.code}`;
           }, 1000);
           
         } catch (err) {
