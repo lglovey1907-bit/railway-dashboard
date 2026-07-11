@@ -1,18 +1,38 @@
 'use client';
-import { useState } from 'react';
-import { MapPin, Plus, Save, Lock } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { MapPin, Save, Lock, LayoutList } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
-export default function CheckpointManager({ params }: { params: { stationCode: string } }) {
+type Station = { code: string; name: string };
+
+export default function CheckpointAdmin() {
   const router = useRouter();
   const [auth, setAuth] = useState(false);
   const [password, setPassword] = useState('');
+  
+  const [stations, setStations] = useState<Station[]>([]);
+  const [stationCode, setStationCode] = useState('');
   
   const [label, setLabel] = useState('');
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
+
+  useEffect(() => {
+    if (auth) {
+      fetch('/api/stations')
+        .then(res => res.json())
+        .then(data => {
+          if (data.ok) {
+            setStations(data.stations);
+            if (data.stations.length > 0) {
+              setStationCode(data.stations[0].code);
+            }
+          }
+        });
+    }
+  }, [auth]);
 
   const handleAuth = (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,6 +69,7 @@ export default function CheckpointManager({ params }: { params: { stationCode: s
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!stationCode) return alert("Select a station");
     if (!label.trim()) return alert("Enter checkpoint name");
     if (lat === null || lng === null) return alert("Capture GPS first");
 
@@ -58,7 +79,7 @@ export default function CheckpointManager({ params }: { params: { stationCode: s
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          stationCode: params.stationCode,
+          stationCode,
           label,
           latitude: lat,
           longitude: lng
@@ -86,7 +107,7 @@ export default function CheckpointManager({ params }: { params: { stationCode: s
           <div className="w-12 h-12 bg-rail-50 text-rail-600 rounded-xl flex items-center justify-center mb-4 mx-auto">
             <Lock size={24} />
           </div>
-          <h2 className="text-xl font-bold text-center mb-6">Manager Access</h2>
+          <h2 className="text-xl font-bold text-center mb-6">Checkpoint Admin Access</h2>
           <input 
             type="password" 
             value={password}
@@ -106,9 +127,12 @@ export default function CheckpointManager({ params }: { params: { stationCode: s
     <div className="min-h-screen bg-surface-page p-4">
       <div className="max-w-md mx-auto">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-slate-900">Add Checkpoint</h1>
-          <button onClick={() => router.push(`/checklist/${params.stationCode}`)} className="text-sm font-medium text-rail-600 hover:underline">
-            Go to Submission Form
+          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+             <LayoutList size={24} className="text-rail-600" />
+             Add Checkpoint
+          </h1>
+          <button onClick={() => router.push(`/`)} className="text-sm font-medium text-rail-600 hover:underline">
+            Go to Dashboard
           </button>
         </div>
 
@@ -122,7 +146,21 @@ export default function CheckpointManager({ params }: { params: { stationCode: s
             )}
 
             <div>
-              <label className="block text-sm font-semibold text-slate-900 mb-2">1. Stand at the location</label>
+              <label className="block text-sm font-semibold text-slate-900 mb-2">1. Select Station</label>
+              <select 
+                value={stationCode}
+                onChange={e => setStationCode(e.target.value)}
+                className="w-full border border-slate-300 rounded-xl p-3 focus:ring-2 focus:ring-rail-500 outline-none"
+              >
+                {stations.length === 0 && <option value="">Loading stations...</option>}
+                {stations.map(st => (
+                  <option key={st.code} value={st.code}>{st.name} ({st.code})</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-900 mb-2">2. Stand at the location</label>
               <button 
                 type="button" 
                 onClick={getGPS}
@@ -140,7 +178,7 @@ export default function CheckpointManager({ params }: { params: { stationCode: s
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-900 mb-2">2. Name the checkpoint</label>
+              <label className="block text-sm font-semibold text-slate-900 mb-2">3. Name the checkpoint</label>
               <input 
                 type="text" 
                 value={label}
@@ -153,7 +191,7 @@ export default function CheckpointManager({ params }: { params: { stationCode: s
             <div className="pt-2">
               <button 
                 type="submit" 
-                disabled={loading || !lat || !lng || !label.trim()}
+                disabled={loading || !lat || !lng || !label.trim() || !stationCode}
                 className="w-full flex justify-center items-center gap-2 bg-rail-600 text-white font-medium p-3 rounded-xl hover:bg-rail-700 disabled:opacity-50"
               >
                 <Save size={18} />

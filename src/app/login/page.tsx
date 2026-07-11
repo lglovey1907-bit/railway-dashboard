@@ -270,9 +270,14 @@ export default function LoginPage() {
      <div className="text-center py-4">
         <h2 className="text-white text-xl font-bold mb-3">Sanitation Management</h2>
         <p className="text-white/60 text-sm mb-8">Access the administrative tools for the station cleanliness module.</p>
-        <a href="/admin/stations" className="w-full py-3 rounded-xl font-semibold text-sm bg-gradient-to-r from-emerald-600 to-emerald-500 text-white shadow-lg hover:from-emerald-500 hover:to-emerald-400 transition-all flex items-center justify-center gap-2">
-           Manage Stations
-        </a>
+        <div className="flex flex-col gap-3">
+          <a href="/admin/stations" className="w-full py-3 rounded-xl font-semibold text-sm bg-gradient-to-r from-emerald-600 to-emerald-500 text-white shadow-lg hover:from-emerald-500 hover:to-emerald-400 transition-all flex items-center justify-center gap-2">
+             Manage Stations
+          </a>
+          <a href="/admin/checkpoints" className="w-full py-3 rounded-xl font-semibold text-sm bg-white/10 hover:bg-white/20 text-white border border-white/10 transition-all flex items-center justify-center gap-2">
+             Manage Checkpoints
+          </a>
+        </div>
      </div>
    )}
  </motion.div>

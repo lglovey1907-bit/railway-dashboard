@@ -32,3 +32,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }
+
+export async function GET() {
+  try {
+    const { rows } = await sql`SELECT code, name, latitude, longitude, geofence_m FROM stations ORDER BY name ASC`;
+    return NextResponse.json({ ok: true, stations: rows });
+  } catch (err) {
+    console.error(err);
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
+}
