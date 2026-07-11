@@ -1,6 +1,8 @@
 import { sql } from "@vercel/postgres";
 import { NextRequest, NextResponse } from "next/server";
 
+import { distanceMeters } from "@/lib/geo";
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -11,10 +13,18 @@ export async function POST(req: NextRequest) {
     }
 
     const cleanStationCode = decodeURIComponent(stationCode).toUpperCase();
-    const { rows: stationRows } = await sql`SELECT id FROM stations WHERE code = ${cleanStationCode}`;
+    const { rows: stationRows } = await sql`SELECT id, latitude, longitude FROM stations WHERE code = ${cleanStationCode}`;
     const station = stationRows[0];
     if (!station) {
       return NextResponse.json({ error: "Station not found" }, { status: 404 });
+    }
+
+    const distance = distanceMeters(latitude, longitude, station.latitude, station.longitude);
+    if (distance > 1000) {
+      return NextResponse.json(
+        { error: `Too far! Your location is ${Math.round(distance)}m away from the station. Checkpoints must be within 1000m.` }, 
+        { status: 400 }
+      );
     }
 
     // Get max sort_order
