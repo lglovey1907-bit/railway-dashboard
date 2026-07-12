@@ -175,7 +175,7 @@ export default function QRAdmin() {
                 <div id="print-area" className="grid grid-cols-2 gap-4">
                   {qrPoints.map(point => {
                     // Generate full URL for the QR code
-                    const scanUrl = \`\${window.location.origin}/scan/\${point.secret_token}\`;
+                    const scanUrl = `${window.location.origin}/scan/${point.secret_token}`;
                     return (
                       <div key={point.id} className="border border-slate-200 rounded-xl p-4 flex flex-col items-center text-center">
                         <div className="mb-4 p-2 bg-white rounded-lg border border-slate-100 shadow-sm">
