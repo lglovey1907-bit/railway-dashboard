@@ -5,6 +5,8 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
+    await sql`DROP TABLE IF EXISTS passenger_feedback`;
+    
     await sql`
       CREATE TABLE IF NOT EXISTS passenger_feedback (
         id SERIAL PRIMARY KEY,
@@ -15,6 +17,8 @@ export async function GET() {
         latitude FLOAT,
         longitude FLOAT,
         distance_m FLOAT,
+        checkpoint_label TEXT,
+        ip_address TEXT,
         ai_verified BOOLEAN DEFAULT null,
         ai_notes JSONB,
         created_at TIMESTAMPTZ DEFAULT NOW()
