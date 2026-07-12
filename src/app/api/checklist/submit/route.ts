@@ -87,14 +87,20 @@ export async function POST(req: NextRequest) {
       }).catch((e) => console.error("Score dispatch failed:", e));
     }
 
+    let message = "Submission accepted.";
+    if (!withinGeofence && !withinWindowOk) {
+      message = "Submission recorded but flagged — outside expected location and time window.";
+    } else if (!withinGeofence) {
+      message = "Submission recorded but flagged — outside expected location.";
+    } else if (!withinWindowOk) {
+      message = "Submission recorded but flagged — outside expected time window.";
+    }
+
     return NextResponse.json({
       ok: true,
       withinGeofence,
       withinWindow: withinWindowOk,
-      message:
-        withinGeofence && withinWindowOk
-          ? "Submission accepted."
-          : "Submission recorded but flagged — outside expected location or time window.",
+      message,
     });
   } catch (err) {
     console.error(err);
