@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { AlertCircle, CheckCircle2, Clock, XCircle, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, XCircle, ChevronDown, ChevronUp, RefreshCw, Globe } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 
 type Status = "green" | "yellow" | "red" | "pending";
@@ -20,6 +20,8 @@ type StationStatus = {
     capturedAt: string | null;
     aiScoredAt: string | null;
     aiNotes: any | null;
+    withinGeofence?: boolean | null;
+    withinWindow?: boolean | null;
   }[];
 };
 
@@ -52,6 +54,10 @@ function CheckpointRow({ cell }: { cell: StationStatus['cells'][0] }) {
           <span className="text-xs text-slate-400">{cell.window} Window</span>
         </div>
         <div className="flex items-center gap-3">
+          <div className="flex gap-1">
+            {cell.withinGeofence === false && <span title="Outside Location"><Globe size={16} className="text-yellow-500" /></span>}
+            {cell.withinWindow === false && <span title="Outside Time Window"><Clock size={16} className="text-yellow-500" /></span>}
+          </div>
           {cell.aiScore !== null && (
             <span className={`text-xs font-bold ${cell.aiScore >= 6 ? 'text-green-600' : 'text-red-600'}`}>
               Score: {cell.aiScore}/10
