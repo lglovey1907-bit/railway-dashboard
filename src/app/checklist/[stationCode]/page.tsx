@@ -1,14 +1,9 @@
 // app/checklist/[stationCode]/page.tsx
 import { sql } from "@vercel/postgres";
 import PhotoChecklistForm from "@/components/PhotoChecklistForm";
-import AutoLocator from "@/components/AutoLocator";
 import { notFound } from "next/navigation";
 
 export default async function ChecklistPage({ params }: { params: { stationCode: string } }) {
-  if (params.stationCode.toUpperCase() === 'HOME') {
-    return <AutoLocator />;
-  }
-
   const { rows: stationRows } = await sql`SELECT * FROM stations WHERE code = ${params.stationCode}`;
   const station = stationRows[0];
   if (!station) return notFound();
