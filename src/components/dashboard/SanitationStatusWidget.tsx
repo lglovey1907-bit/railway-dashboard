@@ -203,38 +203,53 @@ export function SanitationStatusWidget() {
                   </div>
                 </div>
 
-                {!isExpanded && (
-                  <div className="flex flex-col gap-2 mb-4 text-sm">
-                    <div className="flex justify-between items-center bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
-                      <span className="font-semibold text-slate-700">M - {morning.length}</span>
-                      <span className="text-slate-500">Status - <span className="font-medium text-slate-900">{mUpdated} updated</span></span>
-                    </div>
-                    <div className="flex justify-between items-center bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
-                      <span className="font-semibold text-slate-700">E - {evening.length}</span>
-                      <span className="text-slate-500">Status - <span className="font-medium text-slate-900">{eUpdated} updated</span></span>
-                    </div>
+                {station.cells.length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-4 text-center">
+                    <p className="text-sm text-slate-400">No checkpoints registered yet.</p>
+                    <a
+                      href="/admin/checkpoints"
+                      className="text-xs font-semibold text-rail-600 hover:underline"
+                    >
+                      + Add Checkpoint
+                    </a>
                   </div>
-                )}
+                ) : (
+                  <>
+                    {!isExpanded && (
+                      <div className="flex flex-col gap-2 mb-4 text-sm">
+                        <div className="flex justify-between items-center bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
+                          <span className="font-semibold text-slate-700">M - {morning.length}</span>
+                          <span className="text-slate-500">Status - <span className="font-medium text-slate-900">{mUpdated} updated</span></span>
+                        </div>
+                        <div className="flex justify-between items-center bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
+                          <span className="font-semibold text-slate-700">E - {evening.length}</span>
+                          <span className="text-slate-500">Status - <span className="font-medium text-slate-900">{eUpdated} updated</span></span>
+                        </div>
+                      </div>
+                    )}
 
-                <button 
-                  onClick={() => toggle(station.station)}
-                  className="w-full py-2 flex items-center justify-center gap-1.5 text-xs font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200"
-                >
-                  {isExpanded ? (
-                    <><ChevronUp size={14} /> Hide Details</>
-                  ) : (
-                    <><ChevronDown size={14} /> View All {station.cells.length} Checkpoints</>
-                  )}
-                </button>
+                    <button
+                      onClick={() => toggle(station.station)}
+                      className="w-full py-2 flex items-center justify-center gap-1.5 text-xs font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200"
+                    >
+                      {isExpanded ? (
+                        <><ChevronUp size={14} /> Hide Details</>
+                      ) : (
+                        <><ChevronDown size={14} /> View All {station.cells.length} Checkpoints</>
+                      )}
+                    </button>
 
-                {isExpanded && (
-                  <div className="flex-1 space-y-2 mt-4 pt-4 border-t border-slate-100">
-                    {station.cells.map((cell, idx) => (
-                      <CheckpointRow key={idx} cell={cell} />
-                    ))}
-                  </div>
+                    {isExpanded && (
+                      <div className="flex-1 space-y-2 mt-4 pt-4 border-t border-slate-100">
+                        {station.cells.map((cell, idx) => (
+                          <CheckpointRow key={idx} cell={cell} />
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
+
             );
           })}
         </div>

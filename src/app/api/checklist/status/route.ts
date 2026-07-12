@@ -104,18 +104,23 @@ export async function GET(request: Request) {
       })
     );
 
-    const worst = cells.some((c) => c.status === "red")
-      ? "red"
-      : cells.some((c) => c.status === "yellow")
-      ? "yellow"
-      : cells.some((c) => c.status === "pending")
-      ? "pending"
-      : "green";
+    const worst: "green" | "yellow" | "red" | "pending" =
+      cells.length === 0
+        ? "pending"
+        : cells.some((c) => c.status === "red")
+        ? "red"
+        : cells.some((c) => c.status === "yellow")
+        ? "yellow"
+        : cells.some((c) => c.status === "pending")
+        ? "pending"
+        : "green";
 
     return { station: station.code, name: station.name, overall: worst, cells };
   });
 
-  return NextResponse.json(result);
+  return NextResponse.json(result, {
+    headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' }
+  });
 }
 
 function isWindowClosedToday(end: string): boolean {
