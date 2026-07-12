@@ -2,6 +2,7 @@
 import { sql } from "@vercel/postgres";
 import PhotoChecklistForm from "@/components/PhotoChecklistForm";
 import { notFound } from "next/navigation";
+export const dynamic = 'force-dynamic';
 
 export default async function ChecklistPage({ params }: { params: { stationCode: string } }) {
   const { rows: stationRows } = await sql`SELECT * FROM stations WHERE code = ${params.stationCode}`;
