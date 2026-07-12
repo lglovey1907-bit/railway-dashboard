@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { Badge } from '@/components/ui/Badge';
 import { useAuthStore } from '@/store/authStore';
-import { BarChart3, Download, Plus, Calendar, FileText, TrendingUp, Train, Ticket, CreditCard, ShieldCheck, UtensilsCrossed } from 'lucide-react';
+import { BarChart3, Download, Plus, Calendar, FileText, TrendingUp, Train, Ticket, CreditCard, ShieldCheck, UtensilsCrossed, MessageSquare, QrCode } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const REPORT_TEMPLATES = [
@@ -16,6 +16,8 @@ const REPORT_TEMPLATES = [
  { id: 'catering-revenue', name: 'Catering Revenue Report', icon: UtensilsCrossed, cell: 'Catering', color: 'orange' },
  { id: 'division-kpis', name: 'Division KPI Dashboard', icon: BarChart3, cell: 'All', color: 'indigo' },
  { id: 'complaint-status', name: 'Complaint Status Report', icon: FileText, cell: 'All', color: 'pink' },
+ { id: 'passenger-feedback-sanitation', name: 'Passenger Feedback Sanitation', icon: MessageSquare, cell: 'Sanitation', color: 'blue' },
+ { id: 'qr-patrol-sanitation', name: 'Recent QR Patrol Sanitation', icon: QrCode, cell: 'Sanitation', color: 'emerald' },
 ];
 
 const RECENT_REPORTS = [
