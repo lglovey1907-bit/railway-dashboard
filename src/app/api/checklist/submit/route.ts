@@ -47,9 +47,9 @@ export async function POST(req: NextRequest) {
 
     // 1. Store the photos. Vercel Blob is the path of least resistance on Vercel;
     // swap for S3/Cloudinary if you prefer.
-    const uploadPromises = photos.map(photo => 
+    const uploadPromises = photos.map((photo, i) => 
       put(
-        `checklist/${stationCode}/${Date.now()}-${photo.name}`,
+        `checklist/${stationCode}/${Date.now()}-${i}-${photo.name}`,
         photo,
         { access: "public" }
       )

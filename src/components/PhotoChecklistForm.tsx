@@ -74,37 +74,46 @@ export default function PhotoChecklistForm({
         const img = new Image();
         const objUrl = URL.createObjectURL(file);
         img.onload = () => {
+          const MAX_WIDTH = 1200;
+          let width = img.width;
+          let height = img.height;
+          
+          if (width > MAX_WIDTH) {
+            height = Math.round((height * MAX_WIDTH) / width);
+            width = MAX_WIDTH;
+          }
+
           const canvas = document.createElement("canvas");
-          canvas.width = img.width;
-          canvas.height = img.height;
+          canvas.width = width;
+          canvas.height = height;
           const ctx = canvas.getContext("2d");
           if (!ctx) return;
           
-          // Draw original
-          ctx.drawImage(img, 0, 0);
+          // Draw original scaled
+          ctx.drawImage(img, 0, 0, width, height);
           
           // Draw watermark
           const dateStr = new Date().toLocaleString();
           const watermarkText = `${checkpoint} | ${dateStr}`;
           
           // Background bar for readability
-          const barHeight = Math.max(100, img.height * 0.08);
+          const barHeight = Math.max(40, height * 0.08);
           ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-          ctx.fillRect(0, img.height - barHeight, img.width, barHeight);
+          ctx.fillRect(0, height - barHeight, width, barHeight);
           
           // Text
-          const fontSize = Math.max(30, img.height * 0.04);
+          const fontSize = Math.max(16, height * 0.04);
           ctx.font = `${fontSize}px sans-serif`;
           ctx.fillStyle = "white";
-          ctx.fillText(watermarkText, 40, img.height - (barHeight / 2) + (fontSize / 3));
+          ctx.fillText(watermarkText, 16, height - (barHeight / 2) + (fontSize / 3));
 
           canvas.toBlob((blob) => {
             if (blob) {
-              const newFile = new File([blob], file.name, { type: file.type });
+              const newFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", { type: "image/jpeg" });
               setPhotos(prev => [...prev, { file: newFile, url: URL.createObjectURL(newFile) }]);
               setStatus({ type: "idle" });
             }
-          }, file.type);
+          }, "image/jpeg", 0.6); // aggressively compress to ~200kb to prevent 4.5MB Vercel limit
         };
         img.onerror = () => {
           setStatus({ type: "error", message: "Failed to process photo." });
