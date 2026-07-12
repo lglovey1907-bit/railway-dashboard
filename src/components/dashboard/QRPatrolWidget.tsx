@@ -77,17 +77,30 @@ export function QRPatrolWidget() {
           {scans.map((scan) => (
             <div key={scan.id} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-xl">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-rail-50 text-rail-600 rounded-full flex items-center justify-center shrink-0">
-                  <MapPin size={18} />
-                </div>
+                {scan.photo_url ? (
+                  <a href={scan.photo_url} target="_blank" rel="noreferrer" className="shrink-0">
+                    <img src={scan.photo_url} className="w-10 h-10 rounded-lg object-cover border border-slate-200 shadow-sm hover:opacity-80 transition-opacity" />
+                  </a>
+                ) : (
+                  <div className="w-10 h-10 bg-rail-50 text-rail-600 rounded-lg flex items-center justify-center shrink-0">
+                    <MapPin size={18} />
+                  </div>
+                )}
                 <div>
                   <p className="font-semibold text-slate-900 text-sm">{scan.point_label}</p>
                   <p className="text-xs text-slate-500">{scan.station_name} ({scan.station_code}) • by {scan.scanned_by}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-white px-2.5 py-1 rounded-md border border-slate-200">
-                <Clock size={12} />
-                {new Date(scan.scanned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              <div className="flex items-center gap-2">
+                {scan.distance_m !== null && (
+                  <div className="flex items-center gap-1 text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100">
+                    <MapPin size={10} /> {Math.round(scan.distance_m)}m
+                  </div>
+                )}
+                <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-white px-2.5 py-1 rounded-md border border-slate-200">
+                  <Clock size={12} />
+                  {new Date(scan.scanned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </div>
               </div>
             </div>
           ))}

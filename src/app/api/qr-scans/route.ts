@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
     let query;
     if (stationCode) {
       query = sql`
-        SELECT s.id, s.scanned_by, s.scanned_at, p.label as point_label, st.name as station_name, st.code as station_code
+        SELECT s.id, s.scanned_by, s.scanned_at, p.label as point_label, st.name as station_name, st.code as station_code, s.photo_url, s.distance_m
         FROM qr_scans s
         JOIN qr_points p ON p.id = s.point_id
         JOIN stations st ON st.id = p.station_id
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
       `;
     } else {
       query = sql`
-        SELECT s.id, s.scanned_by, s.scanned_at, p.label as point_label, st.name as station_name, st.code as station_code
+        SELECT s.id, s.scanned_by, s.scanned_at, p.label as point_label, st.name as station_name, st.code as station_code, s.photo_url, s.distance_m
         FROM qr_scans s
         JOIN qr_points p ON p.id = s.point_id
         JOIN stations st ON st.id = p.station_id
@@ -37,12 +37,19 @@ export async function GET(req: NextRequest) {
   }
 }
 
+import { put } from "@vercel/blob";
+
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { secret_token, scanned_by } = body;
+    const form = await req.formData();
+    const secret_token = form.get("secret_token") as string;
+    const scanned_by = form.get("scanned_by") as string;
+    const latitude = parseFloat(form.get("latitude") as string);
+    const longitude = parseFloat(form.get("longitude") as string);
+    const distance_m = parseFloat(form.get("distance_m") as string);
+    const photo = form.get("photo") as File;
 
-    if (!secret_token || !scanned_by) {
+    if (!secret_token || !scanned_by || !photo || Number.isNaN(latitude)) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
@@ -60,10 +67,14 @@ export async function POST(req: NextRequest) {
 
     const point = pointRows[0];
 
-    // 2. Log scan
+    // 2. Upload photo to Vercel Blob
+    const blob = await put(`qr-scans/${Date.now()}-${photo.name}`, photo, { access: 'public' });
+    const photo_url = blob.url;
+
+    // 3. Log scan
     await sql`
-      INSERT INTO qr_scans (point_id, scanned_by)
-      VALUES (${point.id}, ${scanned_by})
+      INSERT INTO qr_scans (point_id, scanned_by, photo_url, latitude, longitude, distance_m)
+      VALUES (${point.id}, ${scanned_by}, ${photo_url}, ${latitude}, ${longitude}, ${distance_m})
     `;
 
     return NextResponse.json({ 
