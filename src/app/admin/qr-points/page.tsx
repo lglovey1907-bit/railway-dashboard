@@ -10,6 +10,7 @@ export default function QRAdmin() {
   
   const [stations, setStations] = useState<any[]>([]);
   const [stationId, setStationId] = useState<string>('');
+  const [stationCode, setStationCode] = useState<string>('');
   const [label, setLabel] = useState('');
   
   const [qrPoints, setQrPoints] = useState<any[]>([]);
@@ -22,11 +23,19 @@ export default function QRAdmin() {
         .then(data => {
           if (data.ok) {
             setStations(data.stations);
-            if (data.stations.length > 0) setStationId(data.stations[0].id.toString());
+            if (data.stations.length > 0) {
+              setStationId(data.stations[0].id.toString());
+              setStationCode(data.stations[0].code);
+            }
           }
         });
     }
   }, [auth]);
+
+  useEffect(() => {
+    const s = stations.find(x => x.id.toString() === stationId);
+    if (s) setStationCode(s.code);
+  }, [stationId, stations]);
 
   useEffect(() => {
     if (auth && stationId) {
@@ -174,12 +183,23 @@ export default function QRAdmin() {
               ) : (
                 <div id="print-area" className="grid grid-cols-2 gap-4">
                   {qrPoints.map(point => {
-                    // Generate full URL for the QR code
                     const scanUrl = `${window.location.origin}/scan/${point.secret_token}`;
+                    const passengerUrl = `${window.location.origin}/feedback/${stationCode}/${encodeURIComponent(point.label)}`;
                     return (
                       <div key={point.id} className="border border-slate-200 rounded-xl p-4 flex flex-col items-center text-center">
-                        <div className="mb-4 p-2 bg-white rounded-lg border border-slate-100 shadow-sm">
-                          <QRCode value={scanUrl} size={120} />
+                        <div className="flex gap-4 mb-4">
+                          <div className="flex flex-col items-center">
+                            <p className="text-xs font-bold text-slate-500 mb-1">STAFF QR</p>
+                            <div className="p-2 bg-white rounded-lg border border-slate-100 shadow-sm">
+                              <QRCode value={scanUrl} size={100} />
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-center">
+                            <p className="text-xs font-bold text-slate-500 mb-1">PASSENGER QR</p>
+                            <div className="p-2 bg-white rounded-lg border border-slate-100 shadow-sm">
+                              <QRCode value={passengerUrl} size={100} />
+                            </div>
+                          </div>
                         </div>
                         <h3 className="font-bold text-slate-900 mb-1">{point.label}</h3>
                         <p className="text-xs text-slate-500 mb-4 max-w-[150px] truncate" title={point.secret_token}>{point.secret_token}</p>

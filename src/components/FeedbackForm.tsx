@@ -7,11 +7,12 @@ type Props = {
   stationId: number;
   stationCode: string;
   stationName: string;
+  checkpointLabel: string;
   stationLat: number;
   stationLng: number;
 };
 
-export default function FeedbackForm({ stationId, stationCode, stationName, stationLat, stationLng }: Props) {
+export default function FeedbackForm({ stationId, stationCode, stationName, checkpointLabel, stationLat, stationLng }: Props) {
   const [rating, setRating] = useState<number>(0);
   const [hoverRating, setHoverRating] = useState<number>(0);
   const [comment, setComment] = useState("");
@@ -82,6 +83,7 @@ export default function FeedbackForm({ stationId, stationCode, stationName, stat
         const form = new FormData();
         form.append("stationId", String(stationId));
         form.append("stationCode", stationCode);
+        form.append("checkpointLabel", checkpointLabel);
         form.append("rating", String(rating));
         form.append("comment", comment);
         form.append("latitude", String(pos.coords.latitude));
@@ -142,6 +144,7 @@ export default function FeedbackForm({ stationId, stationCode, stationName, stat
       <div style={styles.card}>
         <p style={styles.eyebrow}>Passenger Feedback</p>
         <h1 style={styles.title}>{stationName}</h1>
+        <div style={{ marginBottom: 24, fontSize: 14, color: "#64748b", fontWeight: 600 }}>📍 {checkpointLabel}</div>
 
         <form onSubmit={handleSubmit} style={styles.form}>
           <div style={styles.label}>

@@ -8,14 +8,27 @@ export async function POST(req: NextRequest) {
     const form = await req.formData();
     const stationId = parseInt(form.get("stationId") as string);
     const stationCode = form.get("stationCode") as string;
+    const checkpointLabel = form.get("checkpointLabel") as string;
     const rating = parseInt(form.get("rating") as string);
     const comment = form.get("comment") as string;
     const latitude = parseFloat(form.get("latitude") as string);
     const longitude = parseFloat(form.get("longitude") as string);
     const photo = form.get("photo") as File | null;
+    const ipAddress = req.headers.get("x-forwarded-for") || req.ip || "unknown";
 
-    if (!stationId || !rating || Number.isNaN(latitude) || Number.isNaN(longitude)) {
+    if (!stationId || !rating || !checkpointLabel || Number.isNaN(latitude) || Number.isNaN(longitude)) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+
+    // 0. Rate Limiting (Max 3 submissions per IP per hour)
+    const { rows: limitRows } = await sql`
+      SELECT COUNT(*) as cnt 
+      FROM passenger_feedback 
+      WHERE ip_address = ${ipAddress} 
+        AND created_at >= NOW() - INTERVAL '1 hour'
+    `;
+    if (limitRows[0] && parseInt(limitRows[0].cnt) >= 3) {
+      return NextResponse.json({ error: "Rate limit exceeded. Try again later." }, { status: 429 });
     }
 
     // 1. Verify Geofence (Station GPS check)
@@ -41,8 +54,8 @@ export async function POST(req: NextRequest) {
     // Note: ai_verified defaults to NULL. If no photo, it stays NULL (unverified). 
     // If a photo exists, the background job will grade it and set it to true/false.
     const result = await sql`
-      INSERT INTO passenger_feedback (station_id, rating, comment, photo_url, latitude, longitude, distance_m)
-      VALUES (${stationId}, ${rating}, ${comment || null}, ${photoUrl}, ${latitude}, ${longitude}, ${distance})
+      INSERT INTO passenger_feedback (station_id, checkpoint_label, rating, comment, photo_url, latitude, longitude, distance_m, ip_address)
+      VALUES (${stationId}, ${checkpointLabel}, ${rating}, ${comment || null}, ${photoUrl}, ${latitude}, ${longitude}, ${distance}, ${ipAddress})
       RETURNING id
     `;
     const feedbackId = result.rows[0]?.id;
