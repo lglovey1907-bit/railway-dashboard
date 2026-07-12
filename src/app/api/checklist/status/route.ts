@@ -40,6 +40,15 @@ export async function GET(request: Request) {
     ORDER BY s.code, c.sort_order
   `;
 
+  // Fetch passenger feedback from the last 24 hours
+  const { rows: passengerRows } = await sql`
+    SELECT f.station_id, s.code AS station_code, f.rating, f.photo_url, f.ai_verified, f.created_at
+    FROM passenger_feedback f
+    JOIN stations s ON s.id = f.station_id
+    WHERE f.created_at >= NOW() - INTERVAL '24 hours'
+    ORDER BY f.created_at DESC
+  `;
+
   // Fetch windows from DB
   const { rows: windowRows } = await sql`
     SELECT label, end_time AS end FROM windows ORDER BY start_time
@@ -102,7 +111,9 @@ export async function GET(request: Request) {
           submittedBy: match?.submitted_by ?? null,
           capturedAt: match?.captured_at ?? null,
           aiScoredAt: match?.ai_scored_at ?? null,
-          aiNotes: parsedAiNotes
+          aiNotes: parsedAiNotes,
+          withinGeofence: match?.within_geofence ?? null,
+          withinWindow: match?.within_window ?? null,
         };
       })
     );
@@ -118,7 +129,14 @@ export async function GET(request: Request) {
         ? "pending"
         : "green";
 
-    return { station: station.code, name: station.name, overall: worst, cells };
+    const passengerFeedback = passengerRows.filter(r => r.station_code === station.code).map(r => ({
+      rating: r.rating,
+      photoUrl: r.photo_url,
+      aiVerified: r.ai_verified,
+      createdAt: r.created_at,
+    }));
+
+    return { station: station.code, name: station.name, overall: worst, cells, passengerFeedback };
   });
 
   return NextResponse.json(result, {

@@ -23,6 +23,12 @@ type StationStatus = {
     withinGeofence?: boolean | null;
     withinWindow?: boolean | null;
   }[];
+  passengerFeedback?: {
+    rating: number;
+    photoUrl: string | null;
+    aiVerified: boolean | null;
+    createdAt: string;
+  }[];
 };
 
 function StatusIcon({ status, className, size = 20 }: { status: Status; className?: string; size?: number }) {
@@ -245,6 +251,26 @@ export function SanitationStatusWidget() {
                         <div className="flex justify-between items-center bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
                           <span className="font-semibold text-slate-700">E - {evening.length}</span>
                           <span className="text-slate-500">Status - <span className="font-medium text-slate-900">{eUpdated} updated</span></span>
+                        </div>
+                      </div>
+                    )}
+
+                    {station.passengerFeedback && station.passengerFeedback.some(f => f.rating <= 2 && f.aiVerified === true) && (
+                      <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <AlertCircle size={16} className="text-red-600" />
+                          <span className="text-sm font-bold text-red-900">Passenger Mismatch Alert</span>
+                        </div>
+                        <div className="text-xs text-red-800 space-y-2">
+                          {station.passengerFeedback.filter(f => f.rating <= 2 && f.aiVerified === true).map((f, i) => (
+                            <div key={i} className="flex gap-2 items-start bg-white/50 p-2 rounded">
+                              {f.photoUrl && <img src={f.photoUrl} className="w-12 h-12 object-cover rounded" />}
+                              <div>
+                                <span className="font-semibold">Rated {f.rating}/5 Stars</span>
+                                <p className="text-[10px] text-red-600 mt-1">AI Verified Passenger Ground Truth</p>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     )}
