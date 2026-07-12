@@ -20,9 +20,9 @@ export async function POST(req: NextRequest) {
     const latitude = parseFloat(form.get("latitude") as string);
     const longitude = parseFloat(form.get("longitude") as string);
     const capturedAtRaw = form.get("capturedAt") as string; // ISO string from device
-    const photo = form.get("photo") as File;
+    const photos = form.getAll("photos") as File[];
 
-    if (!stationCode || !checkpointLabel || !photo || Number.isNaN(latitude)) {
+    if (!stationCode || !checkpointLabel || photos.length === 0 || Number.isNaN(latitude)) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
@@ -45,13 +45,17 @@ export async function POST(req: NextRequest) {
       ? withinWindow(capturedAt, windowDef.start, windowDef.end)
       : false;
 
-    // 1. Store the photo. Vercel Blob is the path of least resistance on Vercel;
+    // 1. Store the photos. Vercel Blob is the path of least resistance on Vercel;
     // swap for S3/Cloudinary if you prefer.
-    const blob = await put(
-      `checklist/${stationCode}/${Date.now()}-${photo.name}`,
-      photo,
-      { access: "public" }
+    const uploadPromises = photos.map(photo => 
+      put(
+        `checklist/${stationCode}/${Date.now()}-${photo.name}`,
+        photo,
+        { access: "public" }
+      )
     );
+    const blobs = await Promise.all(uploadPromises);
+    const photoUrlString = blobs.map(b => b.url).join(",");
 
     // 2. Write the row. Flag it clearly even if it fails validation —
     // we still want a record of the attempt, not a silent reject.
@@ -62,7 +66,7 @@ export async function POST(req: NextRequest) {
         within_geofence, within_window
       )
       SELECT
-        s.id, c.id, w.id, ${submittedBy}, ${blob.url},
+        s.id, c.id, w.id, ${submittedBy}, ${photoUrlString},
         ${latitude}, ${longitude}, ${distance}, ${capturedAt.toISOString()}::timestamptz,
         ${withinGeofence}, ${withinWindowOk}
       FROM stations s, checkpoints c, windows w
@@ -79,8 +83,8 @@ export async function POST(req: NextRequest) {
       fetch(`${process.env.NEXT_PUBLIC_BASE_URL}/api/checklist/score`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ submissionId, photoUrl: blob.url }),
-      }).catch(() => {}); // best-effort, retried by a cron sweep if it fails
+        body: JSON.stringify({ submissionId, photoUrl: blobs[0].url }),
+      }).catch((e) => console.error("Score dispatch failed:", e));
     }
 
     return NextResponse.json({

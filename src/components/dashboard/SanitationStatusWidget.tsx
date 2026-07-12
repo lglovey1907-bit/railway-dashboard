@@ -68,8 +68,14 @@ function CheckpointRow({ cell }: { cell: StationStatus['cells'][0] }) {
             {cell.photoUrl && (
               <div className="col-span-2 sm:col-span-1">
                 <p className="font-semibold text-slate-700 mb-1">Photo Evidence</p>
-                <img src={cell.photoUrl} alt="Checkpoint" className="w-full h-32 object-cover rounded-md border border-slate-200" />
-                <a href={cell.photoUrl} target="_blank" rel="noreferrer" className="text-rail-600 hover:underline mt-1 inline-block">View Full Image</a>
+                <div className="grid grid-cols-2 gap-2">
+                  {cell.photoUrl.split(',').map((url: string, i: number) => (
+                    <div key={i}>
+                      <img src={url} alt={`Checkpoint ${i+1}`} className="w-full h-24 object-cover rounded-md border border-slate-200" />
+                      <a href={url} target="_blank" rel="noreferrer" className="text-rail-600 hover:underline mt-1 inline-block text-[10px]">View Full</a>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             

@@ -21,8 +21,7 @@ export default function PhotoChecklistForm({
 }: Props) {
   const [checkpoint, setCheckpoint] = useState(checkpoints[0]?.label || "");
   const [submittedBy, setSubmittedBy] = useState("");
-  const [photo, setPhoto] = useState<File | null>(null);
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photos, setPhotos] = useState<{ file: File; url: string }[]>([]);
   
   const [status, setStatus] = useState<
     { type: "idle" | "sending" | "processing" | "ok" | "flagged" | "error"; message?: string }
@@ -62,6 +61,11 @@ export default function PhotoChecklistForm({
   }, [checkpoints]);
 
   const processPhoto = (file: File) => {
+    if (photos.length >= 5) {
+      setStatus({ type: "error", message: "Maximum of 5 photos allowed." });
+      return;
+    }
+
     setStatus({ type: "processing", message: "Watermarking..." });
 
     navigator.geolocation.getCurrentPosition(
@@ -97,8 +101,7 @@ export default function PhotoChecklistForm({
           canvas.toBlob((blob) => {
             if (blob) {
               const newFile = new File([blob], file.name, { type: file.type });
-              setPhoto(newFile);
-              setPhotoUrl(URL.createObjectURL(newFile));
+              setPhotos(prev => [...prev, { file: newFile, url: URL.createObjectURL(newFile) }]);
               setStatus({ type: "idle" });
             }
           }, file.type);
@@ -122,16 +125,17 @@ export default function PhotoChecklistForm({
     const file = e.target.files?.[0];
     if (file) {
       processPhoto(file);
-    } else {
-      setPhoto(null);
-      setPhotoUrl(null);
     }
+  };
+
+  const removePhoto = (index: number) => {
+    setPhotos(prev => prev.filter((_, i) => i !== index));
   };
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!photo || !submittedBy) {
-      setStatus({ type: "error", message: "Enter your name and attach a photo." });
+    if (photos.length === 0 || !submittedBy) {
+      setStatus({ type: "error", message: "Enter your name and attach at least one photo." });
       return;
     }
 
@@ -147,7 +151,10 @@ export default function PhotoChecklistForm({
         form.append("latitude", String(pos.coords.latitude));
         form.append("longitude", String(pos.coords.longitude));
         form.append("capturedAt", new Date().toISOString());
-        form.append("photo", photo);
+        
+        photos.forEach(p => {
+          form.append("photos", p.file);
+        });
 
         const res = await fetch("/api/checklist/submit", { method: "POST", body: form });
         const data = await res.json();
@@ -160,8 +167,7 @@ export default function PhotoChecklistForm({
           type: data.withinGeofence && data.withinWindow ? "ok" : "flagged",
           message: data.message,
         });
-        setPhoto(null);
-        setPhotoUrl(null);
+        setPhotos([]);
       },
       () => {
         setStatus({
@@ -192,21 +198,37 @@ export default function PhotoChecklistForm({
           </label>
 
           <label style={styles.label}>
-            Photo (camera only)
-            <input
-              style={styles.input}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              onChange={handleFileChange}
-              disabled={status.type === "processing" || status.type === "sending"}
-            />
+            Photos ({photos.length}/5)
+            {photos.length < 5 && (
+              <input
+                style={styles.input}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handleFileChange}
+                disabled={status.type === "processing" || status.type === "sending"}
+                key={photos.length} // Reset input after each capture
+              />
+            )}
           </label>
 
-          {photoUrl && (
+          {photos.length > 0 && (
             <div style={{ marginTop: 8, marginBottom: 8 }}>
-              <p style={{ fontSize: 12, color: "#666", marginBottom: 4 }}>Watermarked Preview:</p>
-              <img src={photoUrl} alt="Preview" style={{ width: "100%", borderRadius: 8, border: "1px solid #ccc" }} />
+              <p style={{ fontSize: 12, color: "#666", marginBottom: 4 }}>Watermarked Previews:</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                {photos.map((p, idx) => (
+                  <div key={idx} style={{ position: 'relative' }}>
+                    <img src={p.url} alt={`Preview ${idx+1}`} style={{ width: "100%", height: "100px", objectFit: "cover", borderRadius: 8, border: "1px solid #ccc" }} />
+                    <button 
+                      type="button" 
+                      onClick={() => removePhoto(idx)}
+                      style={{ position: 'absolute', top: 4, right: 4, background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none', borderRadius: '50%', width: 24, height: 24, cursor: 'pointer', fontSize: 12 }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -228,7 +250,7 @@ export default function PhotoChecklistForm({
 
           <button
             type="submit"
-            disabled={status.type === "processing" || status.type === "sending"}
+            disabled={status.type === "processing" || status.type === "sending" || photos.length === 0}
             style={styles.button}
           >
             {status.type === "sending" ? "Submitting…" : status.type === "processing" ? "Processing…" : "Submit"}
@@ -252,51 +274,76 @@ export default function PhotoChecklistForm({
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
+const styles = {
   page: {
     minHeight: "100vh",
-    background: "#0b1f3a",
+    backgroundColor: "#0b1f3a", // Navy blue
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    padding: 16,
-    fontFamily: "system-ui, -apple-system, sans-serif",
+    padding: "20px",
+    fontFamily: 'system-ui, -apple-system, sans-serif'
   },
   card: {
-    background: "#fff",
-    borderRadius: 12,
-    padding: 24,
+    backgroundColor: "white",
+    borderRadius: "16px",
+    padding: "24px",
     width: "100%",
-    maxWidth: 420,
-    boxShadow: "0 8px 30px rgba(0,0,0,0.25)",
+    maxWidth: "400px",
+    boxShadow: "0 20px 40px rgba(0,0,0,0.2)",
   },
   eyebrow: {
     margin: 0,
-    fontSize: 12,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    color: "#b8860b",
-    fontWeight: 600,
+    fontSize: "12px",
+    textTransform: "uppercase" as const,
+    letterSpacing: "1px",
+    color: "#64748b",
+    fontWeight: "bold" as const,
   },
-  title: { margin: "4px 0 20px", fontSize: 22, color: "#0b1f3a" },
-  form: { display: "flex", flexDirection: "column", gap: 14 },
-  label: { display: "flex", flexDirection: "column", gap: 6, fontSize: 14, color: "#333" },
+  title: {
+    margin: "4px 0 24px 0",
+    fontSize: "24px",
+    color: "#0f172a",
+    fontWeight: "800" as const,
+  },
+  form: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "16px",
+  },
+  label: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "6px",
+    fontSize: "14px",
+    fontWeight: "600" as const,
+    color: "#334155",
+  },
   input: {
-    padding: "10px 12px",
-    borderRadius: 8,
-    border: "1px solid #ccc",
-    fontSize: 16,
+    padding: "12px",
+    borderRadius: "8px",
+    border: "1px solid #cbd5e1",
+    fontSize: "16px",
+    backgroundColor: "#f8fafc",
   },
   button: {
-    marginTop: 8,
-    padding: "12px 16px",
-    borderRadius: 8,
+    marginTop: "8px",
+    padding: "14px",
+    borderRadius: "8px",
     border: "none",
-    background: "#0b1f3a",
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: 600,
+    backgroundColor: "#2563eb",
+    color: "white",
+    fontSize: "16px",
+    fontWeight: "bold" as const,
     cursor: "pointer",
   },
-  notice: { fontSize: 14, marginTop: 4 },
+  notice: {
+    marginTop: "8px",
+    padding: "12px",
+    borderRadius: "8px",
+    backgroundColor: "#f1f5f9",
+    fontSize: "14px",
+    textAlign: "center" as const,
+    fontWeight: "500" as const,
+  }
 };
