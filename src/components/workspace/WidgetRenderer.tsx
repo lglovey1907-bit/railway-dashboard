@@ -20,6 +20,7 @@ const FinancialDashboard = dynamic(() => import('@/components/financial/Financia
 const MonthlyReportWidget = dynamic(() => import('@/components/monthly/MonthlyReportWidget').then(m => ({ default: m.MonthlyReportWidget })), { ssr: false });
 import { SanitationStatusWidget } from '@/components/dashboard/SanitationStatusWidget';
 import { QRPatrolWidget } from '@/components/dashboard/QRPatrolWidget';
+import { PassengerFeedbackWidget } from '@/components/dashboard/PassengerFeedbackWidget';
 import type { LayoutWidget, LayoutColumn } from '@/lib/workspace/layoutEngine';
 import type { useWorkspace } from '@/lib/cellData/useWorkspace';
 import { TableEngine } from '@/components/cell/TableEngine';
@@ -3911,12 +3912,14 @@ export function WidgetRenderer({
 }) {
  switch (widget.type) {
  case 'sanitation_status':
- return (
-  <>
-    <SanitationStatusWidget />
-    <QRPatrolWidget />
-  </>
- );
+ return <SanitationStatusWidget />;
+ 
+ case 'qr_patrol_sanitation':
+ return <QRPatrolWidget />;
+
+ case 'passenger_feedback_sanitation':
+ return <PassengerFeedbackWidget />;
+
  case 'kpi':
  return <SmartKPI widget={widget} onUpdate={onUpdate} canManage={canManage} workspaceHook={workspaceHook}/>;
 

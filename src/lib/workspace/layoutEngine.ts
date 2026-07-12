@@ -16,7 +16,9 @@ export type WidgetType =
  | 'financial'
  | 'monthly_report'
  | 'handout'
- | 'sanitation_status';
+ | 'sanitation_status'
+ | 'passenger_feedback_sanitation'
+ | 'qr_patrol_sanitation';
 
 /** A single data source for an advanced KPI card */
 export type KpiAggregation = 'count' | 'sum' | 'avg' | 'min' | 'max' | 'unique';
