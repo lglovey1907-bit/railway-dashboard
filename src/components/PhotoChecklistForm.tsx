@@ -156,18 +156,28 @@ export default function PhotoChecklistForm({
           form.append("photos", p.file);
         });
 
-        const res = await fetch("/api/checklist/submit", { method: "POST", body: form });
-        const data = await res.json();
+        try {
+          const res = await fetch("/api/checklist/submit", { method: "POST", body: form });
+          let data;
+          try {
+            data = await res.json();
+          } catch (err) {
+            setStatus({ type: "error", message: "Server error. Please try again." });
+            return;
+          }
 
-        if (!res.ok) {
-          setStatus({ type: "error", message: data.error ?? "Submission failed." });
-          return;
+          if (!res.ok) {
+            setStatus({ type: "error", message: data.error ?? "Submission failed." });
+            return;
+          }
+          setStatus({
+            type: data.withinGeofence && data.withinWindow ? "ok" : "flagged",
+            message: data.message,
+          });
+          setPhotos([]);
+        } catch (error) {
+          setStatus({ type: "error", message: "Network error. Please try again." });
         }
-        setStatus({
-          type: data.withinGeofence && data.withinWindow ? "ok" : "flagged",
-          message: data.message,
-        });
-        setPhotos([]);
       },
       () => {
         setStatus({
