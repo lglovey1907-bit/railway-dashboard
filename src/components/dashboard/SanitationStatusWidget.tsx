@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { AlertCircle, CheckCircle2, Clock, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, XCircle, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 
 type Status = "green" | "yellow" | "red" | "pending";
@@ -140,23 +140,22 @@ export function SanitationStatusWidget() {
     setHasSanitationAccess(access);
   }, [user]);
 
-  useEffect(() => {
-    if (!hasSanitationAccess) {
-      setLoading(false);
-      return;
-    }
+  const fetchData = () => {
+    if (!hasSanitationAccess) { setLoading(false); return; }
     setLoading(true);
-    fetch(`/api/checklist/status?date=${selectedDate}`)
+    fetch(`/api/checklist/status?date=${selectedDate}&_=${Date.now()}`, {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' }
+    })
       .then((res) => res.json())
-      .then((d) => {
-        setData(d);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error("Failed to fetch status:", err);
-        setLoading(false);
-      });
+      .then((d) => { setData(d); setLoading(false); })
+      .catch((err) => { console.error("Failed to fetch status:", err); setLoading(false); });
+  };
+
+  useEffect(() => {
+    fetchData();
   }, [selectedDate, hasSanitationAccess]);
+
 
   if (!hasSanitationAccess) {
     return null;
@@ -166,12 +165,22 @@ export function SanitationStatusWidget() {
     <div className="rounded-2xl border border-slate-900/8 bg-white p-6 shadow-sm mb-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <h2 className="text-xl font-bold text-slate-900">Sanitation Status</h2>
-        <input 
-          type="date" 
-          value={selectedDate}
-          onChange={(e) => setSelectedDate(e.target.value)}
-          className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-rail-500 focus:border-rail-500 outline-none transition-all"
-        />
+        <div className="flex items-center gap-2">
+          <input 
+            type="date" 
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-rail-500 focus:border-rail-500 outline-none transition-all"
+          />
+          <button
+            onClick={fetchData}
+            disabled={loading}
+            title="Refresh data"
+            className="p-2 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 transition-colors disabled:opacity-40"
+          >
+            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+          </button>
+        </div>
       </div>
       
       <div className="flex flex-col gap-4">

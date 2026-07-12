@@ -6,10 +6,13 @@
 
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
+import { unstable_noStore as noStore } from 'next/cache';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export async function GET(request: Request) {
+  noStore();
   const { searchParams } = new URL(request.url);
   const dateParam = searchParams.get('date');
   const targetDate = dateParam || new Date().toISOString().slice(0, 10);
