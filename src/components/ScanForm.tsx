@@ -58,7 +58,7 @@ export default function ScanForm({ secret, label, station, stationLat, stationLn
           ctx.drawImage(img, 0, 0);
           
           const dateStr = new Date().toLocaleString();
-          const watermarkText = `${label} | ${dateStr}`;
+          const watermarkText = `${label} | ${Math.round(dist)}m away | ${dateStr}`;
           
           const barHeight = Math.max(100, img.height * 0.08);
           ctx.fillStyle = "rgba(0, 0, 0, 0.6)";

@@ -94,7 +94,7 @@ export function QRPatrolWidget() {
               <div className="flex items-center gap-2">
                 {scan.distance_m !== null && (
                   <div className="flex items-center gap-1 text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100">
-                    <MapPin size={10} /> {Math.round(scan.distance_m)}m
+                    <MapPin size={10} /> {Math.round(scan.distance_m)}m - Yes the person is at the station.
                   </div>
                 )}
                 <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-white px-2.5 py-1 rounded-md border border-slate-200">
