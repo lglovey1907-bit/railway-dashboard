@@ -1,7 +1,7 @@
 "use client";
 
 // components/PhotoChecklistForm.tsx
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { distanceMeters } from "@/lib/geo";
 
 type Checkpoint = { label: string; lat: number | null; lng: number | null };
@@ -39,16 +39,13 @@ export default function PhotoChecklistForm({
     return match?.label ?? windows[0].label;
   };
 
-  const processPhoto = (file: File) => {
-    setStatus({ type: "processing", message: "Acquiring GPS & watermarking..." });
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
+  // Auto-select nearest checkpoint on mount
+  useEffect(() => {
+    if (navigator.geolocation && checkpoints.length > 0) {
+      navigator.geolocation.getCurrentPosition((pos) => {
         const userLat = pos.coords.latitude;
         const userLng = pos.coords.longitude;
-
-        // Auto-select nearest checkpoint within 50m
-        let bestMatch = checkpoint;
+        let bestMatch = checkpoints[0].label;
         let minDistance = 50; 
         for (const cp of checkpoints) {
           if (cp.lat !== null && cp.lng !== null) {
@@ -60,7 +57,15 @@ export default function PhotoChecklistForm({
           }
         }
         setCheckpoint(bestMatch);
+      });
+    }
+  }, [checkpoints]);
 
+  const processPhoto = (file: File) => {
+    setStatus({ type: "processing", message: "Watermarking..." });
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
         // Watermark the image
         const img = new Image();
         const objUrl = URL.createObjectURL(file);
@@ -76,7 +81,7 @@ export default function PhotoChecklistForm({
           
           // Draw watermark
           const dateStr = new Date().toLocaleString();
-          const watermarkText = `${bestMatch} | ${dateStr}`;
+          const watermarkText = `${checkpoint} | ${dateStr}`;
           
           // Background bar for readability
           const barHeight = Math.max(100, img.height * 0.08);
