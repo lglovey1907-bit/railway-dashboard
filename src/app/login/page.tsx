@@ -277,6 +277,9 @@ export default function LoginPage() {
           <a href="/admin/stations" className="w-full py-3 rounded-xl font-semibold text-sm bg-white/10 hover:bg-white/20 text-white border border-white/10 transition-all flex items-center justify-center gap-2">
              Manage Stations
           </a>
+          <a href="/admin/qr-points" className="w-full py-3 rounded-xl font-semibold text-sm bg-white/10 hover:bg-white/20 text-white border border-white/10 transition-all flex items-center justify-center gap-2">
+             Manage QR Patrols
+          </a>
           <a href="/checklist" className="w-full py-3 rounded-xl font-semibold text-sm bg-rail-600 hover:bg-rail-500 text-white shadow-lg transition-all flex items-center justify-center gap-2 mt-2">
              <MapPin size={16} /> Auto Checklist (GPS)
           </a>

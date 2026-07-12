@@ -19,6 +19,7 @@ const TaskManagerBlock = dynamic(() => import('@/components/tasks/TaskManagerBlo
 const FinancialDashboard = dynamic(() => import('@/components/financial/FinancialDashboard').then(m => ({ default: m.FinancialDashboard })), { ssr: false });
 const MonthlyReportWidget = dynamic(() => import('@/components/monthly/MonthlyReportWidget').then(m => ({ default: m.MonthlyReportWidget })), { ssr: false });
 import { SanitationStatusWidget } from '@/components/dashboard/SanitationStatusWidget';
+import { QRPatrolWidget } from '@/components/dashboard/QRPatrolWidget';
 import type { LayoutWidget, LayoutColumn } from '@/lib/workspace/layoutEngine';
 import type { useWorkspace } from '@/lib/cellData/useWorkspace';
 import { TableEngine } from '@/components/cell/TableEngine';
@@ -3910,7 +3911,12 @@ export function WidgetRenderer({
 }) {
  switch (widget.type) {
  case 'sanitation_status':
- return <SanitationStatusWidget />;
+ return (
+  <>
+    <SanitationStatusWidget />
+    <QRPatrolWidget />
+  </>
+ );
  case 'kpi':
  return <SmartKPI widget={widget} onUpdate={onUpdate} canManage={canManage} workspaceHook={workspaceHook}/>;
 
