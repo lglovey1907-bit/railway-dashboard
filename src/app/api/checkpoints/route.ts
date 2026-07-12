@@ -1,7 +1,24 @@
 import { sql } from "@vercel/postgres";
 import { NextRequest, NextResponse } from "next/server";
-
 import { distanceMeters } from "@/lib/geo";
+
+export const dynamic = 'force-dynamic';
+
+export async function GET(req: NextRequest) {
+  try {
+    const { rows } = await sql`
+      SELECT c.label, c.latitude, c.longitude, c.sort_order, s.code AS station_code, s.name AS station_name
+      FROM checkpoints c
+      JOIN stations s ON s.id = c.station_id
+      ORDER BY s.code, c.sort_order
+    `;
+    return NextResponse.json({ ok: true, checkpoints: rows }, {
+      headers: { 'Cache-Control': 'no-store' }
+    });
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {

@@ -46,7 +46,7 @@ export default function PhotoChecklistForm({
         const userLat = pos.coords.latitude;
         const userLng = pos.coords.longitude;
         let bestMatch = checkpoints[0].label;
-        let minDistance = 50; 
+        let minDistance = 200; 
         for (const cp of checkpoints) {
           if (cp.lat !== null && cp.lng !== null) {
             const dist = distanceMeters(userLat, userLng, cp.lat, cp.lng);

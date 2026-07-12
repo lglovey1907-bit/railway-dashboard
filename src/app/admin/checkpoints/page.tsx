@@ -12,6 +12,7 @@ export default function CheckpointAdmin() {
   
   const [stations, setStations] = useState<Station[]>([]);
   const [stationCode, setStationCode] = useState('');
+  const [existingCheckpoints, setExistingCheckpoints] = useState<{label:string, latitude:number, longitude:number}[]>([]);
   
   const [label, setLabel] = useState('');
   const [lat, setLat] = useState<number | null>(null);
@@ -33,6 +34,19 @@ export default function CheckpointAdmin() {
         });
     }
   }, [auth]);
+
+  useEffect(() => {
+    if (auth && stationCode) {
+      fetch(`/api/checkpoints?station=${stationCode}&_=${Date.now()}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.ok) {
+            const filtered = data.checkpoints.filter((c: any) => c.station_code === stationCode);
+            setExistingCheckpoints(filtered);
+          }
+        });
+    }
+  }, [auth, stationCode, message]);
 
   const handleAuth = (e: React.FormEvent) => {
     e.preventDefault();
@@ -201,6 +215,29 @@ export default function CheckpointAdmin() {
 
           </form>
         </div>
+
+        {/* Existing checkpoints list */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mt-4">
+          <h2 className="text-sm font-bold text-slate-700 mb-3 uppercase tracking-wide">
+            Registered Checkpoints for this Station ({existingCheckpoints.length})
+          </h2>
+          {existingCheckpoints.length === 0 ? (
+            <p className="text-sm text-slate-400">No checkpoints registered yet for this station.</p>
+          ) : (
+            <ul className="space-y-2">
+              {existingCheckpoints.map((cp, i) => (
+                <li key={i} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 text-sm">
+                  <MapPin size={14} className="text-rail-500 shrink-0" />
+                  <div>
+                    <p className="font-semibold text-slate-800">{cp.label}</p>
+                    <p className="text-xs text-slate-400">{Number(cp.latitude).toFixed(6)}, {Number(cp.longitude).toFixed(6)}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
       </div>
     </div>
   );
