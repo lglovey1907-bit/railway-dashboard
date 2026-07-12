@@ -33,7 +33,7 @@ export async function GET(request: Request) {
   const { rows: stationRows } = await sql`
     SELECT s.id, s.code, s.name, c.label AS checkpoint
     FROM stations s
-    JOIN checkpoints c ON c.station_id = s.id
+    LEFT JOIN checkpoints c ON c.station_id = s.id
     ORDER BY s.code, c.sort_order
   `;
 
@@ -48,7 +48,9 @@ export async function GET(request: Request) {
     if (!stationsMap.has(row.code)) {
       stationsMap.set(row.code, { code: row.code, name: row.name, checkpoints: [] });
     }
-    stationsMap.get(row.code)!.checkpoints.push(row.checkpoint);
+    if (row.checkpoint) {
+      stationsMap.get(row.code)!.checkpoints.push(row.checkpoint);
+    }
   }
 
   const result = Array.from(stationsMap.values()).map((station) => {
