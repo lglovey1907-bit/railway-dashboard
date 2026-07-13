@@ -183,6 +183,7 @@ export default function PhotoChecklistForm({
         if (spoof) {
           form.append("spoof_confidence", spoof.confidence.toString());
           form.append("spoof_reasons", JSON.stringify(spoof.reasons));
+          form.append("device_fingerprint", spoof.deviceFingerprint || '');
         }
         
         photos.forEach(p => {

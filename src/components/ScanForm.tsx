@@ -145,6 +145,7 @@ export default function ScanForm({ secret, label, station, stationLat, stationLn
       if (spoofResult) {
         formData.append("spoof_confidence", spoofResult.confidence.toString());
         formData.append("spoof_reasons", JSON.stringify(spoofResult.reasons));
+        formData.append("device_fingerprint", spoofResult.deviceFingerprint || '');
       }
 
       const res = await fetch("/api/qr-scans", {

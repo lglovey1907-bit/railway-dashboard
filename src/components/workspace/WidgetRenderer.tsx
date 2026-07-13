@@ -21,6 +21,7 @@ const MonthlyReportWidget = dynamic(() => import('@/components/monthly/MonthlyRe
 import { SanitationStatusWidget } from '@/components/dashboard/SanitationStatusWidget';
 import { QRPatrolWidget } from '@/components/dashboard/QRPatrolWidget';
 import { PassengerFeedbackWidget } from '@/components/dashboard/PassengerFeedbackWidget';
+import { SpoofAuditWidget } from '@/components/dashboard/SpoofAuditWidget';
 import type { LayoutWidget, LayoutColumn } from '@/lib/workspace/layoutEngine';
 import type { useWorkspace } from '@/lib/cellData/useWorkspace';
 import { TableEngine } from '@/components/cell/TableEngine';
@@ -3919,6 +3920,9 @@ export function WidgetRenderer({
 
  case 'passenger_feedback_sanitation':
  return <PassengerFeedbackWidget />;
+
+ case 'spoof_audit':
+ return <SpoofAuditWidget />;
 
  case 'kpi':
  return <SmartKPI widget={widget} onUpdate={onUpdate} canManage={canManage} workspaceHook={workspaceHook}/>;

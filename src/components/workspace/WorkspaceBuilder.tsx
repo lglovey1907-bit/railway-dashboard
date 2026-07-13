@@ -375,6 +375,7 @@ const BLOCK_TEMPLATES: { type: WidgetType; label: string; icon: string; desc: st
   { type: 'sanitation_status', label: 'Sanitation Dashboard', icon: '✨', desc: 'Live station cleanliness status' },
   { type: 'passenger_feedback_sanitation', label: 'Passenger Feedback Sanitation', icon: '💬', desc: 'Passenger feedback reports' },
   { type: 'qr_patrol_sanitation', label: 'Recent QR Patrol Sanitation', icon: '📱', desc: 'Recent QR Patrol scans' },
+  { type: 'spoof_audit', label: 'Spoof Audit Panel', icon: '🛡️', desc: 'GPS anti-spoofing dashboard' },
 ];
 
 const BLOCK_FUNCTIONS: { type: WidgetType; label: string; icon: string; desc: string }[] = [
@@ -499,7 +500,7 @@ function WorkspaceRow({
       }
       
       const allowed = items.filter(b => {
-        if (b.type === 'sanitation_status' || b.type === 'passenger_feedback_sanitation' || b.type === 'qr_patrol_sanitation') {
+        if (b.type === 'sanitation_status' || b.type === 'passenger_feedback_sanitation' || b.type === 'qr_patrol_sanitation' || b.type === 'spoof_audit') {
           return hasSanitationAccess;
         }
         return true;
