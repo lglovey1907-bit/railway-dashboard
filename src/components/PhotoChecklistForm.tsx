@@ -3,6 +3,7 @@
 // components/PhotoChecklistForm.tsx
 import { useState, useRef, useEffect } from "react";
 import { distanceMeters } from "@/lib/geo";
+import { acquireGPSWithSpoofCheck, type SpoofResult } from "@/lib/geo/spoofDetector";
 
 type Checkpoint = { label: string; lat: number | null; lng: number | null };
 
@@ -22,6 +23,7 @@ export default function PhotoChecklistForm({
   const [checkpoint, setCheckpoint] = useState(checkpoints[0]?.label || "");
   const [submittedBy, setSubmittedBy] = useState("");
   const [photos, setPhotos] = useState<{ file: File; url: string }[]>([]);
+  const [spoofResult, setSpoofResult] = useState<SpoofResult | null>(null);
   
   const [status, setStatus] = useState<
     { type: "idle" | "sending" | "processing" | "ok" | "flagged" | "error"; message?: string }
@@ -66,10 +68,19 @@ export default function PhotoChecklistForm({
       return;
     }
 
-    setStatus({ type: "processing", message: "Watermarking..." });
+    setStatus({ type: "processing", message: "Acquiring GPS & running anti-spoof checks..." });
+    setSpoofResult(null);
 
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
+    acquireGPSWithSpoofCheck(
+      async (pos, spoof) => {
+        setSpoofResult(spoof);
+
+        // Block if spoofing detected
+        if (spoof.isSpoofed) {
+          setStatus({ type: "error", message: `⚠️ Fake GPS detected (confidence: ${spoof.confidence}%). Photo rejected. Reason: ${spoof.reasons[0] ?? 'Unknown'}` });
+          return;
+        }
+
         // Watermark the image
         const img = new Image();
         const objUrl = URL.createObjectURL(file);
@@ -113,7 +124,7 @@ export default function PhotoChecklistForm({
               setPhotos(prev => [...prev, { file: newFile, url: URL.createObjectURL(newFile) }]);
               setStatus({ type: "idle" });
             }
-          }, "image/jpeg", 0.6); // aggressively compress to ~200kb to prevent 4.5MB Vercel limit
+          }, "image/jpeg", 0.6);
         };
         img.onerror = () => {
           setStatus({ type: "error", message: "Failed to process photo." });
@@ -126,7 +137,6 @@ export default function PhotoChecklistForm({
           message: "Location permission is required. Please allow it and re-select the photo.",
         });
       },
-      { enableHighAccuracy: true, timeout: 15000 }
     );
   };
 
@@ -148,10 +158,20 @@ export default function PhotoChecklistForm({
       return;
     }
 
+    // Hard block on spoof
+    if (spoofResult?.isSpoofed) {
+      setStatus({ type: "error", message: `⚠️ Fake GPS detected. Submission blocked.` });
+      return;
+    }
+
     setStatus({ type: "sending", message: "Uploading..." });
 
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
+    acquireGPSWithSpoofCheck(
+      async (pos, spoof) => {
+        if (spoof.isSpoofed) {
+          setStatus({ type: "error", message: `⚠️ Fake GPS detected on final check. Submission blocked.` });
+          return;
+        }
         const form = new FormData();
         form.append("stationCode", stationCode);
         form.append("checkpoint", checkpoint);
@@ -160,6 +180,10 @@ export default function PhotoChecklistForm({
         form.append("latitude", String(pos.coords.latitude));
         form.append("longitude", String(pos.coords.longitude));
         form.append("capturedAt", new Date().toISOString());
+        if (spoof) {
+          form.append("spoof_confidence", spoof.confidence.toString());
+          form.append("spoof_reasons", JSON.stringify(spoof.reasons));
+        }
         
         photos.forEach(p => {
           form.append("photos", p.file);
@@ -194,7 +218,6 @@ export default function PhotoChecklistForm({
           message: "Location permission is required to submit — please allow it and retry.",
         });
       },
-      { enableHighAccuracy: true, timeout: 10000 }
     );
   }
 

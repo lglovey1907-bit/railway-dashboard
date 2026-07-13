@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Loader2, MapPin, Camera } from "lucide-react";
+import { CheckCircle2, Loader2, MapPin, Camera, AlertTriangle, ShieldCheck } from "lucide-react";
 import { distanceMeters } from "@/lib/geo";
+import { acquireGPSWithSpoofCheck, type SpoofResult } from "@/lib/geo/spoofDetector";
 
 type Props = {
   secret: string;
@@ -19,16 +20,29 @@ export default function ScanForm({ secret, label, station, stationLat, stationLn
   const [userLat, setUserLat] = useState<number | null>(null);
   const [userLng, setUserLng] = useState<number | null>(null);
   const [distance, setDistance] = useState<number | null>(null);
+  const [spoofResult, setSpoofResult] = useState<SpoofResult | null>(null);
 
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error" | "processing">("idle");
   const [message, setMessage] = useState("");
 
   const processPhoto = (file: File) => {
     setStatus("processing");
-    setMessage("Acquiring GPS location and processing selfie...");
+    setMessage("Acquiring GPS & running anti-spoof checks...");
+    setSpoofResult(null);
 
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
+    acquireGPSWithSpoofCheck(
+      async (pos, spoof) => {
+        setSpoofResult(spoof);
+
+        // Block outright if high-confidence spoofing detected
+        if (spoof.isSpoofed) {
+          setStatus("error");
+          setMessage(`⚠️ Fake GPS detected (confidence ${spoof.confidence}%). Submission blocked. Reason: ${spoof.reasons[0] ?? 'Unknown'}`);
+          setPhoto(null);
+          setPhotoUrl(null);
+          return;
+        }
+
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
         const dist = distanceMeters(lat, lng, stationLat, stationLng);
@@ -58,7 +72,9 @@ export default function ScanForm({ secret, label, station, stationLat, stationLn
           ctx.drawImage(img, 0, 0);
           
           const dateStr = new Date().toLocaleString();
-          const watermarkText = `${label} | ${Math.round(dist)}m away | ${dateStr}`;
+          // Watermark now includes GPS Verified badge
+          const gpsTag = spoof.confidence < 20 ? '✔ GPS Verified' : '⚠ GPS Flagged';
+          const watermarkText = `${label} | ${Math.round(dist)}m | ${gpsTag} | ${dateStr}`;
           
           const barHeight = Math.max(100, img.height * 0.08);
           ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
@@ -90,7 +106,6 @@ export default function ScanForm({ secret, label, station, stationLat, stationLn
         setPhoto(null);
         setPhotoUrl(null);
       },
-      { enableHighAccuracy: true, timeout: 15000 }
     );
   };
 
@@ -108,6 +123,13 @@ export default function ScanForm({ secret, label, station, stationLat, stationLn
     e.preventDefault();
     if (!name.trim() || !photo || userLat === null || userLng === null || distance === null) return;
 
+    // Hard block if spoof was detected
+    if (spoofResult?.isSpoofed) {
+      setStatus("error");
+      setMessage(`⚠️ Fake GPS detected. Submission blocked.`);
+      return;
+    }
+
     setStatus("loading");
     setMessage("Uploading patrol record...");
 
@@ -119,6 +141,11 @@ export default function ScanForm({ secret, label, station, stationLat, stationLn
       formData.append("latitude", userLat.toString());
       formData.append("longitude", userLng.toString());
       formData.append("distance_m", distance.toString());
+      // Pass spoof data to server for audit logging
+      if (spoofResult) {
+        formData.append("spoof_confidence", spoofResult.confidence.toString());
+        formData.append("spoof_reasons", JSON.stringify(spoofResult.reasons));
+      }
 
       const res = await fetch("/api/qr-scans", {
         method: "POST",
@@ -226,6 +253,20 @@ export default function ScanForm({ secret, label, station, stationLat, stationLn
           {status === "error" && (
             <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm font-medium border border-red-100">
               {message}
+            </div>
+          )}
+
+          {/* GPS trust badge */}
+          {spoofResult && !spoofResult.isSpoofed && (
+            <div className="flex items-center gap-2 bg-green-50 text-green-700 border border-green-200 px-3 py-2 rounded-lg text-xs font-semibold">
+              <ShieldCheck size={14} />
+              GPS Verified — No spoofing detected
+            </div>
+          )}
+          {spoofResult && spoofResult.isSpoofed && (
+            <div className="flex items-center gap-2 bg-red-50 text-red-700 border border-red-200 px-3 py-2 rounded-lg text-xs font-semibold">
+              <AlertTriangle size={14} />
+              Fake GPS Detected — Submission Blocked
             </div>
           )}
         </form>
