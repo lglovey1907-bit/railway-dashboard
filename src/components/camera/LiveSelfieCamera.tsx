@@ -22,6 +22,7 @@ export function LiveSelfieCamera({ onCapture, onCancel }: Props) {
   const animationRef = useRef<number>(0);
   const steadyStartTimeRef = useRef<number>(0);
   const isCapturingRef = useRef(false);
+  const faceStatusRef = useRef<"no_face" | "align" | "steady" | "capturing">("no_face");
 
   // Initialize camera and model
   useEffect(() => {
@@ -115,27 +116,37 @@ export function LiveSelfieCamera({ onCapture, onCancel }: Props) {
           const isRightSize = widthRatio > 0.15 && heightRatio > 0.15;
 
           if (isCentered && isRightSize) {
-            if (faceStatus !== "steady" && faceStatus !== "capturing") {
+            if (faceStatusRef.current !== "steady" && faceStatusRef.current !== "capturing") {
+               faceStatusRef.current = "steady";
                setFaceStatus("steady");
                if (steadyStartTimeRef.current === 0) {
                  steadyStartTimeRef.current = nowInMs;
                }
-            } else if (faceStatus === "steady") {
+            } else if (faceStatusRef.current === "steady") {
                // If steady for 1.5 seconds, auto capture
                if (nowInMs - steadyStartTimeRef.current > 1500) {
                  capturePhoto();
                }
             }
           } else {
-            setFaceStatus("align");
+            if (faceStatusRef.current !== "align") {
+              faceStatusRef.current = "align";
+              setFaceStatus("align");
+            }
             steadyStartTimeRef.current = 0;
           }
         }
       } else if (results.detections.length > 1) {
-        setFaceStatus("align"); // Too many faces
+        if (faceStatusRef.current !== "align") {
+          faceStatusRef.current = "align";
+          setFaceStatus("align");
+        }
         steadyStartTimeRef.current = 0;
       } else {
-        setFaceStatus("no_face");
+        if (faceStatusRef.current !== "no_face") {
+          faceStatusRef.current = "no_face";
+          setFaceStatus("no_face");
+        }
         steadyStartTimeRef.current = 0;
       }
     }
@@ -146,6 +157,7 @@ export function LiveSelfieCamera({ onCapture, onCancel }: Props) {
   const capturePhoto = () => {
     if (isCapturingRef.current) return;
     isCapturingRef.current = true;
+    faceStatusRef.current = "capturing";
     setFaceStatus("capturing");
 
     const video = videoRef.current;
