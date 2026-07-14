@@ -110,10 +110,9 @@ export function LiveSelfieCamera({ onCapture, onCancel }: Props) {
           const widthRatio = face.width / vw;
           const heightRatio = face.height / vh;
 
-          // The oval in the UI is roughly centered, and takes up ~50% of the width and ~60% of the height
-          // We check if the face bounding box is roughly in the center and of appropriate size.
-          const isCentered = cx > 0.35 && cx < 0.65 && cy > 0.3 && cy < 0.7;
-          const isRightSize = widthRatio > 0.25 && widthRatio < 0.6 && heightRatio > 0.3 && heightRatio < 0.7;
+          // Relaxed constraints to make auto-capture more forgiving
+          const isCentered = cx > 0.15 && cx < 0.85 && cy > 0.15 && cy < 0.85;
+          const isRightSize = widthRatio > 0.15 && heightRatio > 0.15;
 
           if (isCentered && isRightSize) {
             if (faceStatus !== "steady" && faceStatus !== "capturing") {
@@ -265,6 +264,16 @@ export function LiveSelfieCamera({ onCapture, onCancel }: Props) {
               {faceStatus === "steady" && "Hold steady..."}
               {faceStatus === "capturing" && "Capturing!"}
             </div>
+
+            {/* Fallback Manual Capture Button (only shows if face is detected but not steady yet) */}
+            {faceStatus === "align" && (
+              <button
+                onClick={capturePhoto}
+                className="mt-6 bg-white text-black px-8 py-3 rounded-full font-bold shadow-lg hover:bg-slate-100 transition-colors"
+              >
+                Take Photo Anyway
+              </button>
+            )}
           </div>
         </>
       )}
