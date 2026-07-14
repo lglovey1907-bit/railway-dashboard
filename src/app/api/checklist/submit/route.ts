@@ -55,6 +55,31 @@ export async function POST(req: NextRequest) {
       serverReasons.push(`Server timestamp drift: device time is ${Math.round(driftMs / 1000)}s off from server`);
     }
 
+    // Check 2: Server-side IP geolocation — cannot be spoofed by client
+    try {
+      const ipRes = await fetch(`https://ipinfo.io/${ip_address}/json`, {
+        signal: AbortSignal.timeout(3000),
+      });
+      if (ipRes.ok) {
+        const ipData = await ipRes.json();
+        if (ipData.loc) {
+          const [ipLat, ipLng] = ipData.loc.split(',').map(Number);
+          const R = 6371;
+          const dLat2 = ((latitude - ipLat) * Math.PI) / 180;
+          const dLng2 = ((longitude - ipLng) * Math.PI) / 180;
+          const a2 = Math.sin(dLat2/2)**2 + Math.cos(ipLat*Math.PI/180)*Math.cos(latitude*Math.PI/180)*Math.sin(dLng2/2)**2;
+          const ipDistKm = R * 2 * Math.atan2(Math.sqrt(a2), Math.sqrt(1 - a2));
+          if (ipDistKm > 500) {
+            serverSpoofScore = Math.min(100, serverSpoofScore + 40);
+            serverReasons.push(`SERVER IP CHECK: GPS ${Math.round(ipDistKm)}km from IP (${ipData.city}, ${ipData.region})`);
+          } else if (ipDistKm > 100) {
+            serverSpoofScore = Math.min(100, serverSpoofScore + 20);
+            serverReasons.push(`SERVER IP CHECK: GPS ${Math.round(ipDistKm)}km from IP (${ipData.city})`);
+          }
+        }
+      }
+    } catch { /* IP check is best-effort */ }
+
     const distance = distanceMeters(latitude, longitude, station.latitude, station.longitude);
     const withinGeofence = distance <= station.geofence_m;
 

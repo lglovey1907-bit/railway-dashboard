@@ -65,11 +65,36 @@ export async function POST(req: NextRequest) {
     let serverReasons: string[] = [];
     try { serverReasons = JSON.parse(spoof_reasons_raw); } catch { serverReasons = []; }
 
-    // Check 1: Timestamp drift — server time vs now
     const serverNow = new Date();
-    // The scan is happening right now, so drift should be minimal
 
-    // Check 2: Velocity audit — check last scan by same person
+    // ═══ SERVER CHECK 1: Independent IP Geolocation ═══
+    // The server does its OWN IP lookup — this CANNOT be spoofed by the client
+    try {
+      const ipRes = await fetch(`https://ipinfo.io/${ip_address}/json`, {
+        signal: AbortSignal.timeout(3000),
+      });
+      if (ipRes.ok) {
+        const ipData = await ipRes.json();
+        if (ipData.loc) {
+          const [ipLat, ipLng] = ipData.loc.split(',').map(Number);
+          const R = 6371;
+          const dLat = ((latitude - ipLat) * Math.PI) / 180;
+          const dLng = ((longitude - ipLng) * Math.PI) / 180;
+          const a = Math.sin(dLat/2)**2 + Math.cos(ipLat*Math.PI/180)*Math.cos(latitude*Math.PI/180)*Math.sin(dLng/2)**2;
+          const ipDistKm = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+          if (ipDistKm > 500) {
+            serverSpoofScore = Math.min(100, serverSpoofScore + 40);
+            serverReasons.push(`SERVER IP CHECK: GPS claims ${latitude.toFixed(4)},${longitude.toFixed(4)} but server IP (${ip_address}) geolocates to ${ipData.city}, ${ipData.region} — ${Math.round(ipDistKm)}km apart`);
+          } else if (ipDistKm > 100) {
+            serverSpoofScore = Math.min(100, serverSpoofScore + 20);
+            serverReasons.push(`SERVER IP CHECK: GPS is ${Math.round(ipDistKm)}km from IP location (${ipData.city}) — suspicious`);
+          }
+        }
+      }
+    } catch { /* IP check is best-effort */ }
+
+    // ═══ SERVER CHECK 2: Velocity audit ═══
     try {
       const { rows: lastScans } = await sql`
         SELECT s.latitude, s.longitude, s.scanned_at

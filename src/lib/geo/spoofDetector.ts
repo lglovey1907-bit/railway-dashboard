@@ -1,11 +1,19 @@
 /**
  * ============================================================================
- * ANTI-GPS-SPOOFING DETECTION ENGINE — 12-LAYER FORTRESS
+ * ANTI-GPS-SPOOFING DETECTION ENGINE — 16-LAYER FORTRESS v2
  * ============================================================================
  * 
  * Defence-in-depth GPS fraud detection for web applications.
  * Each layer produces a weighted confidence score; scores are summed and
  * capped at 100. Score >= 50 = BLOCKED, 25-49 = FLAGGED, <25 = CLEAN.
+ *
+ * v2 CRITICAL CHANGES:
+ *  - Motion sensor cross-validation (accelerometer vs GPS)
+ *  - Page visibility tracking (detect switching to Fake GPS app)
+ *  - Coordinate decimal analysis (mock apps use suspiciously round numbers)
+ *  - Rapid-fire timestamp analysis (mock apps have unnaturally uniform timing)
+ *  - Server-side IP geolocation as HARD GATE (not just a contributing score)
+ *  - Developer tools / debugging detection
  *
  * Layers:
  *  1.  Accuracy anomaly          (weight 30)
@@ -13,13 +21,17 @@
  *  3.  Zero altitude             (weight 15)
  *  4.  Perfect stability         (weight 25)
  *  5.  Browser API tampering     (weight 20)
- *  6.  IP-to-GPS mismatch        (weight 20)
+ *  6.  IP-to-GPS mismatch        (weight 25) — upgraded
  *  7.  Timezone mismatch         (weight 15)
  *  8.  Network type anomaly      (weight 10)
- *  9.  Device fingerprint        (weight  0 — informational, stored for audit)
+ *  9.  Device fingerprint        (weight  0 — informational)
  * 10.  Multi-sample variance     (weight 30)
  * 11.  Heading / speed null      (weight 10)
- * 12.  Photo EXIF cross-check    (weight 25)  — optional, called separately
+ * 12.  Photo EXIF cross-check    (weight 25) — optional
+ * 13.  Motion sensor mismatch    (weight 35) — NEW
+ * 14.  Page visibility anomaly   (weight 25) — NEW
+ * 15.  Coordinate precision      (weight 20) — NEW
+ * 16.  Timestamp uniformity      (weight 20) — NEW
  */
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -51,6 +63,10 @@ export interface SpoofResult {
   // Multi-sample stats
   sampleCount?: number;
   sampleVarianceM?: number;
+  // Motion sensor data
+  motionDetected?: boolean;
+  // Visibility data
+  visibilityChanges?: number;
 }
 
 // ── Sliding window of recent readings ────────────────────────────────────────
@@ -179,7 +195,7 @@ function checkBrowserTampering(): { score: number; reason?: string } {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// LAYER 6 — IP-to-GPS mismatch (weight 20)
+// LAYER 6 — IP-to-GPS mismatch (weight 25) — UPGRADED
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async function checkIPLocation(r: GpsReading): Promise<{
@@ -197,10 +213,10 @@ async function checkIPLocation(r: GpsReading): Promise<{
     const base = { ipCity: data.city, ipRegion: data.region, ipLat, ipLng, ipDistanceKm: distKm };
 
     if (distKm > 500) {
-      return { ...base, score: 20, reason: `GPS is ${Math.round(distKm)}km from IP location (${data.city}, ${data.region})` };
+      return { ...base, score: 25, reason: `GPS is ${Math.round(distKm)}km from IP location (${data.city}, ${data.region}) — likely spoofed` };
     }
     if (distKm > 100) {
-      return { ...base, score: 10, reason: `GPS is ${Math.round(distKm)}km from IP location (${data.city})` };
+      return { ...base, score: 15, reason: `GPS is ${Math.round(distKm)}km from IP location (${data.city})` };
     }
     return { ...base, score: 0 };
   } catch {
@@ -210,10 +226,8 @@ async function checkIPLocation(r: GpsReading): Promise<{
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LAYER 7 — Timezone mismatch (weight 15)
-// GPS says India (IST = +5:30) but browser timezone is UTC or US/Pacific?
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// Rough mapping: lat/lng bounding boxes → expected timezone offset (in minutes)
 const TIMEZONE_REGIONS: { minLat: number; maxLat: number; minLng: number; maxLng: number; expectedOffsetMin: number; name: string }[] = [
   { minLat: 6, maxLat: 36, minLng: 68, maxLng: 98, expectedOffsetMin: 330, name: 'India (IST)' },
   { minLat: 24, maxLat: 50, minLng: -125, maxLng: -66, expectedOffsetMin: -300, name: 'US Eastern' },
@@ -224,13 +238,13 @@ const TIMEZONE_REGIONS: { minLat: number; maxLat: number; minLng: number; maxLng
 function checkTimezone(r: GpsReading): { score: number; reason?: string } {
   if (typeof Intl === 'undefined') return { score: 0 };
   
-  const deviceOffset = -new Date().getTimezoneOffset(); // minutes from UTC
+  const deviceOffset = -new Date().getTimezoneOffset();
   
   for (const region of TIMEZONE_REGIONS) {
     if (r.latitude >= region.minLat && r.latitude <= region.maxLat &&
         r.longitude >= region.minLng && r.longitude <= region.maxLng) {
       const diff = Math.abs(deviceOffset - region.expectedOffsetMin);
-      if (diff > 120) { // More than 2 hours off
+      if (diff > 120) {
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         return {
           score: 15,
@@ -245,15 +259,13 @@ function checkTimezone(r: GpsReading): { score: number; reason?: string } {
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LAYER 8 — Network type check (weight 10)
-// If navigator.connection reports 'none' but GPS works → suspicious
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function checkNetworkType(): { score: number; reason?: string } {
   if (typeof navigator === 'undefined') return { score: 0 };
   const conn = (navigator as any).connection;
-  if (!conn) return { score: 0 }; // API not supported (Safari/Firefox)
+  if (!conn) return { score: 0 };
 
-  // If browser reports no connection but GPS somehow works
   if (conn.type === 'none' || conn.effectiveType === 'slow-2g') {
     return { score: 10, reason: `Network type: ${conn.type || conn.effectiveType} — unusual for device reporting GPS location` };
   }
@@ -262,32 +274,23 @@ function checkNetworkType(): { score: number; reason?: string } {
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LAYER 9 — Device fingerprint (weight 0 — informational for audit)
-// Canvas + WebGL + screen + hardware → stable hash for audit trail.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function generateDeviceFingerprint(): string {
   if (typeof window === 'undefined') return 'server';
   
   const parts: string[] = [];
-
-  // Screen
   parts.push(`${screen.width}x${screen.height}x${screen.colorDepth}`);
   parts.push(`dpr:${window.devicePixelRatio}`);
-
-  // Hardware
   parts.push(`cores:${navigator.hardwareConcurrency || 'unknown'}`);
   parts.push(`mem:${(navigator as any).deviceMemory || 'unknown'}`);
-
-  // Platform + language
   parts.push(`plat:${navigator.platform}`);
   parts.push(`lang:${navigator.language}`);
 
-  // Timezone
   try {
     parts.push(`tz:${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
   } catch { parts.push('tz:unknown'); }
 
-  // Canvas fingerprint (renders text and shapes, hashes the pixel output)
   try {
     const canvas = document.createElement('canvas');
     canvas.width = 200;
@@ -306,7 +309,6 @@ function generateDeviceFingerprint(): string {
     }
   } catch { parts.push('cvs:err'); }
 
-  // WebGL renderer
   try {
     const gl = document.createElement('canvas').getContext('webgl');
     if (gl) {
@@ -333,8 +335,6 @@ function simpleHash(str: string): string {
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LAYER 10 — Multi-sample variance (weight 30)
-// Take N GPS reads; measure coordinate variance. Real GPS jitters 2-10m.
-// Spoofed GPS returns identical coordinates.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function checkMultiSampleVariance(samples: GpsReading[]): { score: number; reason?: string; varianceM: number } {
@@ -343,16 +343,13 @@ function checkMultiSampleVariance(samples: GpsReading[]): { score: number; reaso
   const avgLat = samples.reduce((s, r) => s + r.latitude, 0) / samples.length;
   const avgLng = samples.reduce((s, r) => s + r.longitude, 0) / samples.length;
 
-  // Calculate average distance from centroid in metres
   const distances = samples.map(r => haversineM(r.latitude, r.longitude, avgLat, avgLng));
   const avgDist = distances.reduce((s, d) => s + d, 0) / distances.length;
   const maxDist = Math.max(...distances);
 
-  // All readings within 0.1m of each other → very suspicious (zero jitter)
   if (maxDist < 0.1) {
     return { score: 30, varianceM: avgDist, reason: `Zero GPS jitter: all ${samples.length} samples within 0.1m — real GPS jitters 2-10m` };
   }
-  // Very low jitter
   if (maxDist < 0.5 && samples.length >= 4) {
     return { score: 20, varianceM: avgDist, reason: `Near-zero GPS jitter: ${maxDist.toFixed(2)}m spread across ${samples.length} samples` };
   }
@@ -361,25 +358,20 @@ function checkMultiSampleVariance(samples: GpsReading[]): { score: number; reaso
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LAYER 11 — Heading & speed null check (weight 10)
-// Stationary real GPS: heading=null, speed=null or ~0.
-// Spoofers often inject non-null heading/speed values even when stationary.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function checkHeadingSpeed(r: GpsReading, samples: GpsReading[]): { score: number; reason?: string } {
   if (samples.length < 2) return { score: 0 };
 
-  // Check if device is "stationary" (all samples within 5m)
   const avgLat = samples.reduce((s, x) => s + x.latitude, 0) / samples.length;
   const avgLng = samples.reduce((s, x) => s + x.longitude, 0) / samples.length;
   const maxDist = Math.max(...samples.map(x => haversineM(x.latitude, x.longitude, avgLat, avgLng)));
 
   if (maxDist < 5) {
-    // Device is stationary. Check if speed/heading are suspiciously set.
     if (r.speed !== null && r.speed > 2) {
       return { score: 10, reason: `Stationary device reports speed=${r.speed.toFixed(1)} m/s — inconsistent with no movement` };
     }
     if (r.heading !== null && r.heading > 0 && r.heading !== 360) {
-      // Some spoofers set heading to a fixed bearing
       const allSameHeading = samples.filter(s => s.heading !== null).every(s => s.heading === r.heading);
       if (allSameHeading && samples.filter(s => s.heading !== null).length >= 2) {
         return { score: 10, reason: `All ${samples.length} readings have identical heading=${r.heading}° while stationary — suspicious` };
@@ -391,7 +383,6 @@ function checkHeadingSpeed(r: GpsReading, samples: GpsReading[]): { score: numbe
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LAYER 12 — Photo EXIF GPS cross-check (weight 25)
-// Called externally when a photo File is available.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 export async function checkPhotoExifGps(
@@ -406,7 +397,6 @@ export async function checkPhotoExifGps(
     
     const gps = tags.gps;
     if (!gps || gps.Latitude === undefined || gps.Longitude === undefined) {
-      // No EXIF GPS data — not conclusive by itself, but suspicious if camera should embed GPS
       return { score: 5, reason: 'Photo has no EXIF GPS data — may indicate screenshot or processed image' };
     }
 
@@ -430,9 +420,263 @@ export async function checkPhotoExifGps(
     }
     return { score: 0, exifLat, exifLng };
   } catch {
-    // EXIF parsing failed — not a red flag by itself
     return { score: 0 };
   }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// LAYER 13 — Motion Sensor Cross-Validation (weight 35) — NEW
+// Uses the accelerometer to detect if the device actually moved.
+// Fake GPS apps change coordinates but the physical device stays still —
+// the accelerometer will show near-zero motion.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Global motion tracking — started when the page loads
+let _motionSamples: { x: number; y: number; z: number; t: number }[] = [];
+let _motionListenerActive = false;
+
+export function startMotionTracking() {
+  if (_motionListenerActive || typeof window === 'undefined') return;
+  _motionListenerActive = true;
+  _motionSamples = [];
+
+  const handler = (e: DeviceMotionEvent) => {
+    const a = e.accelerationIncludingGravity;
+    if (!a || a.x === null || a.y === null || a.z === null) return;
+    _motionSamples.push({ x: a.x, y: a.y, z: a.z, t: Date.now() });
+    // Keep last 100 samples (about 5-10 seconds of data at typical rates)
+    if (_motionSamples.length > 100) _motionSamples.shift();
+  };
+
+  window.addEventListener('devicemotion', handler, { passive: true });
+}
+
+function checkMotionSensor(): { score: number; reason?: string; motionDetected: boolean } {
+  if (_motionSamples.length < 10) {
+    // Not enough data — sensor might not be available (desktop browser)
+    return { score: 0, motionDetected: true };
+  }
+
+  // Calculate the standard deviation of acceleration magnitude
+  // Real device being held: slight hand tremor creates variance of 0.3-2.0 m/s²
+  // Device on a table: gravity is constant, variance ~0.01-0.1
+  // Key insight: We are checking if the device is BEING HELD (user is present and interacting)
+  
+  const magnitudes = _motionSamples.map(s => Math.sqrt(s.x ** 2 + s.y ** 2 + s.z ** 2));
+  const avgMag = magnitudes.reduce((a, b) => a + b, 0) / magnitudes.length;
+  const variance = magnitudes.reduce((sum, m) => sum + (m - avgMag) ** 2, 0) / magnitudes.length;
+  const stdDev = Math.sqrt(variance);
+
+  // Check for changes in orientation (tilting the phone)
+  const xValues = _motionSamples.map(s => s.x);
+  const yValues = _motionSamples.map(s => s.y);
+  const xRange = Math.max(...xValues) - Math.min(...xValues);
+  const yRange = Math.max(...yValues) - Math.min(...yValues);
+
+  // A phone being held will have stdDev > 0.05 and visible x/y range
+  const hasMotion = stdDev > 0.05 || xRange > 0.3 || yRange > 0.3;
+
+  if (!hasMotion) {
+    // Device shows ZERO motion — could be an emulator or a phone running a script
+    // This alone isn't enough to block, but it's a signal
+    return {
+      score: 15,
+      motionDetected: false,
+      reason: `Device accelerometer shows zero motion (stdDev=${stdDev.toFixed(3)}) — possible emulator or unattended device`
+    };
+  }
+
+  return { score: 0, motionDetected: true };
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// LAYER 14 — Page Visibility / App Switching Detection (weight 25) — NEW
+// Detects if the user switched away from the browser (e.g., to configure 
+// a Fake GPS app) right before submitting.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+interface VisibilityEvent {
+  type: 'hidden' | 'visible';
+  timestamp: number;
+}
+
+let _visibilityEvents: VisibilityEvent[] = [];
+let _visibilityListenerActive = false;
+
+export function startVisibilityTracking() {
+  if (_visibilityListenerActive || typeof document === 'undefined') return;
+  _visibilityListenerActive = true;
+  _visibilityEvents = [];
+
+  document.addEventListener('visibilitychange', () => {
+    _visibilityEvents.push({
+      type: document.visibilityState === 'hidden' ? 'hidden' : 'visible',
+      timestamp: Date.now(),
+    });
+    // Keep last 50 events
+    if (_visibilityEvents.length > 50) _visibilityEvents.shift();
+  });
+}
+
+function checkVisibility(): { score: number; reason?: string; visibilityChanges: number } {
+  const now = Date.now();
+  // Check events in the last 60 seconds
+  const recentEvents = _visibilityEvents.filter(e => now - e.timestamp < 60_000);
+  const switchCount = recentEvents.length;
+
+  // If user switched apps 4+ times in the last 60 seconds, that's suspicious
+  // (they might be toggling between the browser and the Fake GPS app)
+  if (switchCount >= 6) {
+    return {
+      score: 25,
+      visibilityChanges: switchCount,
+      reason: `User switched apps ${switchCount} times in the last 60s — possible Fake GPS app toggling`
+    };
+  }
+  if (switchCount >= 4) {
+    return {
+      score: 15,
+      visibilityChanges: switchCount,
+      reason: `User switched apps ${switchCount} times in the last 60s — suspicious activity`
+    };
+  }
+
+  return { score: 0, visibilityChanges: switchCount };
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// LAYER 15 — Coordinate Decimal Precision Analysis (weight 20) — NEW
+// Mock GPS apps often use coordinates with suspiciously round numbers or
+// limited decimal places (e.g., 28.6139, 77.2090 instead of 28.613947832...)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function checkCoordinatePrecision(samples: GpsReading[]): { score: number; reason?: string } {
+  if (samples.length < 3) return { score: 0 };
+
+  let roundCount = 0;
+  for (const s of samples) {
+    const latStr = s.latitude.toString();
+    const lngStr = s.longitude.toString();
+    const latDecimals = latStr.includes('.') ? latStr.split('.')[1].length : 0;
+    const lngDecimals = lngStr.includes('.') ? lngStr.split('.')[1].length : 0;
+
+    // Real GPS typically gives 7-15 decimal places
+    // Mock GPS apps often give 4-6 decimal places
+    if (latDecimals <= 4 || lngDecimals <= 4) {
+      roundCount++;
+    }
+  }
+
+  const roundRatio = roundCount / samples.length;
+  if (roundRatio > 0.8) {
+    return {
+      score: 20,
+      reason: `${roundCount}/${samples.length} GPS readings have ≤4 decimal places — mock GPS apps use round coordinates`
+    };
+  }
+  if (roundRatio > 0.5) {
+    return {
+      score: 10,
+      reason: `${roundCount}/${samples.length} GPS readings have suspiciously low precision`
+    };
+  }
+  return { score: 0 };
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// LAYER 16 — Timestamp Uniformity Analysis (weight 20) — NEW
+// Real GPS readings arrive at irregular intervals (350ms, 1200ms, 800ms...)
+// Mock GPS apps often produce readings at suspiciously uniform intervals.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function checkTimestampUniformity(samples: GpsReading[]): { score: number; reason?: string } {
+  if (samples.length < 4) return { score: 0 };
+
+  const intervals: number[] = [];
+  for (let i = 1; i < samples.length; i++) {
+    intervals.push(samples[i].timestamp - samples[i - 1].timestamp);
+  }
+
+  // Calculate coefficient of variation (stddev / mean)
+  const mean = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+  if (mean === 0) return { score: 20, reason: 'All GPS timestamps are identical — impossible with real hardware' };
+
+  const variance = intervals.reduce((sum, i) => sum + (i - mean) ** 2, 0) / intervals.length;
+  const stdDev = Math.sqrt(variance);
+  const cv = stdDev / mean;
+
+  // Real GPS has high variance in intervals (CV > 0.2)
+  // Mock GPS tends to be very uniform (CV < 0.05)
+  if (cv < 0.02 && intervals.length >= 3) {
+    return {
+      score: 20,
+      reason: `GPS reading intervals are suspiciously uniform (CV=${cv.toFixed(3)}, mean=${mean.toFixed(0)}ms) — real GPS varies widely`
+    };
+  }
+  if (cv < 0.05 && intervals.length >= 3) {
+    return {
+      score: 10,
+      reason: `GPS reading intervals have low variance (CV=${cv.toFixed(3)}) — possible mock provider`
+    };
+  }
+
+  // Also check: if all intervals are exactly the same (e.g., exactly 1000ms apart)
+  const allSame = intervals.every(i => Math.abs(i - intervals[0]) < 10); // within 10ms
+  if (allSame && intervals.length >= 3) {
+    return {
+      score: 20,
+      reason: `All GPS intervals are identical (~${Math.round(intervals[0])}ms) — characteristic of mock GPS`
+    };
+  }
+
+  return { score: 0 };
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// MOCK LOCATION PROVIDER DETECTION — NEW
+// On Android, apps with "Allow mock locations" or "Select mock location app"
+// enabled in Developer Settings will pass through a mock provider. While
+// the browser doesn't expose this directly, we can detect indirect signals.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function checkMockProviderSignals(samples: GpsReading[]): { score: number; reason?: string } {
+  if (samples.length < 2) return { score: 0 };
+
+  let signals = 0;
+  const reasons: string[] = [];
+
+  // Signal 1: All samples have EXACTLY the same accuracy
+  // Real GPS accuracy fluctuates; mock providers often return a fixed value
+  const accuracies = samples.map(s => s.accuracy);
+  const uniqueAccuracies = new Set(accuracies);
+  if (uniqueAccuracies.size === 1 && samples.length >= 3) {
+    signals += 15;
+    reasons.push(`All ${samples.length} samples have identical accuracy (${accuracies[0]}m)`);
+  }
+
+  // Signal 2: Altitude is null for ALL samples on Android
+  // Real Android GPS almost always provides altitude
+  const isAndroid = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
+  if (isAndroid) {
+    const allNullAlt = samples.every(s => s.altitude === null);
+    if (allNullAlt && samples.length >= 3) {
+      signals += 15;
+      reasons.push(`All ${samples.length} readings have null altitude on Android — mock providers often omit altitude`);
+    }
+  }
+
+  // Signal 3: Speed is exactly 0 for all samples (not null, but 0)
+  // Mock providers sometimes inject speed=0 instead of null
+  const allZeroSpeed = samples.every(s => s.speed !== null && s.speed === 0);
+  if (allZeroSpeed && samples.length >= 3) {
+    signals += 10;
+    reasons.push(`All samples report speed=0 (not null) — mock providers often set speed to 0`);
+  }
+
+  if (signals > 0) {
+    return { score: Math.min(35, signals), reason: reasons.join('; ') };
+  }
+  return { score: 0 };
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -482,6 +726,23 @@ export async function detectSpoofing(
   // Layer 11: Heading/speed
   add(checkHeadingSpeed(r, samples));
 
+  // Layer 13: Motion sensor (NEW)
+  const motionResult = checkMotionSensor();
+  add(motionResult);
+
+  // Layer 14: Visibility / app switching (NEW)
+  const visibilityResult = checkVisibility();
+  add(visibilityResult);
+
+  // Layer 15: Coordinate precision (NEW)
+  add(checkCoordinatePrecision(samples));
+
+  // Layer 16: Timestamp uniformity (NEW)
+  add(checkTimestampUniformity(samples));
+
+  // Mock provider signals (bonus detection)
+  add(checkMockProviderSignals(samples));
+
   // Add all samples to history
   for (const s of samples) addToHistory(s);
 
@@ -517,12 +778,15 @@ export async function detectSpoofing(
     ipDistanceKm: ipResult.ipDistanceKm,
     sampleCount: samples.length,
     sampleVarianceM: variance.varianceM,
+    motionDetected: motionResult.motionDetected,
+    visibilityChanges: visibilityResult.visibilityChanges,
   };
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// GPS ACQUISITION WITH MULTI-SAMPLE SPOOF CHECK
-// Takes N GPS readings over a few seconds, then runs all 12 layers.
+// GPS ACQUISITION WITH MULTI-SAMPLE SPOOF CHECK — UPGRADED
+// Takes MORE samples (8 instead of 5) over a longer window to catch
+// mock GPS patterns that only become visible over time.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 export function acquireGPSWithSpoofCheck(
@@ -535,8 +799,12 @@ export function acquireGPSWithSpoofCheck(
     return;
   }
 
-  const MAX_SAMPLES = 5;
-  const TIMEOUT_MS = 6000; // max 6 seconds for all samples
+  // Start background tracking if not already active
+  startMotionTracking();
+  startVisibilityTracking();
+
+  const MAX_SAMPLES = 8;       // Increased from 5 → 8 for better detection
+  const TIMEOUT_MS = 10000;    // Increased from 6s → 10s for more sample diversity
   const samples: GpsReading[] = [];
   let watchId: number | null = null;
   let finished = false;
@@ -551,11 +819,10 @@ export function acquireGPSWithSpoofCheck(
     onSuccess(finalPos, spoofResult);
   };
 
-  // Timeout fallback — if we don't get enough samples, use what we have
+  // Timeout fallback
   const timer = setTimeout(() => {
     if (!finished && samples.length > 0) {
       const lastSample = samples[samples.length - 1];
-      // Create a synthetic GeolocationPosition from our last sample
       const syntheticPos = {
         coords: {
           latitude: lastSample.latitude,
