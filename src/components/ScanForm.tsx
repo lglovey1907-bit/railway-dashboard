@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Loader2, MapPin, Camera, AlertTriangle, ShieldCheck } from "lucide-react";
+import { CheckCircle2, Loader2, MapPin, Camera, AlertTriangle, ShieldCheck, Footprints } from "lucide-react";
 import { distanceMeters } from "@/lib/geo";
 import { acquireGPSWithSpoofCheck, type SpoofResult } from "@/lib/geo/spoofDetector";
 import { LiveSelfieCamera } from "@/components/camera/LiveSelfieCamera";
+import { WalkChallenge } from "@/components/camera/WalkChallenge";
 
 type Props = {
   secret: string;
@@ -26,6 +27,8 @@ export default function ScanForm({ secret, label, station, stationLat, stationLn
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error" | "processing">("idle");
   const [message, setMessage] = useState("");
   const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [walkPassed, setWalkPassed] = useState(false);
+  const [walkReason, setWalkReason] = useState("");
 
   const processPhoto = (file: File) => {
     setStatus("processing");
@@ -233,9 +236,37 @@ export default function ScanForm({ secret, label, station, stationLat, stationLn
             )}
           </div>
 
+          {/* Step 3: Walk Verification Challenge — shown after selfie is taken */}
+          {photoUrl && !walkPassed && status !== "loading" && status !== "processing" && (
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Step 3: Walk Verification</label>
+              <WalkChallenge
+                onComplete={(result) => {
+                  if (result.passed) {
+                    setWalkPassed(true);
+                    setWalkReason(result.reason);
+                  } else {
+                    setWalkPassed(false);
+                    setWalkReason(result.reason);
+                    setStatus("error");
+                    setMessage(`🚫 ${result.reason}`);
+                  }
+                }}
+              />
+            </div>
+          )}
+
+          {/* Walk passed badge */}
+          {walkPassed && (
+            <div className="flex items-center gap-2 bg-green-50 text-green-700 border border-green-200 px-3 py-2 rounded-lg text-xs font-semibold">
+              <Footprints size={14} />
+              Walk Verified — {walkReason}
+            </div>
+          )}
+
           <button
             type="submit"
-            disabled={status === "loading" || status === "processing" || !name.trim() || !photo}
+            disabled={status === "loading" || status === "processing" || !name.trim() || !photo || !walkPassed}
             className="w-full bg-[#0b1f3a] text-white p-3.5 rounded-xl font-bold text-lg hover:bg-slate-800 disabled:opacity-50 flex justify-center items-center gap-2 transition-colors mt-2"
           >
             {status === "loading" || status === "processing" ? (
