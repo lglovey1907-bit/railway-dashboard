@@ -4,6 +4,7 @@ import { useState } from "react";
 import { CheckCircle2, Loader2, MapPin, Camera, AlertTriangle, ShieldCheck } from "lucide-react";
 import { distanceMeters } from "@/lib/geo";
 import { acquireGPSWithSpoofCheck, type SpoofResult } from "@/lib/geo/spoofDetector";
+import { LiveSelfieCamera } from "@/components/camera/LiveSelfieCamera";
 
 type Props = {
   secret: string;
@@ -24,6 +25,7 @@ export default function ScanForm({ secret, label, station, stationLat, stationLn
 
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error" | "processing">("idle");
   const [message, setMessage] = useState("");
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
 
   const processPhoto = (file: File) => {
     setStatus("processing");
@@ -109,14 +111,9 @@ export default function ScanForm({ secret, label, station, stationLat, stationLn
     );
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      processPhoto(file);
-    } else {
-      setPhoto(null);
-      setPhotoUrl(null);
-    }
+  const handleCapture = (file: File) => {
+    setIsCameraOpen(false);
+    processPhoto(file);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -211,19 +208,16 @@ export default function ScanForm({ secret, label, station, stationLat, stationLn
             <label className="block text-sm font-semibold text-slate-700 mb-1.5">Take Selfie (Mandatory)</label>
             {!photoUrl ? (
               <div className="relative">
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="user"
-                  onChange={handleFileChange}
+                <button
+                  type="button"
+                  onClick={() => setIsCameraOpen(true)}
                   disabled={status === "loading" || status === "processing"}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                />
-                <div className="w-full border-2 border-dashed border-slate-300 rounded-xl p-6 flex flex-col items-center justify-center text-slate-500 bg-slate-50 hover:bg-slate-100 transition-colors">
+                  className="w-full border-2 border-dashed border-slate-300 rounded-xl p-6 flex flex-col items-center justify-center text-slate-500 bg-slate-50 hover:bg-slate-100 transition-colors"
+                >
                   <Camera size={32} className="mb-2 text-slate-400" />
-                  <span className="font-medium">Tap to take selfie</span>
-                  <span className="text-xs mt-1 text-slate-400 text-center">GPS coordinates will be verified</span>
-                </div>
+                  <span className="font-medium">Open Smart Camera</span>
+                  <span className="text-xs mt-1 text-slate-400 text-center">Face detection & GPS verification required</span>
+                </button>
               </div>
             ) : (
               <div className="relative">
@@ -272,6 +266,13 @@ export default function ScanForm({ secret, label, station, stationLat, stationLn
           )}
         </form>
       </div>
+
+      {isCameraOpen && (
+        <LiveSelfieCamera 
+          onCapture={handleCapture}
+          onCancel={() => setIsCameraOpen(false)}
+        />
+      )}
     </div>
   );
 }
