@@ -29,6 +29,7 @@ export default function ScanForm({ secret, label, station, stationLat, stationLn
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [walkPassed, setWalkPassed] = useState(false);
   const [walkReason, setWalkReason] = useState("");
+  const [photoReady, setPhotoReady] = useState(false);
 
   const processPhoto = (file: File) => {
     setStatus("processing");
@@ -95,6 +96,7 @@ export default function ScanForm({ secret, label, station, stationLat, stationLn
               const newFile = new File([blob], file.name, { type: file.type });
               setPhoto(newFile);
               setPhotoUrl(URL.createObjectURL(newFile));
+              setPhotoReady(true);
               setStatus("idle");
             }
           }, file.type);
@@ -227,7 +229,7 @@ export default function ScanForm({ secret, label, station, stationLat, stationLn
                 <img src={photoUrl} className="w-full h-48 object-cover rounded-xl border border-slate-200" />
                 <button
                   type="button"
-                  onClick={() => { setPhoto(null); setPhotoUrl(null); }}
+                  onClick={() => { setPhoto(null); setPhotoUrl(null); setPhotoReady(false); setWalkPassed(false); setWalkReason(""); setStatus("idle"); }}
                   className="absolute top-2 right-2 bg-slate-900/60 backdrop-blur text-white text-xs px-3 py-1.5 rounded-lg font-medium hover:bg-slate-900/80"
                 >
                   Retake
@@ -236,8 +238,8 @@ export default function ScanForm({ secret, label, station, stationLat, stationLn
             )}
           </div>
 
-          {/* Step 3: Walk Verification Challenge — shown after selfie is taken */}
-          {photoUrl && !walkPassed && status !== "loading" && status !== "processing" && (
+          {/* Step 3: Walk Verification Challenge — always shown after selfie is ready */}
+          {photoReady && !walkPassed && (
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1.5">Step 3: Walk Verification</label>
               <WalkChallenge
@@ -245,6 +247,7 @@ export default function ScanForm({ secret, label, station, stationLat, stationLn
                   if (result.passed) {
                     setWalkPassed(true);
                     setWalkReason(result.reason);
+                    setStatus("idle");
                   } else {
                     setWalkPassed(false);
                     setWalkReason(result.reason);
