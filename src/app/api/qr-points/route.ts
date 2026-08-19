@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const { rows } = await sql`
-      SELECT id, station_id, label, secret_token, created_at
+      SELECT id, station_id, label, secret_token, latitude, longitude, created_at
       FROM qr_points
       WHERE station_id = ${stationId}
       ORDER BY created_at DESC
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { station_id, label } = body;
+    const { station_id, label, latitude, longitude } = body;
 
     if (!station_id || !label) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -36,8 +36,8 @@ export async function POST(req: NextRequest) {
     const secret_token = crypto.randomUUID();
 
     const { rows } = await sql`
-      INSERT INTO qr_points (station_id, label, secret_token)
-      VALUES (${station_id}, ${label}, ${secret_token})
+      INSERT INTO qr_points (station_id, label, secret_token, latitude, longitude)
+      VALUES (${station_id}, ${label}, ${secret_token}, ${latitude || null}, ${longitude || null})
       RETURNING *
     `;
 

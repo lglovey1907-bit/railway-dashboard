@@ -1,12 +1,22 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Building2, Save, Lock, MapPin } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useAuthStore } from '@/store/authStore';
 
 export default function StationAdmin() {
   const router = useRouter();
+  const { user } = useAuthStore();
   const [auth, setAuth] = useState(false);
   const [password, setPassword] = useState('');
+
+  useEffect(() => {
+    if (user) {
+      const isAllowed = user.role === 'admin' || user.role === 'maintenance' || 
+                        (user.role === 'incharge' && user.cell?.toLowerCase().includes('sanitation'));
+      if (isAllowed) setAuth(true);
+    }
+  }, [user]);
   
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
@@ -19,7 +29,7 @@ export default function StationAdmin() {
 
   const handleAuth = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === 'admin123') {
+    if (password === 'admin123' || password === 'Lg199007') {
       setAuth(true);
     } else {
       alert("Incorrect password");

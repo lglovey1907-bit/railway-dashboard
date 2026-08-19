@@ -278,14 +278,16 @@ export default function DynamicCellPage() {
     </div>
   );
 
-  // Enterprise full-height layout — sidebar + canvas fills the viewport
+    const canManage = canManageCellStructure(user, cell.name);
+
   return (
-    <div className="-m-6 overflow-hidden" style={{ height: 'calc(100vh - 60px)' }}>
+    <div className="space-y-4">
+      <CellHeader cell={cell} canManage={canManage} onAddBlock={(type, title) => setPendingWidget({ type, title })} />
+      <StaffBar cell={cell.name} canManage={canManage} />
       <WorkspaceBuilder
         cell={cell.name}
         pendingWidget={pendingWidget}
         onPendingConsumed={() => setPendingWidget(null)}
-        enterprise
       />
     </div>
   );

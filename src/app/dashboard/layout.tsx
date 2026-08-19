@@ -104,7 +104,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           <TopBar title={info.title} subtitle={info.subtitle}/>
           {/* pb-16 on mobile clears the fixed bottom nav */}
-          <main className="flex-1 overflow-y-auto p-6 custom-scroll pb-20 md:pb-6">
+          <main className="flex-1 overflow-x-auto overflow-y-auto p-4 md:p-6 custom-scroll pb-20 md:pb-6">
             {children}
           </main>
         </div>

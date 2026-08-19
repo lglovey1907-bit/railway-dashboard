@@ -341,14 +341,14 @@ export function Sidebar() {
       {/* Backdrop */}
       {isMobileOpen && (
         <div
-          className="fixed inset-0 z-[1100] bg-black/40 backdrop-blur-sm md:hidden"
+          className="fixed inset-0 z-[1350] bg-black/40 backdrop-blur-sm md:hidden"
           onClick={handleBackdropClick}
         />
       )}
 
       {/* Slide-in drawer */}
       <div className={cn(
-        'fixed inset-y-0 left-0 z-[1200] flex flex-col w-[280px] bg-white border-r border-slate-200 shadow-2xl md:hidden',
+        'fixed top-0 left-0 z-[1400] flex flex-col w-[280px] bg-white border-r border-slate-200 shadow-2xl md:hidden h-[100dvh]',
         'transition-transform duration-250 ease-in-out',
         isMobileOpen ? 'translate-x-0' : '-translate-x-full'
       )}>
@@ -373,7 +373,7 @@ export function Sidebar() {
         <NavContent onLinkClick={() => setMobileOpen(false)}/>
 
         {/* Drawer footer */}
-        <div className="border-t border-slate-100 p-3">
+        <div className="border-t border-slate-100 p-3 pb-[calc(env(safe-area-inset-bottom)+12px)] shrink-0">
           <div className="flex items-center gap-2.5 px-2 py-2 rounded-lg">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-rail-500 to-rail-700 flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0">
               {initials}

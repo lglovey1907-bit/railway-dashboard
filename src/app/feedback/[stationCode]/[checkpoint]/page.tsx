@@ -14,14 +14,24 @@ export default async function FeedbackPage({ params }: { params: { stationCode: 
 
   const station = rows[0];
 
+  // Try to find precise coordinates for this specific checkpoint label
+  const { rows: pointRows } = await sql`
+    SELECT latitude, longitude FROM qr_points 
+    WHERE station_id = ${station.id} AND label = ${checkpoint}
+  `;
+
+  const point = pointRows[0];
+  const targetLat = point?.latitude || station.latitude;
+  const targetLng = point?.longitude || station.longitude;
+
   return (
     <FeedbackForm 
       stationId={station.id}
       stationCode={code} 
       stationName={station.name} 
       checkpointLabel={checkpoint}
-      stationLat={station.latitude} 
-      stationLng={station.longitude} 
+      stationLat={targetLat} 
+      stationLng={targetLng} 
     />
   );
 }

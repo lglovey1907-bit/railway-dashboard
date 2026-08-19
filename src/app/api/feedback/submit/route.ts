@@ -31,14 +31,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Rate limit exceeded. Try again later." }, { status: 429 });
     }
 
-    // 1. Verify Geofence (Station GPS check)
+    // 1. Verify Geofence (Station GPS check with precise checkpoint fallback)
     const { rows } = await sql`SELECT latitude, longitude, geofence_m FROM stations WHERE id = ${stationId}`;
     const station = rows[0];
     if (!station) {
       return NextResponse.json({ error: "Invalid station" }, { status: 400 });
     }
 
-    const distance = distanceMeters(latitude, longitude, station.latitude, station.longitude);
+    const { rows: pointRows } = await sql`
+      SELECT latitude, longitude FROM qr_points 
+      WHERE station_id = ${stationId} AND label = ${checkpointLabel}
+    `;
+    const targetLat = pointRows[0]?.latitude || station.latitude;
+    const targetLng = pointRows[0]?.longitude || station.longitude;
+
+    const distance = distanceMeters(latitude, longitude, targetLat, targetLng);
     if (distance > (station.geofence_m || 200)) {
       return NextResponse.json({ error: "You must be inside the station to submit feedback." }, { status: 400 });
     }

@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function ScanPage({ params }: { params: { secret: string } }) {
   const { rows } = await sql`
-    SELECT p.id, p.label, p.secret_token, s.name as station_name, s.latitude, s.longitude 
+    SELECT p.id, p.label, p.secret_token, p.latitude as pt_lat, p.longitude as pt_lng, s.name as station_name, s.latitude as st_lat, s.longitude as st_lng 
     FROM qr_points p
     JOIN stations s ON s.id = p.station_id
     WHERE p.secret_token = ${params.secret}
@@ -28,5 +28,8 @@ export default async function ScanPage({ params }: { params: { secret: string } 
     );
   }
 
-  return <ScanForm secret={point.secret_token} label={point.label} station={point.station_name} stationLat={point.latitude} stationLng={point.longitude} />;
+  const targetLat = point.pt_lat || point.st_lat;
+  const targetLng = point.pt_lng || point.st_lng;
+
+  return <ScanForm secret={point.secret_token} label={point.label} station={point.station_name} stationLat={targetLat} stationLng={targetLng} />;
 }
