@@ -1041,7 +1041,7 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  </td>
 
  {/* Label cell */}
- <td data-label={table.labelName || 'Name'} className="border-r border-slate-100 px-2 py-1.5 font-medium text-slate-700"
+ <td data-label={table.firstColLabel || 'Name'} className="border-r border-slate-100 px-2 py-1.5 font-medium text-slate-700"
  style={{ width: colWidths['__label__'] ?? 140 }}>
  {isLinked ? (
  <span className="whitespace-pre-wrap break-words block text-xs">{labelVal}</span>
