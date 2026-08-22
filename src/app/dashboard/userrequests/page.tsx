@@ -89,6 +89,7 @@ function RequestCard({ req, onApprove, onReject, onClarify, isAdmin }: {
  const [expanded, setExpanded] = useState(false);
  const [showReject, setShowReject] = useState(false);
  const [showClarify, setShowClarify] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
  const TypeIcon = REQ_TYPE_ICONS[req.type];
  const typeColor = REQ_TYPE_COLORS[req.type];
  const ss = REQ_STATUS_STYLE[req.status];
