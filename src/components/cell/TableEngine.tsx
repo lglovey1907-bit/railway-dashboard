@@ -1082,7 +1082,7 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  const isEditing = editing?.rId === row.id && editing?.fId === field.id;
  return (
  <td key={field.id}
- data-label={field.name}
+ data-label={field.label}
  className={cn(
  'border-r border-slate-100 px-2',
  field.frozen ? 'sticky left-0 bg-white z-[1]' : '',
