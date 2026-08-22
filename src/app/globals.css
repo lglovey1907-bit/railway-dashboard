@@ -415,3 +415,11 @@
   background: #F0F4F8;
   color: #0F172A;
 }
+
+@layer base {
+  /* Global keyboard focus ring for accessibility */
+  :focus-visible {
+    outline: 2px solid var(--blue-600);
+    outline-offset: 2px;
+  }
+}

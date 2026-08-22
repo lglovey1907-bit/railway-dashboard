@@ -13,7 +13,7 @@ import {
  ClipboardList, Search, CheckCircle2, XCircle, MessageSquare,
  Clock, ArrowRight, UserPlus, UserMinus, ArrowLeftRight,
  ChevronDown, ChevronUp, AlertTriangle, Check, X, RefreshCw,
- Filter,
+ Filter, Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -129,9 +129,9 @@ function RequestCard({ req, onApprove, onReject, onClarify, isAdmin }: {
 
  {isPending && isAdmin && (
  <div className="flex items-center gap-1.5 shrink-0">
- <button onClick={onApprove}
- className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
- <Check size={12}/> Approve
+ <button onClick={async () => { setIsSubmitting(true); await onApprove(); setIsSubmitting(false); }} disabled={isSubmitting}
+ className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-emerald-600 text-white hover:bg-emerald-700 transition-colors disabled:opacity-50">
+ {isSubmitting ? <Loader2 size={12} className="animate-spin" /> : <Check size={12}/>} Approve
  </button>
  <button onClick={() => setShowReject(true)}
  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-red-600 text-white hover:bg-red-700 transition-colors">
@@ -164,6 +164,7 @@ export default function UserRequestsPage() {
  const [filterType, setFilterType] = useState<RequestType | 'all'>('all');
  const [filterStatus, setFilterStatus] = useState<RequestStatus | 'all'>('pending');
  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+ const [isSubmittingBulk, setIsSubmittingBulk] = useState(false);
 
  const refresh = () => setRequests(getAllRequests());
  useEffect(() => { refresh(); }, []);
@@ -188,18 +189,18 @@ export default function UserRequestsPage() {
  total: requests.length,
  }), [requests]);
 
- const handleApprove = (req: UserRequest) => {
+ const handleApprove = async (req: UserRequest) => {
  if (!currentUser) return;
- resolveRequest(req.id, 'approved', currentUser.id, currentUser.name);
+ await resolveRequest(req.id, 'approved', currentUser.id, currentUser.name);
  // Apply the effect based on request type
  if (req.type === 'add' && req.targetEmployeeId) {
- setUserStatus(req.targetEmployeeId, 'active');
+ await setUserStatus(req.targetEmployeeId, 'active');
  const membership = getAllMemberships().find(m => m.employeeId === req.targetEmployeeId && m.approvalStatus === 'pending');
- if (membership) approveMembership(membership.id, currentUser.id, currentUser.name);
+ if (membership) await approveMembership(membership.id, currentUser.id, currentUser.name);
  addAudit(req.targetEmployeeId, 'Add request approved', currentUser.id, currentUser.name);
  }
  if (req.type === 'remove' && req.targetEmployeeId) {
- setUserStatus(req.targetEmployeeId, 'inactive');
+ await setUserStatus(req.targetEmployeeId, 'inactive');
  addAudit(req.targetEmployeeId, 'Remove request approved — user deactivated', currentUser.id, currentUser.name);
  }
  if (req.type === 'transfer' && req.targetEmployeeId) {
@@ -221,9 +222,11 @@ export default function UserRequestsPage() {
  refresh();
  };
 
- const handleBulkApprove = () => {
- requests.filter(r => selectedIds.has(r.id) && r.status === 'pending').forEach(r => handleApprove(r));
+ const handleBulkApprove = async () => {
+ setIsSubmittingBulk(true);
+ for (const r of requests.filter(r => selectedIds.has(r.id) && r.status === 'pending')) { await handleApprove(r); }
  setSelectedIds(new Set());
+ setIsSubmittingBulk(false);
  };
 
  if (!isAdmin) return null;
@@ -281,9 +284,9 @@ export default function UserRequestsPage() {
  {(Object.keys(REQUEST_TYPE_LABELS) as RequestType[]).map(t => <option key={t} value={t}>{REQUEST_TYPE_LABELS[t]}</option>)}
  </select>
  {selectedIds.size > 0 && (
- <button onClick={handleBulkApprove}
- className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm hover:bg-emerald-700 transition-colors">
- <Check size={13}/> Approve Selected ({selectedIds.size})
+ <button onClick={handleBulkApprove} disabled={isSubmittingBulk}
+ className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm hover:bg-emerald-700 transition-colors disabled:opacity-50">
+ {isSubmittingBulk ? <Loader2 size={13} className="animate-spin" /> : <Check size={13}/>} Approve Selected ({selectedIds.size})
  </button>
  )}
  </div>

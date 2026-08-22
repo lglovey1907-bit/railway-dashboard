@@ -88,14 +88,14 @@ export function getUserStatusOverrides(): Record<string, UserStatus> {
  return safeGet<Record<string, UserStatus>>(USER_STATUS_KEY, {});
 }
 
-export function setUserStatus(employeeId: string, status: UserStatus): void {
+export async function setUserStatus(employeeId: string, status: UserStatus): Promise<void> {
  const all = getUserStatusOverrides();
  all[employeeId] = status;
  if (typeof window !== 'undefined') localStorage.setItem(USER_STATUS_KEY, JSON.stringify(all));
  // Best-effort sync to server so the status change is visible on other devices/browsers
  try {
  const { pushStatusToServer } = require('./staffDB');
- pushStatusToServer(employeeId, status);
+ await pushStatusToServer(employeeId, status);
  } catch { /* non-critical */ }
 }
 
@@ -156,7 +156,7 @@ export const USER_STATUS_LABELS: Record<UserStatus, string> = {
 
 export const USER_STATUS_COLORS: Record<UserStatus, string> = {
  active: 'bg-emerald-100 text-emerald-700 border-emerald-300 ',
- pending: 'bg-amber-100 text-amber-700 border-amber-300 ',
+ pending: 'bg-amber-100 text-amber-900 border-amber-300 ',
  inactive: 'bg-slate-100 text-slate-500 border-slate-300 ',
  suspended: 'bg-red-100 text-red-700 border-red-300 ',
  rejected: 'bg-red-100 text-red-600 border-red-200 ',

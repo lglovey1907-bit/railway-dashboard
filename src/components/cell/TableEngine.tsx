@@ -797,7 +797,7 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  </div>
 
  {/* ── Grid ── */}
- <div className="overflow-auto max-h-[600px]">
+ <div className="overflow-auto max-h-[600px] table-responsive">
  <table className="border-collapse text-xs" style={{ minWidth: '100%' }}>
  <thead className="sticky top-0 z-10">
 
@@ -1016,7 +1016,7 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  )}>
 
  {/* Row number + drag handle (only handle is draggable) */}
- <td className="w-8 border-r border-slate-100 align-middle">
+ <td data-label="S.No" className="w-8 border-r border-slate-100 align-middle">
  <div className="relative flex items-center justify-center min-h-[28px]">
  {canManage && !isLinked ? (
  <>
@@ -1041,7 +1041,7 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  </td>
 
  {/* Label cell */}
- <td className="border-r border-slate-100 px-2 py-1.5 font-medium text-slate-700"
+ <td data-label={table.labelName || 'Name'} className="border-r border-slate-100 px-2 py-1.5 font-medium text-slate-700"
  style={{ width: colWidths['__label__'] ?? 140 }}>
  {isLinked ? (
  <span className="whitespace-pre-wrap break-words block text-xs">{labelVal}</span>
@@ -1082,6 +1082,7 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  const isEditing = editing?.rId === row.id && editing?.fId === field.id;
  return (
  <td key={field.id}
+ data-label={field.name}
  className={cn(
  'border-r border-slate-100 px-2',
  field.frozen ? 'sticky left-0 bg-white z-[1]' : '',

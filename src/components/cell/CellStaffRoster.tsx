@@ -13,7 +13,7 @@ const ROLE_BADGE: Record<string, string> = {
  CMI: 'bg-indigo-500/15 text-indigo-700 border-indigo-500/25',
  COS: 'bg-violet-500/15 text-violet-700 border-violet-500/25',
  OS: 'bg-teal-500/15 text-teal-700 border-teal-500/25',
- Dealer: 'bg-amber-500/15 text-amber-700 border-amber-500/25',
+ Dealer: 'bg-amber-500/15 text-amber-900 border-amber-500/25',
  Peon: 'bg-slate-500/15 text-slate-600 border-slate-500/25',
 };
 
@@ -181,7 +181,7 @@ export function CellStaffRoster({ cell }: { cell: string }) {
       cls="bg-emerald-50 text-emerald-700 border-emerald-200"/>
      {stats.pending > 0 && (
       <StatPill icon={Clock} label="Pending" value={stats.pending}
-       cls="bg-amber-50 text-amber-700 border-amber-200"/>
+       cls="bg-amber-50 text-amber-900 border-amber-200"/>
      )}
      {Object.entries(roleCounts).map(([role, n]) => (
       <span key={role} className={cn('text-[9px] font-bold px-2 py-1 rounded-full border hidden sm:inline-flex', ROLE_BADGE[role] ?? ROLE_BADGE.Peon)}>
@@ -232,7 +232,7 @@ export function CellStaffRoster({ cell }: { cell: string }) {
           <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
            <p className="text-slate-900 text-sm font-semibold truncate">{u.name}</p>
            <div className="flex items-center gap-1 shrink-0">
-            {isPending && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-amber-100 text-amber-700 border-amber-300">Pending</span>}
+            {isPending && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-amber-100 text-amber-900 border-amber-300">Pending</span>}
             <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full border', roleCls)}>
              {u.workingAs ?? '—'}
             </span>

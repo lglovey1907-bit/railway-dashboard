@@ -8,7 +8,7 @@ import { useAuthStore } from '@/store/authStore';
 import { canManageCellStructure } from '@/lib/cellData/useCellDataStructure';
 import {
  UserCheck, UserX, Clock, CheckCircle2, XCircle, AlertTriangle,
- ChevronDown, ChevronUp, Mail, Phone, Briefcase,
+ ChevronDown, ChevronUp, Mail, Phone, Briefcase, Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -22,26 +22,29 @@ function timeAgo(iso: string) {
 }
 
 const STATUS_STYLE: Record<string, { cls: string; icon: React.ElementType }> = {
- pending: { cls: 'bg-amber-100 text-amber-700 border-amber-300 ', icon: Clock },
- approved: { cls: 'bg-emerald-100 text-emerald-700 border-emerald-300 ', icon: CheckCircle2 },
- rejected: { cls: 'bg-red-100 text-red-700 border-red-300 ', icon: XCircle },
- suspended: { cls: 'bg-slate-100 text-slate-500 border-slate-300 ', icon: AlertTriangle },
+ pending: { cls: 'bg-amber-100 text-amber-900 border-amber-300 ', icon: Clock },
+ approved: { cls: 'bg-emerald-100 text-emerald-900 border-emerald-300 ', icon: CheckCircle2 },
+ rejected: { cls: 'bg-red-100 text-red-900 border-red-300 ', icon: XCircle },
+ suspended: { cls: 'bg-slate-100 text-slate-800 border-slate-300 ', icon: AlertTriangle },
 };
 
-function RejectDialog({ onClose, onReject }: { onClose: () => void; onReject: (reason: string) => void }) {
+function RejectDialog({ onClose, onReject }: { onClose: () => void; onReject: (reason: string) => Promise<void> }) {
  const [reason, setReason] = useState('');
+ const [isPending, setIsPending] = useState(false);
  return (
  <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"onClick={onClose}>
  <div className="bg-white border border-slate-200 rounded-2xl p-6 w-full max-w-sm shadow-2xl"onClick={e => e.stopPropagation()}>
  <h3 className="font-bold text-slate-900 mb-1">Reject Application</h3>
  <p className="text-xs text-slate-400 mb-3">Provide a reason so the employee can take corrective action.</p>
- <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3}
+ <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3} disabled={isPending}
  placeholder="e.g. Incomplete information, incorrect designation…"
- className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-red-400 resize-none mb-4"/>
+ className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-red-400 resize-none mb-4 disabled:opacity-50"/>
  <div className="flex gap-2 justify-end">
- <button onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-100 rounded-xl">Cancel</button>
- <button onClick={() => { if (reason.trim()) { onReject(reason); onClose(); } }} disabled={!reason.trim()}
- className="px-4 py-2 text-sm bg-red-600 text-white hover:bg-red-700 rounded-xl disabled:opacity-40">Reject</button>
+ <button onClick={onClose} disabled={isPending} className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-100 rounded-xl disabled:opacity-50">Cancel</button>
+ <button onClick={async () => { if (reason.trim()) { setIsPending(true); await onReject(reason); setIsPending(false); onClose(); } }} disabled={!reason.trim() || isPending}
+ className="flex items-center gap-2 px-4 py-2 text-sm bg-red-600 text-white hover:bg-red-700 rounded-xl disabled:opacity-40">
+ {isPending && <Loader2 size={14} className="animate-spin" />} Reject
+ </button>
  </div>
  </div>
  </div>
@@ -56,6 +59,7 @@ export function ApprovalQueue({ cell }: { cell: string }) {
  const [tab, setTab] = useState<'pending' | 'all'>('pending');
  const [expanded, setExpanded] = useState(true);
  const [rejectTarget, setRejectTarget] = useState<string | null>(null);
+ const [pendingId, setPendingId] = useState<string | null>(null);
 
  const refresh = () => {
  const all = getMembershipsForCell(cell);
@@ -141,10 +145,15 @@ export function ApprovalQueue({ cell }: { cell: string }) {
  </div>
  {m.approvalStatus === 'pending' && canManage && (
  <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
- <button onClick={() => {
- if (user) { approveMembership(m.id, user.id, user.name); refresh(); }
- }} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
- <UserCheck size={12}/> Approve
+ <button onClick={async () => {
+ if (user) { 
+ setPendingId(m.id);
+ await approveMembership(m.id, user.id, user.name); 
+ setPendingId(null);
+ refresh(); 
+ }
+ }} disabled={pendingId === m.id} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-emerald-600 text-white hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+ {pendingId === m.id ? <Loader2 size={12} className="animate-spin" /> : <UserCheck size={12}/>} Approve
  </button>
  <button onClick={() => setRejectTarget(m.id)}
  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-red-600 text-white hover:bg-red-700 transition-colors">
@@ -163,8 +172,11 @@ export function ApprovalQueue({ cell }: { cell: string }) {
  {rejectTarget && (
  <RejectDialog
  onClose={() => setRejectTarget(null)}
- onReject={(reason) => {
- if (user && rejectTarget) { rejectMembership(rejectTarget, user.id, user.name, reason); refresh(); }
+ onReject={async (reason) => {
+ if (user && rejectTarget) { 
+ await rejectMembership(rejectTarget, user.id, user.name, reason); 
+ refresh(); 
+ }
  }}
  />
  )}

@@ -32,12 +32,11 @@ function safeGet<T>(key: string, fallback: T): T {
 // Pushes a staff member's record + cell memberships + status to the server
 // (Vercel KV via /api/users) so approvals/edits made in one browser become
 // visible in any other browser/device. Best-effort, retried, non-blocking.
-export function pushEmployeeToServer(employeeId: string): void {
+export async function pushEmployeeToServer(employeeId: string): Promise<void> {
  if (typeof window === 'undefined') return;
  const staff = getStaffById(employeeId);
  if (!staff?.email) return;
  const memberships = getMembershipsForEmployee(employeeId);
- (async () => {
  const body = JSON.stringify({ email: staff.email, staffRecord: staff, memberships, status: staff.status });
  for (let i = 0; i < 4; i++) {
  try {
@@ -47,15 +46,13 @@ export function pushEmployeeToServer(employeeId: string): void {
  } catch { /* retry */ }
  if (i < 3) await new Promise(res => setTimeout(res, 1000 * (i + 1)));
  }
- })();
 }
 
 /** Push just a status override change (e.g. from rly_user_status_overrides) for an employee, keyed by email. */
-export function pushStatusToServer(employeeId: string, status: string): void {
+export async function pushStatusToServer(employeeId: string, status: string): Promise<void> {
  if (typeof window === 'undefined') return;
  const staff = getStaffById(employeeId);
  if (!staff?.email) return;
- (async () => {
  const body = JSON.stringify({ email: staff.email, status });
  for (let i = 0; i < 4; i++) {
  try {
@@ -65,7 +62,6 @@ export function pushStatusToServer(employeeId: string, status: string): void {
  } catch { /* retry */ }
  if (i < 3) await new Promise(res => setTimeout(res, 1000 * (i + 1)));
  }
- })();
 }
 
 export function getAllStaff(): StaffMember[] { return safeGet<StaffMember[]>(STAFF_KEY, []); }
@@ -118,7 +114,7 @@ export function getMembershipsForCell(cellName: string): CellMembership[] { retu
 export function getPendingForCell(cellName: string): CellMembership[] { return getMembershipsForCell(cellName).filter(m => m.approvalStatus === 'pending'); }
 export function getMembershipsForEmployee(id: string): CellMembership[] { return getAllMemberships().filter(m => m.employeeId === id); }
 
-export function approveMembership(membershipId: string, approverId: string, approverName: string): CellMembership | null {
+export async function approveMembership(membershipId: string, approverId: string, approverName: string): Promise<CellMembership | null> {
  const all = getAllMemberships(); const idx = all.findIndex(m => m.id === membershipId); if (idx < 0) return null;
  const now = new Date().toISOString();
  all[idx] = { ...all[idx], approvalStatus: 'approved', approvedBy: approverId, approvedByName: approverName, approvedAt: now };
@@ -126,11 +122,11 @@ export function approveMembership(membershipId: string, approverId: string, appr
  const staffAll = getAllStaff(); const sIdx = staffAll.findIndex(s => s.id === all[idx].employeeId);
  if (sIdx >= 0 && staffAll[sIdx].status === 'pending') { staffAll[sIdx] = { ...staffAll[sIdx], status: 'approved', lastUpdatedAt: now }; saveStaff(staffAll); }
  addAudit(all[idx].employeeId, `Approved for ${all[idx].cellName}`, approverId, approverName);
- pushEmployeeToServer(all[idx].employeeId);
+ await pushEmployeeToServer(all[idx].employeeId);
  return all[idx];
 }
 
-export function rejectMembership(membershipId: string, approverId: string, approverName: string, reason: string): CellMembership | null {
+export async function rejectMembership(membershipId: string, approverId: string, approverName: string, reason: string): Promise<CellMembership | null> {
  const all = getAllMemberships(); const idx = all.findIndex(m => m.id === membershipId); if (idx < 0) return null;
  all[idx] = { ...all[idx], approvalStatus: 'rejected', approvedBy: approverId, approvedByName: approverName, approvedAt: new Date().toISOString(), rejectedReason: reason };
  saveMemberships(all);
