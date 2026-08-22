@@ -8,6 +8,7 @@ import { useSidebarStore } from '@/store/sidebarStore';
 import { Sidebar, NAV_ITEMS } from '@/components/layout/Sidebar';
 import { TopBar } from '@/components/layout/TopBar';
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav';
+import { PendingRequestsToast } from '@/components/layout/PendingRequestsToast';
 import { ChangePasswordGate } from '@/components/auth/ChangePasswordGate';
 import { getCellBySlug } from '@/lib/cells/cellRegistry';
 
@@ -96,6 +97,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <>
+      <PendingRequestsToast />
       {user.mustChangePassword && !gatePassed && (
         <ChangePasswordGate onComplete={() => setGatePassed(true)}/>
       )}
