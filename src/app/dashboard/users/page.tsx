@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AnimatePresence, motion } from 'framer-motion';
+import UserRequestsPage from '../userrequests/page';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type DisplayUser = {
@@ -787,6 +788,7 @@ export default function UsersPage() {
  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'maintenance';
 
  const [search, setSearch] = useState('');
+ const [activeTab, setActiveTab] = useState<'directory' | 'requests'>('directory');
  const [filterCell, setFilterCell] = useState('all');
  const [filterRole, setFilterRole] = useState('all');
  const [filterStatus, setFilterStatus] = useState('all');
@@ -1402,8 +1404,8 @@ export default function UsersPage() {
  {/* Header */}
  <div className="flex items-center justify-between flex-wrap gap-3">
  <div>
- <h1 className="text-xl font-bold text-slate-900">User Management</h1>
- <p className="text-sm text-slate-400 mt-0.5">Central authority for all staff across all cells · Delhi Division</p>
+ <h1 className="text-xl font-bold text-slate-900">Staff Directory & Access</h1>
+ <p className="text-sm text-slate-400 mt-0.5">Central authority for all physical staff and digital user accounts · Delhi Division</p>
  </div>
  <div className="flex items-center gap-2 flex-wrap">
  <button onClick={handleExport} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-100 text-xs transition-colors">
@@ -1442,6 +1444,23 @@ export default function UsersPage() {
           )}
  </div>
  </div>
+
+
+ {/* Tabs */}
+ <div className="flex items-center gap-6 border-b border-slate-200">
+   <button onClick={() => setActiveTab('directory')} className={`pb-2.5 text-sm font-medium transition-colors border-b-2 ${activeTab === 'directory' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Staff Directory</button>
+   <button onClick={() => setActiveTab('requests')} className={`pb-2.5 text-sm font-medium transition-colors border-b-2 flex items-center gap-2 ${activeTab === 'requests' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+     Pending Requests
+     {getAllRequests().filter(r => r.status === 'pending').length > 0 && (
+       <span className="bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">{getAllRequests().filter(r => r.status === 'pending').length}</span>
+     )}
+   </button>
+ </div>
+
+ {activeTab === 'requests' ? (
+   <div className="pt-2"><UserRequestsPage /></div>
+ ) : (
+   <>
 
  {/* Server sync result banner */}
  {serverSyncResult && (
@@ -1707,6 +1726,9 @@ export default function UsersPage() {
   );
  })()}
  </div>
+
+ </>
+ )}
 
  {/* Modals */}
  <AnimatePresence>

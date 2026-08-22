@@ -36,14 +36,11 @@ const STATIC_TOP: NavItem[] = [
   { label: 'My Profile', href: '/dashboard/profile', icon: UserCircle },
 ];
 const STATIC_ADMIN: NavItem[] = [
-  { label: 'Users',          href: '/dashboard/users',        icon: Users2,        adminOnly: true },
-  { label: 'User Requests',  href: '/dashboard/userrequests', icon: ClipboardList, adminOnly: true },
-  { label: 'Cell Management',href: '/dashboard/cellmanager',  icon: LayoutGrid,    adminOnly: true },
-  { label: 'DRM Office Staff',href: '/dashboard/staff',       icon: Database,      adminOnly: true },
-  { label: 'Data Sources',   href: '/dashboard/datasources',  icon: Database,      adminOnly: true },
-  { label: 'Reports',        href: '/dashboard/reports',      icon: FileText },
-  { label: 'Confidential',   href: '/dashboard/confidential', icon: Shield },
-  { label: 'Settings',       href: '/dashboard/settings',     icon: Settings },
+  { label: 'Staff Directory', href: '/dashboard/users',        icon: Users2,        adminOnly: true },
+  { label: 'Cell Management', href: '/dashboard/cellmanager',  icon: LayoutGrid,    adminOnly: true },
+  { label: 'Data Sources',    href: '/dashboard/datasources',  icon: Database,      adminOnly: true },
+  { label: 'Reports',         href: '/dashboard/reports',      icon: FileText },
+  { label: 'Confidential',    href: '/dashboard/confidential', icon: Shield },
 ];
 
 export const NAV_ITEMS: NavItem[] = [
