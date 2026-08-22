@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import {
   Train, UserPlus, User as UserIcon, Briefcase, Building2, Mail,
   Phone, Lock, CheckCircle2, AlertCircle, ArrowLeft, Copy, Check,
@@ -224,8 +225,8 @@ export default function SignupPage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-rail-950 to-slate-900 flex flex-col items-center justify-center p-4">
       {/* Header */}
       <div className="flex items-center gap-3 mb-8">
-        <div className="w-10 h-10 rounded-xl bg-rail-600 flex items-center justify-center shadow-lg">
-          <Train size={20} className="text-white"/>
+        <div className="w-10 h-10 rounded-xl bg-white overflow-hidden p-0.5 shadow-lg flex items-center justify-center">
+          <Image src="/commercial_logo.png" alt="Commercial Logo" width={40} height={40} className="object-contain" priority />
         </div>
         <div>
           <p className="text-white font-bold text-lg leading-tight">Commercial Branch</p>

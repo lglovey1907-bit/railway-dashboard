@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { useSidebarStore } from '@/store/sidebarStore';
@@ -309,15 +310,15 @@ export function Sidebar() {
           {isCollapsed ? (
             /* Collapsed: just the train logo */
             <Tooltip label="Commercial Branch · Delhi Division">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-navy-800 to-rail-600 flex items-center justify-center shadow-sm flex-shrink-0">
-                <Train size={18} className="text-white"/>
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center shadow-sm flex-shrink-0 bg-white overflow-hidden">
+                <Image src="/commercial_logo.png" alt="Commercial Logo" width={36} height={36} className="object-contain" />
               </div>
             </Tooltip>
           ) : (
             /* Expanded: logo + text */
             <>
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-navy-800 to-rail-600 flex items-center justify-center shadow-sm flex-shrink-0">
-                <Train size={18} className="text-white"/>
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center shadow-sm flex-shrink-0 bg-white overflow-hidden">
+                <Image src="/commercial_logo.png" alt="Commercial Logo" width={36} height={36} className="object-contain" />
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-[13px] font-bold text-slate-900 leading-tight">Commercial Branch</p>
@@ -352,8 +353,8 @@ export function Sidebar() {
         {/* Drawer header */}
         <div className="flex items-center justify-between px-4 py-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-navy-800 to-rail-600 flex items-center justify-center shadow-sm">
-              <Train size={18} className="text-white"/>
+            <div className="w-9 h-9 rounded-xl bg-white overflow-hidden p-0.5 shadow-sm flex items-center justify-center">
+              <Image src="/commercial_logo.png" alt="Commercial Logo" width={36} height={36} className="object-contain" />
             </div>
             <div>
               <p className="text-[13px] font-bold text-slate-900 leading-tight">Commercial Branch</p>

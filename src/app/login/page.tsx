@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '@/store/authStore';
 import {
@@ -196,8 +197,8 @@ export default function LoginPage() {
 
  <div className="w-full max-w-md relative z-10">
  <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-8">
- <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-rail-400 to-rail-600 flex items-center justify-center shadow-xl shadow-rail-500/30 mb-5 mx-auto">
- <Train className="w-8 h-8 text-white"/>
+ <div className="w-32 h-32 rounded-3xl flex items-center justify-center shadow-2xl mb-5 mx-auto bg-white overflow-hidden p-2">
+ <Image src="/commercial_logo.png" alt="Commercial Logo" width={128} height={128} className="object-contain" priority />
  </div>
  <h1 className="text-white text-2xl font-bold">Commercial Branch Delhi Division</h1>
  <p className="text-white/40 text-sm mt-2">Northern Railway — Integrated Operations Dashboard</p>
