@@ -1511,7 +1511,7 @@ function parseDocForHandout(html: string, stationHint = ''): DocFields {
           let nums: string[] = [];
           
           // Try to extract from the same line if they are space separated
-          const inlineNums = lines[i].split(/[\s|]+/).slice(1).map(c => c.replace(/[^0-9.-]/g, '')).filter(c => c !== '' && c !== '-');
+          const inlineNums = lines[i].split(/[\s|]+/).slice(1).map(c => c.replace(/[^0-9.-]/g, '')).filter(c => c !== '').map(c => c === '-' ? '' : c);
           if (inlineNums.length > 0) {
              nums = inlineNums;
           } else {
