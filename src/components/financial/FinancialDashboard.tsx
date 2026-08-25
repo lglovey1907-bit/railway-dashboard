@@ -199,6 +199,12 @@ export function FinancialDashboard({
 
   // Pull shared financial data on mount
   useEffect(() => {
+    // Auto-rename OPT for existing users
+    const optHead = store.revenueHeads.find(h => h.id === 'rh-opt');
+    if (optHead && optHead.name === 'Originating Passenger Traffic (Million)') {
+      store.updateRevenueHead('rh-opt', { name: 'Transportation Output' });
+    }
+    
     pullSharedFinancialData();
     const handler = () => pullSharedFinancialData();
     window.addEventListener('rly_cloud_sync_complete', handler);
@@ -332,6 +338,10 @@ export function FinancialDashboard({
              // also handle "(with ATM)"
              if (rh.name.includes('(with ATM)')) {
                targetMap[rh.name.replace('(with ATM)', '').toLowerCase().trim()] = rh.id;
+             }
+             // Alias for Transportation Output in PDF
+             if (rh.id === 'rh-opt') {
+               targetMap['originating passenger traffic'] = rh.id;
              }
           }
         });

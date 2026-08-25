@@ -71,7 +71,7 @@ const SEED_HEADS: RevenueHead[] = [
 
   { id: 'rh-total', name: 'Over All Revenue', code: 'TOTAL', order: 27, isTotal: true, isActive: true, color: '#1e3a5f' },
   
-  { id: 'rh-opt', name: 'Originating Passenger Traffic (Million)', code: 'OPT', order: 28, isTotal: false, isActive: true, color: '#f43f5e', excludeFromGrandTotal: true },
+  { id: 'rh-opt', name: 'Transportation Output', code: 'OPT', order: 28, isTotal: false, isActive: true, color: '#f43f5e', excludeFromGrandTotal: true },
 ];
 
 // ── Helper to build a monthly record ─────────────────────────────────────────
