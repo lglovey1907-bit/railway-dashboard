@@ -2430,6 +2430,90 @@ ${sheet('Station Earning',[
   // ── Fetch & Fill from Google Doc ──────────────────────────────────────────
   const [fetchingDocId, setFetchingDocId] = useState<string | null>(null);
 
+  
+  const [fetchingFootfallId, setFetchingFootfallId] = useState<string | null>(null);
+
+  const fetchAndFillFootfallFromSheet = async (src: DataSource) => {
+    const csvUrl = toCSVUrl(src.url);
+    if (!csvUrl) {
+      setDsPreview({ id: src.id, text: '⚠ Invalid Google Sheet URL.', error: true });
+      return;
+    }
+    setFetchingFootfallId(src.id);
+    setDsPreview(null);
+    try {
+      const r = await fetch(csvUrl);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const txt = await r.text();
+      
+      // Basic CSV parsing
+      const lines = txt.split('\n').map(l => l.split(',').map(c => c.trim().replace(/^"|"$/g, '')));
+      
+      // We are looking for the insights on the left (col 0) and the tables on the right
+      let maxMonth = '', minMonth = '', highestDay = '', lowestDay = '';
+      let y1Label = '', y2Label = '';
+      let y1Data = [['','','',''],['','','',''],['','','','']];
+      let y2Data = [['','','',''],['','','',''],['','','','']];
+      
+      let currentYearIndex = 0;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        
+        // Insights
+        for (let j = 0; j < Math.min(2, line.length); j++) {
+          const cell = line[j].toLowerCase();
+          if (cell.includes('maximum footfall') || cell.includes('max footfall')) maxMonth = line[j];
+          if (cell.includes('minimum footfall') || cell.includes('min footfall')) minMonth = line[j];
+          if (cell.includes('highest footfall')) highestDay = line[j];
+          if (cell.includes('lowest footfall')) lowestDay = line[j];
+        }
+        
+        // Year labels (heuristic: looks like "202x" or has "upto")
+        const possibleYear = line.find(c => c.match(/20\d\d/) || c.toLowerCase().includes('upto'));
+        if (possibleYear && !possibleYear.toLowerCase().includes('month') && !possibleYear.toLowerCase().includes('highest')) {
+          if (currentYearIndex === 0) { y1Label = possibleYear; currentYearIndex = 1; }
+          else if (currentYearIndex === 1 && possibleYear !== y1Label) { y2Label = possibleYear; currentYearIndex = 2; }
+        }
+        
+        // Data Rows (UTS, PRS, Total)
+        const rowType = line.find(c => c.toUpperCase() === 'UTS' || c.toUpperCase() === 'PRS' || c.toUpperCase() === 'TOTAL' || (c.toUpperCase().includes('TOTAL') && c.length < 10));
+        if (rowType) {
+          const typeUpper = rowType.toUpperCase();
+          const rIdx = typeUpper.includes('UTS') ? 0 : (typeUpper.includes('PRS') ? 1 : 2);
+          
+          // Find the 4 numbers after the rowType
+          const typeColIdx = line.indexOf(rowType);
+          const nums = line.slice(typeColIdx + 1).map(c => c.replace(/[^0-9.-]/g, '')).filter(c => c !== '');
+          
+          // Pad to 4 cols
+          while (nums.length < 4) nums.push('');
+          
+          if (currentYearIndex === 1) {
+            y1Data[rIdx] = nums.slice(0, 4);
+          } else if (currentYearIndex === 2) {
+            y2Data[rIdx] = nums.slice(0, 4);
+          }
+        }
+      }
+      
+      if (!y1Label && !y2Label) {
+         setDsPreview({ id: src.id, text: '⚠ Could not find Footfall data in this sheet.', error: true });
+         setFetchingFootfallId(null);
+         return;
+      }
+      
+      upd({
+        ffComp: { maxMonth, minMonth, highestDay, lowestDay, y1Label, y1Data, y2Label, y2Data },
+        ffMeta: { ...d.ffMeta, updatedAt: new Date().toLocaleDateString('en-GB') }
+      });
+      
+    } catch (err: any) {
+      setDsPreview({ id: src.id, text: '⚠ Error fetching footfall data: ' + err.message, error: true });
+    }
+    setFetchingFootfallId(null);
+  };
+
   const fetchAndFillFromDoc = async (src: DataSource) => {
     const exportUrl = toDocHtmlUrl(src.url);
     if (!exportUrl) {
@@ -3772,12 +3856,21 @@ ${sheet('Station Earning',[
                       className="px-2 py-1 text-[10px] bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600">
                       Open ↗
                     </button>
+                    
                     {src.type === 'sheets' && (
-                      <button onClick={()=>fetchDataSource(src)}
-                        className="px-2 py-1 text-[10px] bg-amber-50 hover:bg-amber-100 rounded-lg text-amber-700">
-                        Preview CSV
-                      </button>
+                      <div className="flex gap-1">
+                        <button onClick={()=>fetchDataSource(src)}
+                          className="px-2 py-1 text-[10px] bg-amber-50 hover:bg-amber-100 rounded-lg text-amber-700">
+                          Preview CSV
+                        </button>
+                        <button onClick={()=>fetchAndFillFootfallFromSheet(src)}
+                          disabled={fetchingFootfallId === src.id}
+                          className="px-2 py-1 text-[10px] bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 rounded-lg text-emerald-700 font-medium">
+                          {fetchingFootfallId === src.id ? '⏳ Fetching…' : '📥 Fill Footfall'}
+                        </button>
+                      </div>
                     )}
+
                     {src.type === 'docs' && (
                       <button onClick={()=>fetchAndFillFromDoc(src)}
                         disabled={fetchingDocId === src.id}
