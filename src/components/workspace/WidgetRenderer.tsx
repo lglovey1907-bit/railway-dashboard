@@ -1020,6 +1020,7 @@ function toDocHtmlUrl(url: string): string | null {
  * counterHeads, commercial) and earningBifurcation.
  */
 type DocFields = {
+  ffComp?: any;
   stationCode?: string; stationName?: string; category?: string;
   state?: string; section?: string; cmi?: string; division?: string;
   platforms?: string; fob?: string; waitingRooms?: string; sanitation?: string;
@@ -1470,10 +1471,79 @@ function parseDocForHandout(html: string, stationHint = ''): DocFields {
   if (sections[9]) result.sanitation = sections[9].trim();
 
   // ── 4. Footfall (section 2) — table cells, one value per line ─────────────
+  
   if (sections[2]) {
-    const ff = _parseMatrixFromSection(sections[2], [['uts'], ['prs'], ['total']]);
-    if (ff) result.ff = ff;
+    const text = sections[2];
+    
+    // Check if it's the new complex format
+    if (text.toLowerCase().includes('maximum footfall') || text.toLowerCase().includes('highest footfall') || text.match(/20\d\d/)) {
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      
+      let maxMonth = '', minMonth = '', highestDay = '', lowestDay = '';
+      let y1Label = '', y2Label = '';
+      let y1Data = [['','','',''],['','','',''],['','','','']];
+      let y2Data = [['','','',''],['','','',''],['','','','']];
+      
+      let currentYearIndex = 0;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].toLowerCase();
+        
+        // Insights
+        if (line.includes('maximum footfall') || line.includes('max footfall')) maxMonth = lines[i].replace(/^[^a-zA-Z0-9]+/, '');
+        else if (line.includes('minimum footfall') || line.includes('min footfall')) minMonth = lines[i].replace(/^[^a-zA-Z0-9]+/, '');
+        else if (line.includes('highest footfall')) highestDay = lines[i].replace(/^[^a-zA-Z0-9]+/, '');
+        else if (line.includes('lowest footfall')) lowestDay = lines[i].replace(/^[^a-zA-Z0-9]+/, '');
+        
+        // Year labels (heuristic: looks like "202x" or has "upto")
+        else if ((line.match(/20\d\d/) || line.includes('upto')) && !line.includes('month') && !line.includes('highest')) {
+          if (currentYearIndex === 0) { y1Label = lines[i]; currentYearIndex = 1; }
+          else if (currentYearIndex === 1 && lines[i] !== y1Label) { y2Label = lines[i]; currentYearIndex = 2; }
+        }
+        
+        // Data Rows (UTS, PRS, Total)
+        else if (line.startsWith('uts') || line.startsWith('prs') || line.startsWith('total') || line.includes(' total')) {
+          // A row might be split into multiple lines if they are cells in a table, or it might be space separated
+          // Let's grab the next 4 valid numbers in the stream
+          const typeUpper = line.toUpperCase();
+          const rIdx = typeUpper.includes('UTS') ? 0 : (typeUpper.includes('PRS') ? 1 : 2);
+          
+          let nums: string[] = [];
+          
+          // Try to extract from the same line if they are space separated
+          const inlineNums = lines[i].split(/[\s|]+/).slice(1).map(c => c.replace(/[^0-9.-]/g, '')).filter(c => c !== '' && c !== '-');
+          if (inlineNums.length > 0) {
+             nums = inlineNums;
+          } else {
+             // Look ahead in subsequent lines
+             for (let j = i + 1; j < Math.min(lines.length, i + 6); j++) {
+               const val = lines[j].replace(/[^0-9.-]/g, '');
+               if (val !== '' || lines[j] === '-' || lines[j] === 'Nil' || lines[j] === 'nil') {
+                 nums.push(val);
+               }
+               if (nums.length === 4) break;
+             }
+          }
+          
+          // Pad to 4 cols
+          while (nums.length < 4) nums.push('');
+          
+          if (currentYearIndex === 1) {
+            y1Data[rIdx] = nums.slice(0, 4);
+          } else if (currentYearIndex === 2) {
+            y2Data[rIdx] = nums.slice(0, 4);
+          }
+        }
+      }
+      
+      result.ffComp = { maxMonth, minMonth, highestDay, lowestDay, y1Label, y1Data, y2Label, y2Data };
+    } else {
+      // Old simple matrix parser fallback
+      const ff = _parseMatrixFromSection(sections[2], [['uts'], ['prs'], ['total']]);
+      if (ff) result.ff = ff;
+    }
   }
+
 
   // ── 5. Trains (section 6) — table cells, one value per line ───────────────
   if (sections[6]) {
