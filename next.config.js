@@ -1,8 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: { typedRoutes: false },
+  experimental: { 
+    typedRoutes: false,
+    serverComponentsExternalPackages: ['pdf-parse']
+  },
   images: { unoptimized: true },
-  // Required for Vercel: ensure dynamic routes work
   trailingSlash: false,
 }
 module.exports = nextConfig
