@@ -78,6 +78,13 @@ export interface MonthlyRecord {
   targetStatus: TargetStatus;
   actual?: number;              // in Cr
   previousYearActual?: number;  // in Cr (same month, previous FY)
+  
+  // Advanced PDF Fields
+  actualsPrevPrevYear?: number;
+  actualsPrevYear?: number;
+  targetMonth?: number;
+  targetUpto?: number;
+  targetYearly?: number;
   remarks?: string;
   updatedBy?: string;
   updatedAt?: string;
