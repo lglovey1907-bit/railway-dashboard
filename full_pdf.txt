@@ -1,0 +1,56 @@
+◇ injected env (6) from .env.local // tip: ⌘ override existing { override: true }
+
+
+Figures in Crores
+Passenger Revenue638.90609.9628.944.742570.172312.44257.7311.15
+Other Coaching Revenue56.7583.85-27.10-32.32253.44263.44-10.00-3.80
+Goods Revenue233.46224.718.753.89991.82973.1718.651.92
+Sundry Revenue48.78102.88-54.10-52.58250.09281.43-31.34-11.14
+Total Revenue
+977.891021.40-43.51-4.264065.513830.48235.036.14
+No. of Passengers Booked1.741.79-0.05-2.807.167.020.142.03
+Ticket Checking Revenue4.783.681.1029.8921.8416.615.2331.49
+Commercial Publicity 
+3.481.44
+2.04141.67
+8.907.45
+1.4519.46
+ATM Revenue
+0.120.32
+-0.20-62.50
+0.330.49
+-0.16-32.65
+Passenger Revenue638.90640.67-1.77-0.282570.172428.86141.315.82
+Other Coaching Revenue56.7594.06-37.31-39.67253.44295.51-42.07-14.24
+Goods Revenue233.46231.122.341.01991.821005.13-13.31-1.32
+Sundry Revenue48.78---250.09---
+Total Revenue
+977.89---4065.51---
+No. of Passengers Booked1.741.88-0.14-7.457.167.38-0.22-2.94
+Ticket Checking Revenue4.78---21.84---
+Commercial Publicity 
+3.48---8.90
+---
+ATM Revenue
+0.12
+---
+0.33
+---
+% AGE  2026-27Target
+VARIATION
+% AGE
+2025-26
+VARIATION
+% AGE
+Note: - Goods Revenue figures taken from 7A statement
+HEAD
+Monthly Performance Cumulative performance upto Jul
+Jul'26Target
+VARIATION
+STATEMENT SHOWING ORIGINATING REVENUE OVER DELHI DIVISION DURING 
+JUL'2026 AS COMPARED WITH JUL'2025
+HEAD
+Monthly Performance Cumulative performance upto Jul
+Jul'26Jul'25
+VARIATION
+% AGE  2026-27

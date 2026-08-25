@@ -666,19 +666,20 @@ export function MonthlyReportWidget({ division = 'DELHI', isAdmin = false }: Mon
           else if (l.includes('sundry revenue') && l.includes('total')) targetId = 'sundry';
           
           if (targetId) {
-            const nums = line.match(/[\d,]+\.\d+/g);
+            const nums = line.match(/-?[\d,]+\.\d{1,2}/g);
             if (nums && nums.length >= 2) {
-              const cyStr = nums[nums.length - 1].replace(/,/g, '');
-              const pyStr = nums[nums.length - 2].replace(/,/g, '');
+              const cyStr = nums[0].replace(/,/g, '');
+              const pyStr = nums[1].replace(/,/g, '');
               const cy = parseFloat(cyStr);
               const py = parseFloat(pyStr);
               
               if (!isNaN(cy) && !isNaN(py)) {
                 if (!newMonths[selectedMonth]!.heads[targetId]) {
-                  newMonths[selectedMonth]!.heads[targetId] = { cy: 0, py: 0 };
+                  newMonths[selectedMonth]!.heads[targetId] = { cy, py };
+                } else if (newMonths[selectedMonth]!.heads[targetId].cy === 0) {
+                  newMonths[selectedMonth]!.heads[targetId].cy = cy;
+                  newMonths[selectedMonth]!.heads[targetId].py = py;
                 }
-                newMonths[selectedMonth]!.heads[targetId].cy = cy;
-                newMonths[selectedMonth]!.heads[targetId].py = py;
               }
             }
           }

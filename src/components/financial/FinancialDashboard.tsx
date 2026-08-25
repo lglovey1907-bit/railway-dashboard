@@ -335,14 +335,15 @@ export function FinancialDashboard({
           
           if (targetId) {
             // Find last two numbers (usually CY and PY)
-            const nums = line.match(/[\d,]+\.\d+/g);
+            const nums = line.match(/-?[\d,]+\.\d{1,2}/g);
             if (nums && nums.length >= 2) {
-              const cyStr = nums[nums.length - 1].replace(/,/g, '');
-              const pyStr = nums[nums.length - 2].replace(/,/g, '');
+              // Use the first two valid numbers for CY and PY respectively from the smashed text
+              const cyStr = nums[0].replace(/,/g, '');
+              const pyStr = nums[1].replace(/,/g, '');
               const cy = parseFloat(cyStr);
               const py = parseFloat(pyStr);
               
-              if (!isNaN(cy) && !isNaN(py)) {
+              if (!isNaN(cy) && !isNaN(py) && !allRecords.some(r => r.fyId === selectedFYId && r.month === selectedMonth && r.revenueHeadId === targetId)) {
                 store.upsertRecord({
                   fyId: selectedFYId,
                   month: selectedMonth,
