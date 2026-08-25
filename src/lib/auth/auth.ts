@@ -104,7 +104,7 @@ export async function authenticateUser(
                 const resolvedEmail = (serverData.staffRecord?.email as string | undefined)?.toLowerCase() ?? emailInput;
                 if (serverData.password) {
                   const pwds = JSON.parse(localStorage.getItem('rly_user_passwords') ?? '{}');
-                  if (!pwds[resolvedEmail]) { pwds[resolvedEmail] = serverData.password; localStorage.setItem('rly_user_passwords', JSON.stringify(pwds)); }
+                  pwds[resolvedEmail] = serverData.password; localStorage.setItem('rly_user_passwords', JSON.stringify(pwds));
                 }
                 if (serverData.mustChange) {
                   const mc: string[] = JSON.parse(localStorage.getItem('rly_must_change_pwd') ?? '[]');
@@ -167,7 +167,7 @@ export async function authenticateUser(
                 if (serverData?.password) {
                   const pwds = JSON.parse(localStorage.getItem('rly_user_passwords') ?? '{}');
                   const dbEmail = dbUser.email?.toLowerCase() ?? emailInput;
-                  if (!pwds[dbEmail]) { pwds[dbEmail] = serverData.password; localStorage.setItem('rly_user_passwords', JSON.stringify(pwds)); }
+                  pwds[dbEmail] = serverData.password; localStorage.setItem('rly_user_passwords', JSON.stringify(pwds));
                 }
               }
             } catch { /* KV unavailable — local status used as fallback */ }

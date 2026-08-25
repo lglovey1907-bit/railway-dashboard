@@ -904,6 +904,16 @@ export default function UsersPage() {
        changed = true;
       }
      }
+     
+     // CRITICAL FIX: Sync password if user changed it on another device!
+     if (u.password) {
+      const pwds = JSON.parse(localStorage.getItem('rly_user_passwords') ?? '{}');
+      if (pwds[email] !== u.password) {
+       pwds[email] = u.password;
+       localStorage.setItem('rly_user_passwords', JSON.stringify(pwds));
+       changed = true;
+      }
+     }
      continue;
     }
     // New user — but skip permanently deleted users (they're in the blocklist)
