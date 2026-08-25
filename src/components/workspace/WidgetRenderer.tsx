@@ -2646,6 +2646,7 @@ ${sheet('Station Earning',[
         const simpleKeys: (keyof DocFields)[] = ['stationCode','stationName','category','state','section','cmi','division','platforms','fob','waitingRooms','sanitation','earningBifurcation'];
         simpleKeys.forEach(k => { if (extracted[k]) previewLines.push(`${k}: ${extracted[k]}`); });
         if (extracted.ff)             previewLines.push('ff (footfall): ✓ parsed');
+        if (extracted.ffComp)         previewLines.push('ffComp (footfall comparison): ✓ parsed');
         if (extracted.trains)         previewLines.push('trains: ✓ parsed');
         if (extracted.primes)         previewLines.push('primes: ✓ parsed');
         if (extracted.stationEarning) previewLines.push('stationEarning: ✓ parsed');
@@ -2658,6 +2659,7 @@ ${sheet('Station Earning',[
         const merged: HD = { ...d };
         simpleKeys.forEach(k => { if (extracted[k]) (merged as Record<string,unknown>)[k] = extracted[k]; });
         if (extracted.ff)                   merged.ff             = extracted.ff;
+        if (extracted.ffComp)               merged.ffComp         = extracted.ffComp;
         if (extracted.trains)               merged.trains         = extracted.trains;
         if (extracted.primes)               merged.primes         = extracted.primes;
         if (extracted.stationEarning)       merged.stationEarning = extracted.stationEarning;
