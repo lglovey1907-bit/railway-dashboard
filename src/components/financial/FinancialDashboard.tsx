@@ -360,7 +360,7 @@ export function FinancialDashboard({
               const py = parseFloat(pyStr);
               
               const currentData = allRecords.find(r => r.fyId === selectedFYId && r.month === selectedMonth && r.revenueHeadId === targetId);
-              if (!isNaN(cy) && !isNaN(py) && (!currentData || !currentData.actual)) {
+              if (!isNaN(cy) && !isNaN(py)) {
                 const newRec: any = {
                   fyId: selectedFYId,
                   month: selectedMonth,
