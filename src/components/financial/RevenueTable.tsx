@@ -142,7 +142,22 @@ export function RevenueTable({
     ppyFull = `20${startYr - 2}-${endYr - 2}`;
   }
   
-  const curMonthShort = FY_MONTHS[upToMonth - 1].short.toUpperCase();
+  const curMonthData = FY_MONTHS[upToMonth - 1];
+  const curMonthShort = curMonthData.short.toUpperCase();
+  
+  let cyYr = 26;
+  let pyYr = 25;
+  if (match) {
+    const startYr = parseInt(match[1], 10);
+    const endYr = parseInt(match[2], 10);
+    if (curMonthData.calMonth >= 4) {
+      cyYr = startYr;
+      pyYr = startYr - 1;
+    } else {
+      cyYr = endYr;
+      pyYr = endYr - 1;
+    }
+  }
   const unitSuffix = unit === 'lacs' ? 'Lacs' : 'Cr';
   const labels = { ...DEFAULT_COL_LABELS, ...colLabels };
   const vis = visibleCols ?? new Set<ColKey>(ALL_COLS);
@@ -186,7 +201,7 @@ export function RevenueTable({
               Current Month
             </th>
             <th className="px-3 py-1.5 text-center border-b border-b-slate-800" colSpan={3}>
-              Cummulative Upto {curMonthShort} {cyFull.split('-')[1]}
+              Cummulative Upto {curMonthShort} {cyYr.toString().padStart(2, '0')}
             </th>
           </tr>
           <tr>
@@ -207,10 +222,10 @@ export function RevenueTable({
               Yearly
             </th>
             <th className="px-3 py-1.5 text-right border-r border-slate-800 border-b border-b-slate-800 font-medium">
-              {curMonthShort}'{pyFull.split('-')[1]}
+              {curMonthShort}'{pyYr.toString().padStart(2, '0')}
             </th>
             <th className="px-3 py-1.5 text-right border-r border-slate-800 border-b border-b-slate-800 font-medium">
-              {curMonthShort}'{cyFull.split('-')[1]}
+              {curMonthShort}'{cyYr.toString().padStart(2, '0')}
             </th>
             <th className="px-3 py-1.5 text-right border-r border-slate-800 border-b border-b-slate-800 font-medium">%Variation</th>
             <th className="px-3 py-1.5 text-right border-r border-slate-800 border-b border-b-slate-800 font-medium">

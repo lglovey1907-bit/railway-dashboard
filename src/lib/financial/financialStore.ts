@@ -357,7 +357,7 @@ export const useFinancialStore = create<FinancialState>()(
             return {
               monthlyRecords: s.monthlyRecords.map(x =>
                 x.fyId === r.fyId && x.month === r.month && x.revenueHeadId === r.revenueHeadId
-                  ? { ...x, ...r, updatedBy, updatedAt: nowIso, version: (x.version ?? 1) + 1, status: 'draft' as const }
+                  ? { ...x, ...r, updatedBy, updatedAt: nowIso, version: (x.version ?? 1) + 1, status: r.status ?? 'draft' }
                   : x,
               ),
               auditLogs: [...s.auditLogs, ...auditEntries],
