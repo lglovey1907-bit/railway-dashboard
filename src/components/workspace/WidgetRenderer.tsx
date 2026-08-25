@@ -1541,6 +1541,13 @@ function parseDocForHandout(html: string, stationHint = ''): DocFields {
   return result;
 }
 
+
+type FootfallComparison = {
+  maxMonth: string; minMonth: string; highestDay: string; lowestDay: string;
+  y1Label: string; y1Data: string[][];
+  y2Label: string; y2Data: string[][];
+};
+
 type HD = {
   stationCode: string; stationName: string; category: string;
   state: string; section: string; cmi: string;
@@ -1548,6 +1555,7 @@ type HD = {
   date: string; division: string;
   /** [3×4]  rows: UTS/PRS/Total  ×  cols: Outward/Inward/PF/Total */
   ff: string[][];
+  ffComp?: FootfallComparison;
   ffMeta: SectionMeta;
   platforms: string; fob: string; waitingRooms: string;
   infraMeta: SectionMeta;
@@ -1590,6 +1598,11 @@ const mkHD = (): HD => ({
   state: '', section: '', cmi: '',
   date: '', division: 'Delhi Division',
   ff: [['','','',''],['','','',''],['','','','']],
+  ffComp: {
+    maxMonth: '', minMonth: '', highestDay: '', lowestDay: '',
+    y1Label: '2026-27', y1Data: [['','','',''],['','','',''],['','','','']],
+    y2Label: '2025-26', y2Data: [['','','',''],['','','',''],['','','','']],
+  },
   ffMeta: mkMeta(),
   platforms: '', fob: '', waitingRooms: '',
   infraMeta: mkMeta(),
@@ -1679,6 +1692,7 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
     return {
       ...base, ...s,
       ff:             (Array.isArray(s.ff) && s.ff.length === 3 && s.ff[0]?.length === 4) ? s.ff : base.ff,
+      ffComp:         s.ffComp || base.ffComp,
       trains:         (Array.isArray(s.trains) && s.trains.length === 3) ? s.trains : base.trains,
       counterHeads:   Array.isArray(s.counterHeads)
         ? s.counterHeads.map((ch: any) => ({ ...mkCH(ch.name), ...ch,
@@ -2018,6 +2032,7 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
     const win = window.open('', '_blank', 'width=900,height=700');
     if (!win) return;
     const esc = (s: unknown) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const htmlTable = (title: string, rows: string[][]) => "<h3>" + title + "</h3><table border='1' style='border-collapse:collapse;font-size:10pt;'>" + rows.map((r,ri) => "<tr>" + r.map(c => ri===0 ? "<th style='background:#d97706;color:#fff;padding:4pt 6pt'>" + c + "</th>" : "<td style='padding:4pt 6pt'>" + (c||'') + "</td>").join('') + "</tr>").join('') + "</table><br/>";
     const has2d = (m: string[][]) => m.some(r => r.some(v => v));
 
     // ── Footfall / Trains matrix table ──
@@ -2098,8 +2113,31 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
     const sanit = d.sanitation
       ? `<div class="section"><h2>Sanitation</h2><div class="kv">${esc(d.sanitation).replace(/\n/g,'<br>')}</div></div>` : '';
 
+    
+    const ffCompTable = () => {
+      if (!d.ffComp) return matrixTable('Footfall Comparison Analysis', FF_COLS, FF_ROWS, d.ff);
+      const head1 = `<tr><th>${esc(d.ffComp.y1Label)}</th>${FF_COLS.map(c=>`<th>${esc(c)}</th>`).join('')}</tr>`;
+      const body1 = FF_ROWS.map((r,i)=>`<tr${i===FF_ROWS.length-1?' class="tot"':''}><td class="rl">${esc(r)}</td>${d.ffComp!.y1Data[i].map(c=>`<td>${esc(c)||'—'}</td>`).join('')}</tr>`).join('');
+      const head2 = `<tr><th>${esc(d.ffComp.y2Label)}</th>${FF_COLS.map(c=>`<th>${esc(c)}</th>`).join('')}</tr>`;
+      const body2 = FF_ROWS.map((r,i)=>`<tr${i===FF_ROWS.length-1?' class="tot"':''}><td class="rl">${esc(r)}</td>${d.ffComp!.y2Data[i].map(c=>`<td>${esc(c)||'—'}</td>`).join('')}</tr>`).join('');
+      
+      const insights = `<ul>
+        <li><b>Max Footfall:</b> ${esc(d.ffComp.maxMonth)}</li>
+        <li><b>Min Footfall:</b> ${esc(d.ffComp.minMonth)}</li>
+        <li><b>Highest Day:</b> ${esc(d.ffComp.highestDay)}</li>
+        <li><b>Lowest Day:</b> ${esc(d.ffComp.lowestDay)}</li>
+      </ul>`;
+      
+      return `<div class="section"><h2>Footfall Comparison Analysis</h2>
+        <div style="display:flex; gap: 20px;">
+          <div style="width: 35%;">${insights}</div>
+          <div style="flex: 1;"><table>${head1}${body1}${head2}${body2}</table></div>
+        </div>
+      </div>`;
+    };
+    
     const body = [
-      matrixTable('Footfall Comparison Analysis', FF_COLS, FF_ROWS, d.ff),
+      ffCompTable(),
       matrixTable('Trains / Day', TR_COLS, TR_ROWS, d.trains),
       infra,
       counters,
@@ -2213,10 +2251,39 @@ ${body}
 ${d.date?`<p><b>As on:</b> ${d.date}</p>`:''}
 ${d.cmiCheckedBy?`<p><b>CMI Checked by:</b> ${d.cmiCheckedBy}${d.cmiCheckedAt?` (${d.cmiCheckedAt})`:''}</p>`:''}
 
-<h2>Footfall Comparison Analysis</h2>
-<table><tr><th>Type</th><th>Outward</th><th>Inward</th><th>PF</th><th>Total</th></tr>
-${['UTS','PRS','Total'].map((r,i)=>`<tr><td><b>${r}</b></td>${d.ff[i].map(v=>`<td>${v||'-'}</td>`).join('')}</tr>`).join('')}
-</table>${d.ffMeta?.updatedBy?`<p class="meta">✎ ${d.ffMeta.updatedBy}${d.ffMeta.updatedAt?` (${d.ffMeta.updatedAt})`:''}</p>`:''}
+
+${d.ffComp ? `<h2>Footfall Comparison Analysis</h2>
+  <div style="display:flex;gap:20px;margin-bottom:15px;">
+    <ul style="width:35%;font-size:12px;">
+      <li><b>Max Month:</b> ${d.ffComp.maxMonth}</li>
+      <li><b>Min Month:</b> ${d.ffComp.minMonth}</li>
+      <li><b>Highest:</b> ${d.ffComp.highestDay}</li>
+      <li><b>Lowest:</b> ${d.ffComp.lowestDay}</li>
+    </ul>
+    <div style="flex:1;">
+      
+      <h3>${d.ffComp.y1Label}</h3>
+      <table border="1" style="border-collapse:collapse;font-size:10pt;">
+        <tr><th style="background:#d97706;color:#fff;padding:4pt 6pt">Type</th><th style="background:#d97706;color:#fff;padding:4pt 6pt">Outward</th><th style="background:#d97706;color:#fff;padding:4pt 6pt">Inward</th><th style="background:#d97706;color:#fff;padding:4pt 6pt">PF</th><th style="background:#d97706;color:#fff;padding:4pt 6pt">Total</th></tr>
+        ${['UTS','PRS','Total'].map((r,i)=>`<tr><td style="padding:4pt 6pt">${r}</td><td style="padding:4pt 6pt">${d.ffComp!.y1Data[i][0]||''}</td><td style="padding:4pt 6pt">${d.ffComp!.y1Data[i][1]||''}</td><td style="padding:4pt 6pt">${d.ffComp!.y1Data[i][2]||''}</td><td style="padding:4pt 6pt">${d.ffComp!.y1Data[i][3]||''}</td></tr>`).join('')}
+      </table>
+
+      <br/>
+      
+      <h3>${d.ffComp.y2Label}</h3>
+      <table border="1" style="border-collapse:collapse;font-size:10pt;">
+        <tr><th style="background:#d97706;color:#fff;padding:4pt 6pt">Type</th><th style="background:#d97706;color:#fff;padding:4pt 6pt">Outward</th><th style="background:#d97706;color:#fff;padding:4pt 6pt">Inward</th><th style="background:#d97706;color:#fff;padding:4pt 6pt">PF</th><th style="background:#d97706;color:#fff;padding:4pt 6pt">Total</th></tr>
+        ${['UTS','PRS','Total'].map((r,i)=>`<tr><td style="padding:4pt 6pt">${r}</td><td style="padding:4pt 6pt">${d.ffComp!.y2Data[i][0]||''}</td><td style="padding:4pt 6pt">${d.ffComp!.y2Data[i][1]||''}</td><td style="padding:4pt 6pt">${d.ffComp!.y2Data[i][2]||''}</td><td style="padding:4pt 6pt">${d.ffComp!.y2Data[i][3]||''}</td></tr>`).join('')}
+      </table>
+
+    </div>
+  </div>` :
+  `<h2>Footfall Comparison Analysis</h2>
+  <table><tr><th>Type</th><th>Outward</th><th>Inward</th><th>PF</th><th>Total</th></tr>
+  ${['UTS','PRS','Total'].map((r,i)=>`<tr><td><b>${r}</b></td>${d.ff[i].map(v=>`<td>${v||'-'}</td>`).join('')}</tr>`).join('')}
+  </table>`}
+${d.ffMeta?.updatedBy?`<p class="meta">✎ ${d.ffMeta.updatedBy}${d.ffMeta.updatedAt?` (${d.ffMeta.updatedAt})`:''}</p>`:''}
+
 
 <h2>Infrastructure</h2>
 <table><tr><th>Platforms</th><th>FOB</th><th>Waiting Rooms</th></tr>
@@ -2629,6 +2696,7 @@ ${sheet('Station Earning',[
         )}
       </div>
 
+      
       {/* ② Footfall */}
       <div>
         <div className="flex items-center justify-between mb-1.5">
@@ -2636,27 +2704,97 @@ ${sheet('Station Earning',[
           <label className="flex items-center gap-1 shrink-0">
             <span className="text-[9px] text-slate-400">Updated by:</span>
             <input value={d.ffMeta.updatedBy} onChange={e=>upd({ffMeta:{...d.ffMeta,updatedBy:e.target.value}})}
-              placeholder="Your name" className="bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 text-[9px] w-24 focus:outline-none focus:border-amber-400"/>
+              className="text-[9px] w-24 border-b border-dashed border-slate-300 focus:outline-none focus:border-violet-400 bg-transparent" placeholder="Name" />
           </label>
         </div>
-        <div className="overflow-x-auto">
-          <table className="text-[10px] w-full border-collapse">
-            <thead>
-              <tr className="bg-amber-100">
-                <th className="px-2 py-1 border border-amber-200 text-left">Type</th>
-                {FF_COLS.map(h=><th key={h} className="px-2 py-1 border border-amber-200 text-center">{h}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {FF_ROWS.map((row,r)=>(
-                <tr key={row}>
-                  <td className="px-2 py-0.5 border border-amber-200 font-medium">{row}</td>
-                  {[0,1,2,3].map(c=><td key={c} className="px-1 py-0.5 border border-amber-200"><CI val={d.ff[r][c]} onChange={v=>updFF(r,c,v)}/></td>)}
+        
+        {d.ffComp ? (
+          <div className="flex gap-4 border border-amber-200 rounded-lg p-2 bg-amber-50/30">
+            {/* Left side: Insights */}
+            <div className="w-1/3 flex flex-col gap-2 border-r border-amber-200 pr-3">
+              <div className="text-[9px] font-semibold text-slate-600 mb-1 border-b border-amber-200 pb-1">Key Insights</div>
+              <label className="flex flex-col gap-1">
+                <span className="text-[9px] text-slate-500">Month of Max Footfall</span>
+                <input value={d.ffComp.maxMonth} onChange={e=>upd({ffComp:{...d.ffComp!,maxMonth:e.target.value}})} className="text-[10px] px-2 py-1 rounded border border-amber-200" placeholder="e.g. Oct '25 (Avg.- 58836 /day)"/>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-[9px] text-slate-500">Month of Min Footfall</span>
+                <input value={d.ffComp.minMonth} onChange={e=>upd({ffComp:{...d.ffComp!,minMonth:e.target.value}})} className="text-[10px] px-2 py-1 rounded border border-amber-200" placeholder="e.g. Feb '26 (Avg.- 54467 /day)"/>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-[9px] text-slate-500">Highest day</span>
+                <input value={d.ffComp.highestDay} onChange={e=>upd({ffComp:{...d.ffComp!,highestDay:e.target.value}})} className="text-[10px] px-2 py-1 rounded border border-amber-200" placeholder="e.g. 84894 on 11.08.25"/>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-[9px] text-slate-500">Lowest day</span>
+                <input value={d.ffComp.lowestDay} onChange={e=>upd({ffComp:{...d.ffComp!,lowestDay:e.target.value}})} className="text-[10px] px-2 py-1 rounded border border-amber-200" placeholder="e.g. 26730 on 04.03.26"/>
+              </label>
+            </div>
+            
+            {/* Right side: Dual Year Table */}
+            <div className="flex-1 overflow-x-auto">
+              <table className="text-[10px] w-full border-collapse">
+                <thead>
+                  <tr className="bg-amber-100">
+                    <th className="px-2 py-1 border border-amber-200 text-left w-16">
+                      <input value={d.ffComp.y1Label} onChange={e=>upd({ffComp:{...d.ffComp!,y1Label:e.target.value}})} className="w-full bg-transparent font-bold border-b border-dashed border-amber-400 placeholder:text-amber-400 focus:outline-none" placeholder="Year 1"/>
+                    </th>
+                    {FF_COLS.map(h=><th key={h} className="px-2 py-1 border border-amber-200 text-center">{h}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {FF_ROWS.map((row,r)=>(
+                    <tr key={row}>
+                      <td className="px-2 py-0.5 border border-amber-200 font-medium">{row}</td>
+                      {[0,1,2,3].map(c=><td key={c} className="px-1 py-0.5 border border-amber-200">
+                        <CI val={d.ffComp!.y1Data[r][c]} onChange={v=>{
+                          const a = d.ffComp!.y1Data.map(x=>[...x]); a[r][c]=v;
+                          upd({ffComp: {...d.ffComp!, y1Data: a}});
+                        }}/>
+                      </td>)}
+                    </tr>
+                  ))}
+                  <tr className="bg-amber-100">
+                    <th className="px-2 py-1 border border-amber-200 text-left w-16">
+                      <input value={d.ffComp.y2Label} onChange={e=>upd({ffComp:{...d.ffComp!,y2Label:e.target.value}})} className="w-full bg-transparent font-bold border-b border-dashed border-amber-400 placeholder:text-amber-400 focus:outline-none" placeholder="Year 2"/>
+                    </th>
+                    {FF_COLS.map(h=><th key={h} className="px-2 py-1 border border-amber-200 text-center">{h}</th>)}
+                  </tr>
+                  {FF_ROWS.map((row,r)=>(
+                    <tr key={row}>
+                      <td className="px-2 py-0.5 border border-amber-200 font-medium">{row}</td>
+                      {[0,1,2,3].map(c=><td key={c} className="px-1 py-0.5 border border-amber-200">
+                        <CI val={d.ffComp!.y2Data[r][c]} onChange={v=>{
+                          const a = d.ffComp!.y2Data.map(x=>[...x]); a[r][c]=v;
+                          upd({ffComp: {...d.ffComp!, y2Data: a}});
+                        }}/>
+                      </td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="text-[10px] w-full border-collapse">
+              <thead>
+                <tr className="bg-amber-100">
+                  <th className="px-2 py-1 border border-amber-200 text-left">Type</th>
+                  {FF_COLS.map(h=><th key={h} className="px-2 py-1 border border-amber-200 text-center">{h}</th>)}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {FF_ROWS.map((row,r)=>(
+                  <tr key={row}>
+                    <td className="px-2 py-0.5 border border-amber-200 font-medium">{row}</td>
+                    {[0,1,2,3].map(c=><td key={c} className="px-1 py-0.5 border border-amber-200"><CI val={d.ff[r][c]} onChange={v=>updFF(r,c,v)}/></td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* ③ Infrastructure */}
@@ -3238,19 +3376,42 @@ ${sheet('Station Earning',[
         </div>
       )}
 
+      
       {/* Footfall */}
-      {d.ff.some(row=>row.some(v=>v)) && (
+      {(d.ffComp || d.ff.some(row=>row.some(v=>v))) && (
         <div>
           <div className="flex items-center justify-between mb-1">
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Footfall Comparison Analysis</p>
             <SecMeta meta={d.ffMeta} sec="ff"/>
           </div>
-          <div className="overflow-x-auto rounded-lg border border-amber-200">
-            <table className="text-[10px] w-full border-collapse">
-              <thead><TH cols={['', ...FF_COLS]}/></thead>
-              <tbody>{FF_ROWS.map((r,i)=><TRow key={r} label={r} cells={d.ff[i]} hi={i===2}/>)}</tbody>
-            </table>
-          </div>
+          
+          {d.ffComp ? (
+            <div className="flex gap-4 border border-amber-200 rounded-lg p-3 bg-white">
+              <div className="w-1/3 flex flex-col gap-2 border-r border-amber-100 pr-3 justify-center">
+                <ul className="text-[9px] text-slate-600 space-y-1.5 list-disc pl-3">
+                  {d.ffComp.maxMonth && <li><b>Month of Max Footfall:</b> {d.ffComp.maxMonth}</li>}
+                  {d.ffComp.minMonth && <li><b>Month of Min Footfall:</b> {d.ffComp.minMonth}</li>}
+                  {d.ffComp.highestDay && <li><b>Highest footfall in a day:</b> {d.ffComp.highestDay}</li>}
+                  {d.ffComp.lowestDay && <li><b>Lowest Footfall in a day:</b> {d.ffComp.lowestDay}</li>}
+                </ul>
+              </div>
+              <div className="flex-1 overflow-x-auto">
+                <table className="text-[10px] w-full border-collapse">
+                  <thead><TRow label={d.ffComp.y1Label} cells={FF_COLS} hi/></thead>
+                  <tbody>{FF_ROWS.map((r,i)=><TRow key={r} label={r} cells={d.ffComp!.y1Data[i]} hi={i===2}/>)}</tbody>
+                  <thead><TRow label={d.ffComp.y2Label} cells={FF_COLS} hi/></thead>
+                  <tbody>{FF_ROWS.map((r,i)=><TRow key={r} label={r} cells={d.ffComp!.y2Data[i]} hi={i===2}/>)}</tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-lg border border-amber-200">
+              <table className="text-[10px] w-full border-collapse">
+                <thead><TH cols={['', ...FF_COLS]}/></thead>
+                <tbody>{FF_ROWS.map((r,i)=><TRow key={r} label={r} cells={d.ff[i]} hi={i===2}/>)}</tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 

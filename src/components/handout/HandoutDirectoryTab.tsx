@@ -17,7 +17,7 @@ type HD = {
   stationCode: string; stationName: string; category: string;
   state: string; section: string; cmi: string;
   date: string; division: string;
-  ff: string[][];
+  ff: string[][]; ffComp?: any;
   platforms: string; fob: string; waitingRooms: string;
   trains: string[][];
   counterHeads: CounterHead[];
@@ -84,10 +84,32 @@ function ViewModal({ hd, onClose }: { hd: HD; onClose: () => void }) {
   <p>${[hd.category, hd.state, hd.section, hd.cmi ? `CMI: ${hd.cmi}` : ''].filter(Boolean).join(' · ')}</p>
   <p>${hd.division}${hd.date ? ` · As on ${hd.date}` : ''}</p>
 </div>
-${hd.ff.some(r => r.some(v => v)) ? `
+
+${hd.ffComp ? 
+`<h2>Footfall Comparison Analysis</h2>
+<div style="display:flex; gap: 20px;">
+  <div style="width: 35%;">
+    <ul>
+      <li><b>Max Footfall:</b> ${hd.ffComp.maxMonth}</li>
+      <li><b>Min Footfall:</b> ${hd.ffComp.minMonth}</li>
+      <li><b>Highest Day:</b> ${hd.ffComp.highestDay}</li>
+      <li><b>Lowest Day:</b> ${hd.ffComp.lowestDay}</li>
+    </ul>
+  </div>
+  <div style="flex: 1;">
+    <table>
+      <tr><th>${hd.ffComp.y1Label}</th>${FF_COLS.map(c=>`<th>${c}</th>`).join('')}</tr>
+      ${FF_ROWS.map((r,i)=>`<tr><td>${r}</td>${hd.ffComp!.y1Data[i].map((v: string)=>`<td>${v||'—'}</td>`).join('')}</tr>`).join('')}
+      <tr><th>${hd.ffComp.y2Label}</th>${FF_COLS.map(c=>`<th>${c}</th>`).join('')}</tr>
+      ${FF_ROWS.map((r,i)=>`<tr><td>${r}</td>${hd.ffComp!.y2Data[i].map((v: string)=>`<td>${v||'—'}</td>`).join('')}</tr>`).join('')}
+    </table>
+  </div>
+</div>` : 
+(hd.ff.some(r => r.some(v => v)) ? `
 <h2>Footfall Comparison Analysis</h2>
 <table><thead><tr><th></th>${FF_COLS.map(c => `<th>${c}</th>`).join('')}</tr></thead>
-<tbody>${FF_ROWS.map((r, i) => `<tr><td>${r}</td>${hd.ff[i].map(v => `<td>${v || '—'}</td>`).join('')}</tr>`).join('')}</tbody></table>` : ''}
+<tbody>${FF_ROWS.map((r, i) => `<tr><td>${r}</td>${hd.ff[i].map(v => `<td>${v || '—'}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '')}
+
 ${hd.counterHeads.filter(ch => ch.name).length > 0 ? `
 <h2>Counters & Manpower</h2>
 <div class="counters">
@@ -176,18 +198,42 @@ ${hd.earningBifurcation ? `<h2>Earning Bifurcation</h2><p>${hd.earningBifurcatio
 
         {/* Modal body */}
         <div className="overflow-y-auto p-4 space-y-3 text-xs">
+          
           {/* Footfall */}
-          {hd.ff.some(row => row.some(v => v)) && (
+          {(hd.ffComp || hd.ff.some(row => row.some(v => v))) && (
             <div>
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Footfall Comparison Analysis</p>
-              <div className="overflow-x-auto rounded-lg border border-amber-200">
-                <table className="text-[10px] w-full border-collapse">
-                  <thead><TH cols={['', ...FF_COLS]}/></thead>
-                  <tbody>{FF_ROWS.map((r, i) => <TRow key={r} label={r} cells={hd.ff[i]} hi={i === 2}/>)}</tbody>
-                </table>
-              </div>
+              
+              {hd.ffComp ? (
+                <div className="flex gap-3 border border-amber-200 rounded-lg p-2 bg-white flex-col sm:flex-row">
+                  <div className="sm:w-1/3 flex flex-col gap-1 border-b sm:border-b-0 sm:border-r border-amber-100 pb-2 sm:pb-0 sm:pr-3 justify-center">
+                    <ul className="text-[9px] text-slate-600 space-y-1 list-disc pl-3">
+                      {hd.ffComp.maxMonth && <li><b>Max:</b> {hd.ffComp.maxMonth}</li>}
+                      {hd.ffComp.minMonth && <li><b>Min:</b> {hd.ffComp.minMonth}</li>}
+                      {hd.ffComp.highestDay && <li><b>High:</b> {hd.ffComp.highestDay}</li>}
+                      {hd.ffComp.lowestDay && <li><b>Low:</b> {hd.ffComp.lowestDay}</li>}
+                    </ul>
+                  </div>
+                  <div className="flex-1 overflow-x-auto">
+                    <table className="text-[10px] w-full border-collapse">
+                      <thead><TRow label={hd.ffComp.y1Label} cells={FF_COLS} hi/></thead>
+                      <tbody>{FF_ROWS.map((r,i)=><TRow key={r} label={r} cells={hd.ffComp!.y1Data[i]} hi={i===2}/>)}</tbody>
+                      <thead><TRow label={hd.ffComp.y2Label} cells={FF_COLS} hi/></thead>
+                      <tbody>{FF_ROWS.map((r,i)=><TRow key={r} label={r} cells={hd.ffComp!.y2Data[i]} hi={i===2}/>)}</tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-lg border border-amber-200">
+                  <table className="text-[10px] w-full border-collapse">
+                    <thead><TH cols={['', ...FF_COLS]}/></thead>
+                    <tbody>{FF_ROWS.map((r,i)=><TRow key={r} label={r} cells={hd.ff[i]} hi={i===2}/>)}</tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
+
           {/* Infrastructure */}
           {(hd.platforms || hd.fob || hd.waitingRooms) && (
             <div>
