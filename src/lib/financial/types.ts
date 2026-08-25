@@ -60,6 +60,7 @@ export interface RevenueHead {
   parentId?: string;
   isSubTotalFor?: string;
   excludeFromGrandTotal?: boolean;
+  sNo?: string;
 }
 
 // ── Monthly Records ───────────────────────────────────────────────────────────
