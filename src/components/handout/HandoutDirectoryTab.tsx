@@ -85,7 +85,7 @@ function ViewModal({ hd, onClose }: { hd: HD; onClose: () => void }) {
   <p>${hd.division}${hd.date ? ` · As on ${hd.date}` : ''}</p>
 </div>
 ${hd.ff.some(r => r.some(v => v)) ? `
-<h2>Footfall / Day</h2>
+<h2>Footfall Comparison Analysis</h2>
 <table><thead><tr><th></th>${FF_COLS.map(c => `<th>${c}</th>`).join('')}</tr></thead>
 <tbody>${FF_ROWS.map((r, i) => `<tr><td>${r}</td>${hd.ff[i].map(v => `<td>${v || '—'}</td>`).join('')}</tr>`).join('')}</tbody></table>` : ''}
 ${hd.counterHeads.filter(ch => ch.name).length > 0 ? `
@@ -179,7 +179,7 @@ ${hd.earningBifurcation ? `<h2>Earning Bifurcation</h2><p>${hd.earningBifurcatio
           {/* Footfall */}
           {hd.ff.some(row => row.some(v => v)) && (
             <div>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Footfall / Day</p>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Footfall Comparison Analysis</p>
               <div className="overflow-x-auto rounded-lg border border-amber-200">
                 <table className="text-[10px] w-full border-collapse">
                   <thead><TH cols={['', ...FF_COLS]}/></thead>

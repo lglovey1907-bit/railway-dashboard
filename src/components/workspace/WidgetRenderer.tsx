@@ -973,7 +973,7 @@ const CELL_CFG_KEY = 'rly_handout_cell_config';
 
 /** All fixed section keys (counter heads use dynamic 'ch:{i}' keys) */
 const SEC_LABELS: Record<string, string> = {
-  ff: 'Footfall / Day',
+  ff: 'Footfall Comparison Analysis',
   infra: 'Infrastructure',
   trains: 'Trains / Day',
   'ch:0': 'UTS Counter',
@@ -2099,7 +2099,7 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
       ? `<div class="section"><h2>Sanitation</h2><div class="kv">${esc(d.sanitation).replace(/\n/g,'<br>')}</div></div>` : '';
 
     const body = [
-      matrixTable('Footfall / Day', FF_COLS, FF_ROWS, d.ff),
+      matrixTable('Footfall Comparison Analysis', FF_COLS, FF_ROWS, d.ff),
       matrixTable('Trains / Day', TR_COLS, TR_ROWS, d.trains),
       infra,
       counters,
@@ -2213,7 +2213,7 @@ ${body}
 ${d.date?`<p><b>As on:</b> ${d.date}</p>`:''}
 ${d.cmiCheckedBy?`<p><b>CMI Checked by:</b> ${d.cmiCheckedBy}${d.cmiCheckedAt?` (${d.cmiCheckedAt})`:''}</p>`:''}
 
-<h2>Footfall / Day</h2>
+<h2>Footfall Comparison Analysis</h2>
 <table><tr><th>Type</th><th>Outward</th><th>Inward</th><th>PF</th><th>Total</th></tr>
 ${['UTS','PRS','Total'].map((r,i)=>`<tr><td><b>${r}</b></td>${d.ff[i].map(v=>`<td>${v||'-'}</td>`).join('')}</tr>`).join('')}
 </table>${d.ffMeta?.updatedBy?`<p class="meta">✎ ${d.ffMeta.updatedBy}${d.ffMeta.updatedAt?` (${d.ffMeta.updatedAt})`:''}</p>`:''}
@@ -2273,7 +2273,7 @@ ${d.earningBifurcation?`<h2>Earning Bifurcation</h2><p>${d.earningBifurcation}</
       xmlns='http://www.w3.org/TR/REC-html40'>
 <head><meta charset='utf-8'><title>${stn}</title></head><body>
 <h2>${stn} — Station Handout${d.date?` (As on ${d.date})`:''}</h2>
-${sheet('Footfall / Day',[
+${sheet('Footfall Comparison Analysis',[
   ['Type','Outward','Inward','PF','Total'],
   ...['UTS','PRS','Total'].map((r,i)=>[r,...d.ff[i]]),
 ])}
@@ -2416,7 +2416,7 @@ ${sheet('Station Earning',[
       if (filledKeys.length === 0) {
         setDsPreview({
           id: src.id,
-          text: `⚠ No handout fields found in this document.\n\nTips:\n• Share the doc with "Anyone with the link can view"\n• Make sure your doc uses the standard CMI numbered-section format\n  (1 Category, 2 Footfall/day, 3 Platforms … 14 ATM)\n\n${debugInfo}`,
+          text: `⚠ No handout fields found in this document.\n\nTips:\n• Share the doc with "Anyone with the link can view"\n• Make sure your doc uses the standard CMI numbered-section format\n  (1 Category, 2 Footfall Comparison Analysis, 3 Platforms … 14 ATM)\n\n${debugInfo}`,
           error: true,
         });
       } else {
@@ -2632,7 +2632,7 @@ ${sheet('Station Earning',[
       {/* ② Footfall */}
       <div>
         <div className="flex items-center justify-between mb-1.5">
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Footfall / Day</p>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Footfall Comparison Analysis</p>
           <label className="flex items-center gap-1 shrink-0">
             <span className="text-[9px] text-slate-400">Updated by:</span>
             <input value={d.ffMeta.updatedBy} onChange={e=>upd({ffMeta:{...d.ffMeta,updatedBy:e.target.value}})}
@@ -3242,7 +3242,7 @@ ${sheet('Station Earning',[
       {d.ff.some(row=>row.some(v=>v)) && (
         <div>
           <div className="flex items-center justify-between mb-1">
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Footfall / Day</p>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Footfall Comparison Analysis</p>
             <SecMeta meta={d.ffMeta} sec="ff"/>
           </div>
           <div className="overflow-x-auto rounded-lg border border-amber-200">
