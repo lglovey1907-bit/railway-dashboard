@@ -1,122 +1,19 @@
-'use client';
-// ─────────────────────────────────────────────────────────────────────────────
-// Railway-Style Cumulative Revenue Table
-// Features: editable col/row headers, unit toggle (Cr/Lacs), col visibility
-// ─────────────────────────────────────────────────────────────────────────────
+const fs = require('fs');
+const filepath = 'src/components/financial/RevenueTable.tsx';
+let text = fs.readFileSync(filepath, 'utf8');
 
-import { useState, useRef, useEffect } from 'react';
-import { Pencil, Check, X } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import type { CumulativeRow } from '@/lib/financial/types';
-import { FY_MONTHS, type FYMonth } from '@/lib/financial/types';
-import {
-  formatPct, formatAchPct,
-  getAchColour, getVariationColour, getArrow,
-} from '@/lib/financial/calculations';
+// I will just replace the default export export function RevenueTable with the new logic.
+// First, find everything from "export function RevenueTable" to the end of the file.
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-export type Unit = 'cr' | 'lacs';
-export type ColKey = 'budget' | 'monthly' | 'cumul_cy' | 'prev_yr' | 'target' | 'variation' | 'var_pct' | 'ach_pct';
-
-export const DEFAULT_COL_LABELS: Record<ColKey, string> = {
-  budget:    'Budget Estimate',
-  monthly:   'Monthly',
-  cumul_cy:  'Cumulative CY',
-  prev_yr:   'Previous Year',
-  target:    'Target',
-  variation: 'Variation',
-  var_pct:   'Var %',
-  ach_pct:   'Achiev. %',
-};
-
-export const ALL_COLS: ColKey[] = ['budget', 'monthly', 'cumul_cy', 'prev_yr', 'target', 'variation', 'var_pct', 'ach_pct'];
-
-interface Props {
-  rows: CumulativeRow[];
-  upToMonth: FYMonth;
-  showMonthCols?: boolean;
-  unit?: Unit;
-  visibleCols?: Set<ColKey>;
-  colLabels?: Record<ColKey, string>;
-  onUpdateColLabel?: (key: ColKey, label: string) => void;
-  onUpdateHead?: (rhId: string, name: string) => void;
-  onClickHead?: (rhId: string) => void;
-  canManage?: boolean;
-  fyLabel?: string;
+const parts = text.split('export function RevenueTable(');
+if (parts.length !== 2) {
+  console.log('Error splitting');
+  process.exit(1);
 }
 
-// ── Formatters ────────────────────────────────────────────────────────────────
+const headerPart = parts[0];
 
-function fmt(val: number | null | undefined, unit: Unit, decimals = 2): string {
-  if (val === null || val === undefined) return '—';
-  const v = unit === 'lacs' ? val * 100 : val;
-  return v.toLocaleString('en-IN', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
-}
-
-// ── Inline editable cell ───────────────────────────────────────────────────────
-
-function EditableLabel({
-  value, onSave, className, inputClass,
-}: {
-  value: string;
-  onSave: (v: string) => void;
-  className?: string;
-  inputClass?: string;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => { if (editing) inputRef.current?.select(); }, [editing]);
-
-  const commit = () => { if (draft.trim()) onSave(draft.trim()); setEditing(false); };
-  const cancel = () => { setDraft(value); setEditing(false); };
-
-  if (editing) {
-    return (
-      <span className="inline-flex items-center gap-1">
-        <input
-          ref={inputRef}
-          value={draft}
-          onChange={e => setDraft(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') cancel(); }}
-          className={cn('border border-rail-400 rounded px-1.5 py-0.5 text-xs outline-none focus:ring-1 focus:ring-rail-400 bg-white text-slate-900', inputClass)}
-        />
-        <button onClick={commit} className="text-emerald-600 hover:text-emerald-700"><Check size={11}/></button>
-        <button onClick={cancel} className="text-red-400 hover:text-red-600"><X size={11}/></button>
-      </span>
-    );
-  }
-  return (
-    <span
-      className={cn('group/lbl inline-flex items-center gap-1 cursor-default', className)}
-      onDoubleClick={() => { setDraft(value); setEditing(true); }}
-    >
-      {value}
-      <Pencil
-        size={9}
-        className="opacity-0 group-hover/lbl:opacity-60 hover:!opacity-100 cursor-pointer shrink-0 text-slate-400"
-        onClick={e => { e.stopPropagation(); setDraft(value); setEditing(true); }}
-      />
-    </span>
-  );
-}
-
-// ── Status label map ───────────────────────────────────────────────────────────
-
-const STATUS_LABELS: Record<string, string> = {
-  pending: 'Target Pending',
-  na:      'N/A',
-  revised: 'Revised',
-};
-
-// ── Main component ─────────────────────────────────────────────────────────────
-
-export function RevenueTable({
+const newTableCode = `export function RevenueTable({
   rows, upToMonth,
   showMonthCols = true, unit = 'cr',
   visibleCols, colLabels,
@@ -124,7 +21,7 @@ export function RevenueTable({
   canManage, fyLabel
 }: Props) {
   const months = FY_MONTHS.slice(0, upToMonth);
-  const match = (fyLabel || '').match(/20(\d{2})-(\d{2})/);
+  const match = (fyLabel || '').match(/20(\\d{2})-(\\d{2})/);
   let cyFull = '2026-27';
   let pyFull = '2025-26';
   let ppyFull = '2024-25';
@@ -137,9 +34,9 @@ export function RevenueTable({
   if (match) {
     const startYr = parseInt(match[1], 10);
     const endYr = parseInt(match[2], 10);
-    cyFull = `20${startYr}-${endYr}`;
-    pyFull = `20${startYr - 1}-${endYr - 1}`;
-    ppyFull = `20${startYr - 2}-${endYr - 2}`;
+    cyFull = \`20\${startYr}-\${endYr}\`;
+    pyFull = \`20\${startYr - 1}-\${endYr - 1}\`;
+    ppyFull = \`20\${startYr - 2}-\${endYr - 2}\`;
     if (curMonthData.calMonth >= 4) {
       cyYr = startYr;
       pyYr = startYr - 1;
@@ -209,7 +106,7 @@ export function RevenueTable({
         </th>
         <th className="px-3 py-1.5 text-right border-r border-slate-800 border-b border-b-slate-800 font-medium bg-slate-800">{pyFull}</th>
         <th className="px-3 py-1.5 text-right border-r border-slate-800 border-b border-b-slate-800 font-medium bg-slate-800">Month</th>
-        <th className="px-3 py-1.5 text-right border-r border-slate-800 border-b border-b-slate-800 font-medium bg-slate-800">{`Upto ${curMonthShort}`}</th>
+        <th className="px-3 py-1.5 text-right border-r border-slate-800 border-b border-b-slate-800 font-medium bg-slate-800">{\`Upto \${curMonthShort}\`}</th>
         <th className="px-3 py-1.5 text-right border-r border-slate-800 border-b border-b-slate-800 font-medium bg-slate-800">Yearly</th>
         <th className="px-3 py-1.5 text-right border-r border-slate-800 border-b border-b-slate-800 font-medium bg-slate-800">
           {curMonthShort}'{pyYr.toString().padStart(2, '0')}
@@ -357,3 +254,7 @@ export function RevenueTable({
     </div>
   );
 }
+`;
+
+fs.writeFileSync(filepath, headerPart + newTableCode);
+console.log('Replaced RevenueTable with modular cards layout.');
