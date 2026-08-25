@@ -14,7 +14,7 @@ import {
   getVariationColour, getArrow,
 } from '@/lib/financial/calculations';
 import { cn } from '@/lib/utils';
-import type { Unit } from './RevenueTable';
+import { RevenueTable, type Unit } from './RevenueTable';
 
 interface Props {
   rows: CumulativeRow[];
@@ -153,62 +153,16 @@ export function PrintView({ rows, fy, upToMonth, unit = 'cr', onClose }: Props) 
             )}
 
             {/* Main cumulative table */}
-            <table className="w-full border-collapse border border-slate-400 text-[10px]">
-              <thead>
-                <tr className="bg-slate-800 text-white">
-                  <th className="border border-slate-600 px-2 py-2 text-left">Revenue Head</th>
-                  <th className="border border-slate-600 px-2 py-2 text-right">Budget Est. ({unitLabel})</th>
-                  <th className="border border-slate-600 px-2 py-2 text-right">Cum. Current Yr ({unitLabel})</th>
-                  <th className="border border-slate-600 px-2 py-2 text-right">Cum. Prev. Yr ({unitLabel})</th>
-                  <th className="border border-slate-600 px-2 py-2 text-right">Target ({unitLabel})</th>
-                  <th className="border border-slate-600 px-2 py-2 text-right">Variation ({unitLabel})</th>
-                  <th className="border border-slate-600 px-2 py-2 text-right">Var %</th>
-                  <th className="border border-slate-600 px-2 py-2 text-right">Achiev. %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {nonTotals.map((row, i) => (
-                  <tr key={row.revenueHead.id} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-                    <td className="border border-slate-300 px-2 py-1.5">{row.revenueHead.name}</td>
-                    <td className="border border-slate-300 px-2 py-1.5 text-right">{fmt(row.budgetEstimate, unit)}</td>
-                    <td className="border border-slate-300 px-2 py-1.5 text-right font-semibold">{fmt(row.cumulativeCurrentYear, unit)}</td>
-                    <td className="border border-slate-300 px-2 py-1.5 text-right text-slate-500">{fmt(row.cumulativePreviousYear, unit)}</td>
-                    <td className="border border-slate-300 px-2 py-1.5 text-right">
-                      {row.targetStatus === 'available' || row.targetStatus === 'revised'
-                        ? fmt(row.target, unit)
-                        : TARGET_LABELS[row.targetStatus] ?? '—'}
-                    </td>
-                    <td className={cn('border border-slate-300 px-2 py-1.5 text-right font-semibold', getVariationColour(row.variation))}>
-                      {row.variation !== null ? `${getArrow(row.variation)} ${fmt(Math.abs(row.variation), unit)}` : '—'}
-                    </td>
-                    <td className={cn('border border-slate-300 px-2 py-1.5 text-right', getVariationColour(row.variationPct))}>
-                      {row.variationPct !== null ? formatPct(row.variationPct) : '—'}
-                    </td>
-                    <td className="border border-slate-300 px-2 py-1.5 text-right font-bold">
-                      {row.achievementPct !== null ? formatAchPct(row.achievementPct) : '—'}
-                    </td>
-                  </tr>
-                ))}
-                {totalRow && (
-                  <tr className="bg-slate-800 text-white font-bold">
-                    <td className="border border-slate-600 px-2 py-2 uppercase tracking-wide text-[10px]">TOTAL REVENUE</td>
-                    <td className="border border-slate-600 px-2 py-2 text-right">{fmt(totalRow.budgetEstimate, unit)}</td>
-                    <td className="border border-slate-600 px-2 py-2 text-right">{fmt(totalRow.cumulativeCurrentYear, unit)}</td>
-                    <td className="border border-slate-600 px-2 py-2 text-right text-slate-300">{fmt(totalRow.cumulativePreviousYear, unit)}</td>
-                    <td className="border border-slate-600 px-2 py-2 text-right">{fmt(totalRow.target, unit)}</td>
-                    <td className={cn('border border-slate-600 px-2 py-2 text-right', (totalRow.variation ?? 0) >= 0 ? 'text-emerald-300' : 'text-red-300')}>
-                      {totalRow.variation !== null ? `${getArrow(totalRow.variation)} ${fmt(Math.abs(totalRow.variation), unit)}` : '—'}
-                    </td>
-                    <td className={cn('border border-slate-600 px-2 py-2 text-right', (totalRow.variationPct ?? 0) >= 0 ? 'text-emerald-300' : 'text-red-300')}>
-                      {totalRow.variationPct !== null ? formatPct(totalRow.variationPct) : '—'}
-                    </td>
-                    <td className="border border-slate-600 px-2 py-2 text-right text-amber-300">
-                      {totalRow.achievementPct !== null ? formatAchPct(totalRow.achievementPct) : '—'}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+            <div className="print-revenue-table-wrapper">
+              <RevenueTable 
+                rows={rows} 
+                upToMonth={upToMonth} 
+                unit={unit} 
+                fyLabel={fy.label}
+                showMonthCols={true} 
+              />
+            </div>
+            
           </>
         )}
 

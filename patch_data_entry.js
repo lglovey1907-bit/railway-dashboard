@@ -1,4 +1,11 @@
-'use client';
+const fs = require('fs');
+const filepath = 'src/components/financial/DataEntryModal.tsx';
+let text = fs.readFileSync(filepath, 'utf8');
+
+// We need to rewrite DataEntryModal.tsx to use modular cards.
+// First, define groups like in RevenueTable.
+
+const newCode = `'use client';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Save, Send, CheckCircle, XCircle, Eye, ChevronDown } from 'lucide-react';
@@ -173,7 +180,7 @@ export function DataEntryModal({ fyId, onClose, currentUser = 'User', canApprove
                     <tbody className="divide-y divide-slate-100">
                       {group.map(head => {
                         const rec = records.find(r => r.month === selectedMonth && r.revenueHeadId === head.id);
-                        const isEditing = editingId === rec?.id || (editingId === `new-${head.id}` && !rec);
+                        const isEditing = editingId === rec?.id || (editingId === \`new-\${head.id}\` && !rec);
                         const isHdr = head.isHeader;
                         const hBg = isHdr ? 'bg-slate-50 font-bold' : 'bg-inherit';
                         
@@ -234,7 +241,7 @@ export function DataEntryModal({ fyId, onClose, currentUser = 'User', canApprove
                                   <button
                                     onClick={() => {
                                       if (rec) { openEdit(rec); }
-                                      else { setEditingId(`new-${head.id}`); setForm({ actualsPrevPrevYear: '', actualsPrevYear: '', targetMonth: '', targetUpto: '', targetYearly: '', currentMonthPY: '', actual: '', remarks: '' }); }
+                                      else { setEditingId(\`new-\${head.id}\`); setForm({ actualsPrevPrevYear: '', actualsPrevYear: '', targetMonth: '', targetUpto: '', targetYearly: '', currentMonthPY: '', actual: '', remarks: '' }); }
                                     }}
                                     className="px-1.5 py-0.5 text-[9px] bg-white border border-slate-200 rounded hover:border-rail-400 hover:text-rail-600 text-slate-600 font-medium uppercase"
                                   >
@@ -281,3 +288,6 @@ export function DataEntryModal({ fyId, onClose, currentUser = 'User', canApprove
     document.body,
   );
 }
+`;
+fs.writeFileSync(filepath, newCode);
+console.log('Replaced DataEntryModal.tsx with new tabular structure.');

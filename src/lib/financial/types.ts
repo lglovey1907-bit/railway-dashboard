@@ -88,6 +88,9 @@ export interface MonthlyRecord {
   targetMonth?: number;
   targetUpto?: number;
   targetYearly?: number;
+  currentMonthPY?: number;
+  currentMonthCY?: number;
+  currentMonthVarPct?: number;
   remarks?: string;
   updatedBy?: string;
   updatedAt?: string;
