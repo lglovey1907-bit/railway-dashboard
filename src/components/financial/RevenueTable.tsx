@@ -172,7 +172,7 @@ export function RevenueTable({
               ITEMS
             </th>
             {showMonthCols && (
-              <th className="px-2.5 py-2 text-center border-r border-slate-800 border-b border-b-slate-800" colSpan={12}>
+              <th className="px-2.5 py-2 text-center border-r border-slate-800 border-b border-b-slate-800" colSpan={months.length}>
                 Monthly Actuals
               </th>
             )}
