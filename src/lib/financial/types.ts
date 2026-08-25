@@ -30,6 +30,8 @@ export function getCurrentFYMonth(): FYMonth {
 
 // ── Financial Year ────────────────────────────────────────────────────────────
 
+export type DataSource = { id: string; type: 'sheets'|'docs'|'pdf'; url: string; label: string; };
+
 export interface FinancialYear {
   id: string;
   label: string;        // "FY 2026-27"
@@ -38,6 +40,7 @@ export interface FinancialYear {
   status: 'planned' | 'active' | 'closed';
   isCurrent: boolean;
   createdAt: string;
+  dataSources?: DataSource[];
 }
 
 // ── Revenue Heads ─────────────────────────────────────────────────────────────
@@ -51,6 +54,12 @@ export interface RevenueHead {
   isActive: boolean;
   color: string;        // chart color hex
   description?: string;
+
+  // Added for advanced grouping
+  isHeader?: boolean;
+  parentId?: string;
+  isSubTotalFor?: string;
+  excludeFromGrandTotal?: boolean;
 }
 
 // ── Monthly Records ───────────────────────────────────────────────────────────
@@ -110,6 +119,18 @@ export interface CumulativeRow {
   variationPct: number | null;
   achievementPct: number | null;
   isTotal: boolean;
+
+  // New fields for the advanced PDF layout
+  actualsPrevPrevYear?: number | null;
+  actualsPrevYear?: number | null;
+  
+  targetMonth?: number | null;
+  targetUpto?: number | null;
+  targetYearly?: number | null;
+  
+  currentMonthPY?: number | null;
+  currentMonthCY?: number | null;
+  currentMonthVarPct?: number | null;
 }
 
 export interface MonthlyTrendPoint {

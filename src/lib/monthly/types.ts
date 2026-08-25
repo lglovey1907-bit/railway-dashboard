@@ -53,12 +53,15 @@ export interface MonthEntry {
 }
 
 /** All data for one financial year */
+export type DataSource = { id: string; type: 'sheets'|'docs'|'pdf'; url: string; label: string; };
+
 export interface YearlyReport {
   division: string;
   fyYear: number;  // start year, e.g. 2026 means FY 2026-27
   months: Partial<Record<MonthIndex, MonthEntry>>;
   annualTargets?: Record<string, AnnualTarget>;
   customHeads?: CustomHead[];
+  dataSources?: DataSource[];
 }
 
 // ── Helper functions ────────────────────────────────────────────────────────

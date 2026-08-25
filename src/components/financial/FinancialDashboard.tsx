@@ -30,6 +30,8 @@ import { RevenueCharts }  from './RevenueCharts';
 import { DataEntryModal } from './DataEntryModal';
 import { DrillDownModal } from './DrillDownModal';
 import { PrintView }      from './PrintView';
+import { DataSourcesModal } from '@/components/shared/DataSourcesModal';
+import { Link as LinkIcon } from 'lucide-react';
 
 // ── localStorage helpers ──────────────────────────────────────────────────────
 
@@ -261,6 +263,8 @@ export function FinancialDashboard({
   const showMonthCols = visibleCols.has('monthly');
   const [view,          setView]          = useState<'table' | 'charts'>('table');
   const [showDataEntry, setShowDataEntry] = useState(false);
+  const [isDataSourcesOpen, setDataSourcesOpen] = useState(false);
+  const [fetchingDsId, setFetchingDsId] = useState<string | null>(null);
   const [showPrint,     setShowPrint]     = useState(false);
   const [showAddRow,    setShowAddRow]    = useState(false);
   const [drillHeadId,   setDrillHeadId]  = useState<string | null>(null);
@@ -280,6 +284,130 @@ export function FinancialDashboard({
     () => buildCumulativeRows(records, store.revenueHeads, selectedFYId, selectedMonth),
     [records, store.revenueHeads, selectedFYId, selectedMonth],
   );
+
+  
+  const toCSVUrl = (url: string) => {
+    try {
+      const u = new URL(url);
+      if (u.hostname.includes('docs.google.com') && u.pathname.includes('/spreadsheets/d/')) {
+        const id = u.pathname.split('/d/')[1].split('/')[0];
+        return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv`;
+      }
+    } catch {}
+    return null;
+  };
+
+  const handleUpdateSources = (sources: any[]) => {
+    store.updateFinancialYear(selectedFYId, { dataSources: sources });
+  };
+
+  const parseNum = (str: string) => {
+    if (!str || str.trim() === '-') return 0;
+    return parseFloat(str.replace(/[^0-9.-]/g, '')) || 0;
+  };
+
+  const handleFetchDoc = async (src: any) => {
+    setFetchingDsId(src.id);
+    try {
+      if (src.type === 'pdf') {
+        // PDF flow
+        const pdfId = new URL(src.url, window.location.origin).searchParams.get('id');
+        if (!pdfId) throw new Error('Invalid PDF URL ID');
+        
+        const res = await fetch(`/api/parse-pdf?id=${pdfId}`);
+        if (!res.ok) throw new Error('Failed to parse PDF');
+        
+        const data = await res.json();
+        
+        // Use regex to find values based on the new seed heads structure
+        // e.g., Passenger Revenue \d+\.\d+ ... \d+\.\d+ \d+\.\d+
+        // Very basic stub parser:
+        const lines = data.text.split('\n');
+        lines.forEach((line: string) => {
+          let targetId = '';
+          const l = line.toLowerCase();
+          if (l.includes('passenger revenue')) targetId = 'rh-pass';
+          else if (l.includes('parcel/luggage')) targetId = 'rh-oc-parc';
+          else if (l.includes('ticket checking')) targetId = 'rh-oc-tc';
+          else if (l.includes('pf tickets')) targetId = 'rh-oc-pf';
+          else if (l.includes('freight revenue')) targetId = 'rh-freight';
+          else if (l.includes('parking contracts')) targetId = 'rh-sun-park';
+          
+          if (targetId) {
+            // Find last two numbers (usually CY and PY)
+            const nums = line.match(/[\d,]+\.\d+/g);
+            if (nums && nums.length >= 2) {
+              const cyStr = nums[nums.length - 1].replace(/,/g, '');
+              const pyStr = nums[nums.length - 2].replace(/,/g, '');
+              const cy = parseFloat(cyStr);
+              const py = parseFloat(pyStr);
+              
+              if (!isNaN(cy) && !isNaN(py)) {
+                store.upsertRecord({
+                  fyId: selectedFYId,
+                  month: selectedMonth,
+                  revenueHeadId: targetId,
+                  actual: cy,
+                  previousYearActual: py,
+                  status: 'published',
+                  targetStatus: 'available'
+                }, 'Auto-Fill from PDF');
+              }
+            }
+          }
+        });
+        alert('PDF Parsed and data mapped (some fields may require manual check)');
+      } else {
+        alert('Google Docs parsing not fully implemented for this widget yet.');
+      }
+    } catch (err: any) {
+      alert('Error fetching doc: ' + err.message);
+    } finally {
+      setFetchingDsId(null);
+    }
+  };
+
+  const handleFetchSheet = async (src: any) => {
+    const csvUrl = toCSVUrl(src.url);
+    if (!csvUrl) return alert('Invalid Google Sheet URL');
+    setFetchingDsId(src.id);
+    try {
+      const res = await fetch(csvUrl);
+      if (!res.ok) throw new Error('Failed to fetch CSV');
+      const text = await res.text();
+      const lines = text.split('\n');
+      
+      lines.forEach(line => {
+        const cols = line.split(',');
+        if (cols.length < 3) return;
+        const rowHead = cols[0].toLowerCase();
+        let targetId = '';
+        if (rowHead.includes('passenger')) targetId = 'passenger_revenue';
+        else if (rowHead.includes('other coaching') || rowHead.includes('other_coaching')) targetId = 'other_coaching_revenue';
+        else if (rowHead.includes('goods')) targetId = 'goods_revenue';
+        else if (rowHead.includes('sundry')) targetId = 'sundry_revenue';
+        
+        if (targetId) {
+          const cy = parseNum(cols[1]);
+          const py = parseNum(cols[2]);
+          
+          store.upsertRecord({
+            fyId: selectedFYId,
+            month: selectedMonth,
+            revenueHeadId: targetId,
+            targetStatus: 'available',
+            status: 'published',
+            actual: cy,
+            previousYearActual: py,
+          }, 'Auto-Fill');
+        }
+      });
+    } catch (e) {
+      console.error(e);
+      alert('Error fetching data: ' + e);
+    }
+    setFetchingDsId(null);
+  };
 
   // ── Drill-down ────────────────────────────────────────────────────────────
   const drillHead = drillHeadId
@@ -398,10 +526,15 @@ export function FinancialDashboard({
 
         {/* Enter Data — admin only */}
         {canManage && (
+          <>
+          <button onClick={() => setDataSourcesOpen(true)} className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg font-semibold shadow-sm">
+            <LinkIcon size={11} /> Link Data
+          </button>
           <button onClick={() => setShowDataEntry(true)}
             className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] bg-rail-600 hover:bg-rail-700 text-white rounded-lg font-semibold shadow-sm">
             <PencilLine size={11}/> Enter Data
           </button>
+          </>
         )}
       </div>
 
@@ -431,7 +564,7 @@ export function FinancialDashboard({
       {/* ── Main content ────────────────────────────────────────────────── */}
       {view === 'table' ? (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-          <RevenueTable
+          <RevenueTable fyLabel={selectedFY?.label ?? ""}
             rows={rows}
             upToMonth={selectedMonth}
             showMonthCols={showMonthCols}
@@ -478,6 +611,18 @@ export function FinancialDashboard({
         <AddRowModal
           onClose={() => setShowAddRow(false)}
           onAdd={handleAddRow}
+        />
+      )}
+
+      
+      {isDataSourcesOpen && (
+        <DataSourcesModal
+          dataSources={selectedFY?.dataSources || []}
+          onUpdateSources={handleUpdateSources}
+          onFetchSheet={handleFetchSheet}
+          onFetchDoc={handleFetchDoc}
+          fetchingId={fetchingDsId}
+          onClose={() => setDataSourcesOpen(false)}
         />
       )}
 

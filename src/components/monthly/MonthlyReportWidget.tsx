@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { DataSourcesModal } from '@/components/shared/DataSourcesModal';
+import { Link } from 'lucide-react';
 import {
   REPORT_HEADS,
   MONTH_NAMES,
@@ -10,6 +12,7 @@ import {
   type MonthEntry,
   type AnnualTarget,
   type CustomHead,
+  type DataSource,
   getFyYear,
   getCurrentMonthIndex,
   fyLabel,
@@ -570,6 +573,8 @@ export function MonthlyReportWidget({ division = 'DELHI', isAdmin = false }: Mon
   const [fyYear, setFyYear] = useState(todayFy);
   const [selectedMonth, setSelectedMonth] = useState<MonthIndex>(todayMonth);
   const [showEntry, setShowEntry] = useState(false);
+  const [isDataSourcesOpen, setDataSourcesOpen] = useState(false);
+  const [fetchingDsId, setFetchingDsId] = useState<string | null>(null);
   const [showAddHead, setShowAddHead] = useState(false);
   const [displayUnit, setDisplayUnit] = useState<DisplayUnit>('cr');
   const [showPrint, setShowPrint] = useState(false);
@@ -602,6 +607,155 @@ export function MonthlyReportWidget({ division = 'DELHI', isAdmin = false }: Mon
   const handlePrint = () => {
     // Only print when there is data for the selected month
     if (report && report.months[selectedMonth]) setShowPrint(true);
+  };
+
+
+  const toCSVUrl = (url: string) => {
+    try {
+      const u = new URL(url);
+      if (u.hostname.includes('docs.google.com') && u.pathname.includes('/spreadsheets/d/')) {
+        const id = u.pathname.split('/d/')[1].split('/')[0];
+        return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv`;
+      }
+    } catch {}
+    return null;
+  };
+
+  const handleUpdateSources = async (sources: DataSource[]) => {
+    if (!report) return;
+    try {
+      await refresh();
+      await fetch('/api/monthly', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          division: report.division,
+          fyYear: report.fyYear,
+          dataSources: sources
+        })
+      });
+    } catch (e) { console.error(e); }
+  };
+
+  const parseNum = (str: string) => {
+    if (!str || str.trim() === '-') return 0;
+    return parseFloat(str.replace(/[^0-9.-]/g, '')) || 0;
+  };
+
+  const handleFetchDoc = async (src: DataSource) => {
+    setFetchingDsId(src.id);
+    try {
+      if (src.type === 'pdf') {
+        const pdfId = new URL(src.url, window.location.origin).searchParams.get('id');
+        if (!pdfId) throw new Error('Invalid PDF URL ID');
+        
+        const res = await fetch(`/api/parse-pdf?id=${pdfId}`);
+        if (!res.ok) throw new Error('Failed to parse PDF');
+        const data = await res.json();
+        
+        const newMonths = { ...report?.months };
+        if (!newMonths[selectedMonth]) newMonths[selectedMonth] = { month: selectedMonth, heads: {} };
+
+        const lines = data.text.split('\n');
+        lines.forEach((line: string) => {
+          let targetId = '';
+          const l = line.toLowerCase();
+          if (l.includes('passenger revenue')) targetId = 'pass';
+          else if (l.includes('other coaching revenue') || (l.includes('total') && l.includes('coaching'))) targetId = 'oc';
+          else if (l.includes('freight revenue') || l.includes('goods revenue')) targetId = 'goods';
+          else if (l.includes('sundry revenue') && l.includes('total')) targetId = 'sundry';
+          
+          if (targetId) {
+            const nums = line.match(/[\d,]+\.\d+/g);
+            if (nums && nums.length >= 2) {
+              const cyStr = nums[nums.length - 1].replace(/,/g, '');
+              const pyStr = nums[nums.length - 2].replace(/,/g, '');
+              const cy = parseFloat(cyStr);
+              const py = parseFloat(pyStr);
+              
+              if (!isNaN(cy) && !isNaN(py)) {
+                if (!newMonths[selectedMonth]!.heads[targetId]) {
+                  newMonths[selectedMonth]!.heads[targetId] = { cy: 0, py: 0 };
+                }
+                newMonths[selectedMonth]!.heads[targetId].cy = cy;
+                newMonths[selectedMonth]!.heads[targetId].py = py;
+              }
+            }
+          }
+        });
+        
+        await fetch(`/api/monthly?division=${division}&fyYear=${fyYear}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            division,
+            fyYear,
+            months: newMonths,
+            updatedAt: new Date().toISOString()
+          })
+        });
+        alert('PDF Parsed and data mapped for Monthly Statement!');
+        refresh();
+      } else {
+        alert('Google Docs parsing not implemented here.');
+      }
+    } catch (err: any) {
+      alert('Error: ' + err.message);
+    } finally {
+      setFetchingDsId(null);
+    }
+  };
+
+  const handleFetchSheet = async (src: DataSource) => {
+    const csvUrl = toCSVUrl(src.url);
+    if (!csvUrl) return alert('Invalid Google Sheet URL');
+    setFetchingDsId(src.id);
+    try {
+      const res = await fetch(csvUrl);
+      if (!res.ok) throw new Error('Failed to fetch CSV');
+      const text = await res.text();
+      const lines = text.split('\n');
+      
+      const newMonths = { ...report?.months };
+      if (!newMonths[selectedMonth]) newMonths[selectedMonth] = { month: selectedMonth, heads: {} };
+
+      lines.forEach(line => {
+        const cols = line.split(',');
+        if (cols.length < 3) return;
+        const rowHead = cols[0].toLowerCase();
+        let targetId = '';
+        if (rowHead.includes('passenger')) targetId = 'pass';
+        else if (rowHead.includes('other coaching') || rowHead.includes('other_coaching')) targetId = 'oc';
+        else if (rowHead.includes('goods')) targetId = 'goods';
+        else if (rowHead.includes('sundry')) targetId = 'sundry';
+        
+        if (targetId) {
+          const cy = parseNum(cols[1]);
+          const py = parseNum(cols[2]);
+          if (!newMonths[selectedMonth]!.heads) newMonths[selectedMonth]!.heads = {};
+          newMonths[selectedMonth]!.heads[targetId] = { cy, py };
+        }
+      });
+      
+      const entry = newMonths[selectedMonth];
+      if (entry) {
+        await fetch('/api/monthly', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            division,
+            fyYear,
+            month: selectedMonth,
+            entry
+          })
+        });
+        await refresh();
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error fetching data: ' + e);
+    }
+    setFetchingDsId(null);
   };
 
   return (
@@ -685,6 +839,10 @@ export function MonthlyReportWidget({ division = 'DELHI', isAdmin = false }: Mon
 
           {/* Admin: Enter data */}
           {isAdmin && (
+          <>
+            <button onClick={() => setDataSourcesOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium hover:bg-emerald-50 text-emerald-700 border-emerald-200 transition-colors">
+              <Link size={14} /> Link Data
+            </button>
             <button
               onClick={() => setShowEntry(true)}
               className="flex items-center gap-1.5 px-4 py-1.5 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700"
@@ -692,6 +850,7 @@ export function MonthlyReportWidget({ division = 'DELHI', isAdmin = false }: Mon
               <span className="text-base">＋</span>
               Enter Data
             </button>
+          </>
           )}
         </div>
       </div>
@@ -750,6 +909,18 @@ export function MonthlyReportWidget({ division = 'DELHI', isAdmin = false }: Mon
       )}
 
       {/* ── Data Entry Modal ── */}
+      
+      {isDataSourcesOpen && (
+        <DataSourcesModal
+          dataSources={report?.dataSources || []}
+          onUpdateSources={handleUpdateSources}
+          onFetchSheet={handleFetchSheet}
+          onFetchDoc={handleFetchDoc}
+          fetchingId={fetchingDsId}
+          onClose={() => setDataSourcesOpen(false)}
+        />
+      )}
+
       {showEntry && report && (
         <EntryModal
           division={division}

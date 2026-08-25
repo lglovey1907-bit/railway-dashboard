@@ -42,6 +42,7 @@ export async function POST(req: NextRequest) {
       entry,
       annualTargets,
       customHead,
+      dataSources,
     }: {
       division: string;
       fyYear: number;
@@ -49,6 +50,7 @@ export async function POST(req: NextRequest) {
       entry?: MonthEntry;
       annualTargets?: Record<string, AnnualTarget>;
       customHead?: CustomHead;
+      dataSources?: any[];
     } = body;
 
     if (!division || !fyYear) {
@@ -57,6 +59,14 @@ export async function POST(req: NextRequest) {
 
     const key = kvKey(division, fyYear);
     const existing = (await kv.get<YearlyReport>(key)) ?? emptyReport(division, fyYear);
+
+
+    // ── Update data sources ────────────────────────────────────────────────
+    if (dataSources) {
+      existing.dataSources = dataSources;
+      await kv.set(key, existing);
+      return NextResponse.json({ ok: true, report: existing });
+    }
 
     // ── Add custom head ────────────────────────────────────────────────────
     if (customHead) {
