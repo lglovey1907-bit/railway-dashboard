@@ -177,7 +177,7 @@ export function RevenueTable({
               </th>
             )}
             <th className="px-3 py-1.5 text-center border-r border-slate-800 border-b border-b-slate-800" colSpan={2}>
-              Actuals
+              Achieved in year
             </th>
             <th className="px-3 py-1.5 text-center border-r border-slate-800 border-b border-b-slate-800" colSpan={3}>
               Target {cyFull}
