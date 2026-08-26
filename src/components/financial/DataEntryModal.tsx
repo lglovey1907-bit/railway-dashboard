@@ -173,6 +173,7 @@ export function DataEntryModal({ fyId, onClose, currentUser = 'User', canApprove
                         <th className="px-2 py-1 border-r border-b border-[#1e3a5f] text-center" colSpan={2}>Achieved in year</th>
                         <th className="px-2 py-1 border-r border-b border-[#1e3a5f] text-center" colSpan={3}>Target</th>
                         <th className="px-2 py-1 border-r border-b border-[#1e3a5f] text-center" colSpan={2}>Current Month</th>
+                        <th className="px-2 py-1 border-r border-b border-[#1e3a5f] text-center" colSpan={1}>Cumul</th>
                         <th className="px-3 py-1.5 text-center border-r border-[#1e3a5f]" rowSpan={2}>Status</th>
                         <th className="px-3 py-1.5 text-center" rowSpan={2}>Action</th>
                       </tr>
@@ -184,6 +185,7 @@ export function DataEntryModal({ fyId, onClose, currentUser = 'User', canApprove
                         <th className="px-2 py-1 border-r border-[#1e3a5f] font-medium">Yearly</th>
                         <th className="px-2 py-1 border-r border-[#1e3a5f] font-medium">PY</th>
                         <th className="px-2 py-1 border-r border-[#1e3a5f] font-medium">CY</th>
+                        <th className="px-2 py-1 border-r border-[#1e3a5f] font-medium">PY Ovr</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -207,6 +209,7 @@ export function DataEntryModal({ fyId, onClose, currentUser = 'User', canApprove
                               <td className="px-1 py-1 border-r border-slate-200"><input type="number" value={form.targetYearly} onChange={e => setForm(f => ({ ...f, targetYearly: e.target.value }))} className="w-16 px-1 py-0.5 rounded border border-slate-200 text-right text-xs text-indigo-700" /></td>
                               <td className="px-1 py-1 border-r border-slate-200"><input type="number" value={form.currentMonthPY} onChange={e => setForm(f => ({ ...f, currentMonthPY: e.target.value }))} className="w-16 px-1 py-0.5 rounded border border-slate-200 text-right text-xs" /></td>
                               <td className="px-1 py-1 border-r border-slate-200"><input type="number" value={form.actual} onChange={e => setForm(f => ({ ...f, actual: e.target.value }))} className="w-16 px-1 py-0.5 rounded border border-blue-300 text-right text-xs font-semibold" /></td>
+                              <td className="px-1 py-1 border-r border-slate-200"><input type="number" value={form.cumulPY} onChange={e => setForm(f => ({ ...f, cumulPY: e.target.value }))} placeholder="Auto" className="w-16 px-1 py-0.5 rounded border border-slate-200 text-right text-xs bg-amber-50" /></td>
                               
                               <td className="px-2 py-1 text-center border-r border-slate-200 text-[10px] italic text-slate-500">Draft</td>
                               <td className="px-2 py-1 text-center">
@@ -234,6 +237,7 @@ export function DataEntryModal({ fyId, onClose, currentUser = 'User', canApprove
                             
                             <td className="px-2 py-2 text-right text-slate-500 border-r border-slate-200">{isHdr ? '' : rec?.currentMonthPY?.toFixed(2) ?? '—'}</td>
                             <td className="px-2 py-2 text-right font-semibold text-slate-900 border-r border-slate-200">{isHdr ? '' : rec?.actual?.toFixed(2) ?? '—'}</td>
+                            <td className="px-2 py-2 text-right text-amber-700 border-r border-slate-200 bg-amber-50/30">{isHdr ? '' : rec?.cumulPY?.toFixed(2) ?? '—'}</td>
                             
                             <td className="px-2 py-2 text-center border-r border-slate-200">
                               {isHdr ? '' : rec ? (
