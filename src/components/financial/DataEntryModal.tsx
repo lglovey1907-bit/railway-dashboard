@@ -142,7 +142,7 @@ export function DataEntryModal({ fyId, onClose, currentUser = 'User', canApprove
             
             return (
               <div key={topRow.id} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="px-4 py-2 bg-slate-50/80 border-b border-slate-200">
+                <div className="px-4 py-2 bg-[#f4f7fa] border-b border-slate-200">
                   <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: topRow.color || '#94a3b8' }} />
                     {title}
@@ -151,23 +151,23 @@ export function DataEntryModal({ fyId, onClose, currentUser = 'User', canApprove
                 
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs border-collapse">
-                    <thead className="bg-slate-800 text-slate-100 text-[10px] uppercase tracking-wider sticky top-0 z-10">
+                    <thead className="bg-[#0f2847] text-slate-100 text-[10px] uppercase tracking-wider sticky top-0 z-10">
                       <tr>
-                        <th className="px-3 py-1.5 text-left border-r border-slate-700 w-48 font-semibold" rowSpan={2}>Revenue Head</th>
-                        <th className="px-2 py-1 border-r border-b border-slate-700 text-center" colSpan={2}>Achieved in year</th>
-                        <th className="px-2 py-1 border-r border-b border-slate-700 text-center" colSpan={3}>Target</th>
-                        <th className="px-2 py-1 border-r border-b border-slate-700 text-center" colSpan={2}>Current Month</th>
-                        <th className="px-3 py-1.5 text-center border-r border-slate-700" rowSpan={2}>Status</th>
+                        <th className="px-3 py-1.5 text-left border-r border-[#1e3a5f] w-48 font-semibold" rowSpan={2}>Revenue Head</th>
+                        <th className="px-2 py-1 border-r border-b border-[#1e3a5f] text-center" colSpan={2}>Achieved in year</th>
+                        <th className="px-2 py-1 border-r border-b border-[#1e3a5f] text-center" colSpan={3}>Target</th>
+                        <th className="px-2 py-1 border-r border-b border-[#1e3a5f] text-center" colSpan={2}>Current Month</th>
+                        <th className="px-3 py-1.5 text-center border-r border-[#1e3a5f]" rowSpan={2}>Status</th>
                         <th className="px-3 py-1.5 text-center" rowSpan={2}>Action</th>
                       </tr>
                       <tr>
-                        <th className="px-2 py-1 border-r border-slate-700 font-medium">Prev-Prev</th>
-                        <th className="px-2 py-1 border-r border-slate-700 font-medium">Prev</th>
-                        <th className="px-2 py-1 border-r border-slate-700 font-medium">Month</th>
-                        <th className="px-2 py-1 border-r border-slate-700 font-medium">Upto</th>
-                        <th className="px-2 py-1 border-r border-slate-700 font-medium">Yearly</th>
-                        <th className="px-2 py-1 border-r border-slate-700 font-medium">PY</th>
-                        <th className="px-2 py-1 border-r border-slate-700 font-medium">CY</th>
+                        <th className="px-2 py-1 border-r border-[#1e3a5f] font-medium">Prev-Prev</th>
+                        <th className="px-2 py-1 border-r border-[#1e3a5f] font-medium">Prev</th>
+                        <th className="px-2 py-1 border-r border-[#1e3a5f] font-medium">Month</th>
+                        <th className="px-2 py-1 border-r border-[#1e3a5f] font-medium">Upto</th>
+                        <th className="px-2 py-1 border-r border-[#1e3a5f] font-medium">Yearly</th>
+                        <th className="px-2 py-1 border-r border-[#1e3a5f] font-medium">PY</th>
+                        <th className="px-2 py-1 border-r border-[#1e3a5f] font-medium">CY</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -204,7 +204,7 @@ export function DataEntryModal({ fyId, onClose, currentUser = 'User', canApprove
                         }
 
                         return (
-                          <tr key={head.id} className={cn("hover:bg-slate-50/50 transition-colors border-b border-slate-100", hBg)}>
+                          <tr key={head.id} className={cn("hover:bg-[#f8fafc] transition-colors border-b border-slate-100", hBg)}>
                             <td className={cn("px-3 py-2 text-slate-800 whitespace-nowrap border-r border-slate-200", isHdr ? "uppercase text-[10px] text-slate-700" : "", head.parentId ? "pl-6" : "")}>
                               {!isHdr && <span className="inline-block w-1.5 h-1.5 rounded-full mr-2" style={{ backgroundColor: head.color }}/>}
                               {head.name}

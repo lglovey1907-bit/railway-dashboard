@@ -172,55 +172,55 @@ export function RevenueTable({
 
   // The Header component to reuse across cards
   const TableHeader = () => (
-    <thead className="bg-slate-900 text-slate-100 text-[11px] uppercase tracking-wider sticky top-0 z-20">
+    <thead className="bg-[#0f2847] text-slate-100 text-[11px] uppercase tracking-wider sticky top-0 z-20">
       <tr>
-        <th className="px-2 py-1.5 text-center border-r border-slate-800 border-b border-b-slate-800 font-semibold w-10 sticky left-0 bg-slate-900 z-30" rowSpan={2}>
+        <th className="px-2 py-1.5 text-center border-r border-[#1e3a5f] border-b border-b-[#1e3a5f] font-semibold w-10 sticky left-0 bg-[#0f2847] z-30" rowSpan={2}>
           S.No.
         </th>
-        <th className="px-3 py-1.5 text-left border-r border-slate-800 border-b border-b-slate-800 font-semibold w-64 sticky left-[48px] bg-slate-900 z-30" rowSpan={2}>
+        <th className="px-3 py-1.5 text-left border-r border-[#1e3a5f] border-b border-b-[#1e3a5f] font-semibold w-64 sticky left-[48px] bg-[#0f2847] z-30" rowSpan={2}>
           ITEMS
         </th>
         {showMonthCols && (
-          <th className="px-3 py-1.5 text-center border-r border-slate-800 border-b border-b-slate-800" colSpan={months.length}>
+          <th className="px-3 py-1.5 text-center border-r border-[#1e3a5f] border-b border-b-[#1e3a5f]" colSpan={months.length}>
             Monthly Actuals
           </th>
         )}
-        <th className="px-3 py-1.5 text-center border-r border-slate-800 border-b border-b-slate-800" colSpan={2}>
+        <th className="px-3 py-1.5 text-center border-r border-[#1e3a5f] border-b border-b-[#1e3a5f]" colSpan={2}>
           Achieved in year
         </th>
-        <th className="px-3 py-1.5 text-center border-r border-slate-800 border-b border-b-slate-800" colSpan={3}>
+        <th className="px-3 py-1.5 text-center border-r border-[#1e3a5f] border-b border-b-[#1e3a5f]" colSpan={3}>
           Target {cyFull}
         </th>
-        <th className="px-3 py-1.5 text-center border-r border-slate-800 border-b border-b-slate-800" colSpan={3}>
+        <th className="px-3 py-1.5 text-center border-r border-[#1e3a5f] border-b border-b-[#1e3a5f]" colSpan={3}>
           Current Month
         </th>
-        <th className="px-3 py-1.5 text-center border-b border-b-slate-800" colSpan={3}>
+        <th className="px-3 py-1.5 text-center border-b border-b-[#1e3a5f]" colSpan={3}>
           Cummulative Upto {curMonthShort} {cyYr.toString().padStart(2, '0')}
         </th>
       </tr>
       <tr>
         {showMonthCols && months.map(m => (
-          <th key={m.id} className="px-2.5 py-1.5 text-right border-r border-slate-800 border-b border-b-slate-800 font-medium bg-slate-800">
+          <th key={m.id} className="px-2.5 py-1.5 text-right border-r border-[#1e3a5f] border-b border-b-[#1e3a5f] font-medium bg-[#153457]">
             {m.short}
           </th>
         ))}
-        <th className="px-3 py-1.5 text-right border-r border-slate-800 border-b border-b-slate-800 font-medium bg-slate-800">
+        <th className="px-3 py-1.5 text-right border-r border-[#1e3a5f] border-b border-b-[#1e3a5f] font-medium bg-[#153457]">
           {ppyFull}
         </th>
-        <th className="px-3 py-1.5 text-right border-r border-slate-800 border-b border-b-slate-800 font-medium bg-slate-800">{pyFull}</th>
-        <th className="px-3 py-1.5 text-right border-r border-slate-800 border-b border-b-slate-800 font-medium bg-slate-800">Month</th>
-        <th className="px-3 py-1.5 text-right border-r border-slate-800 border-b border-b-slate-800 font-medium bg-slate-800">{`Upto ${curMonthShort}`}</th>
-        <th className="px-3 py-1.5 text-right border-r border-slate-800 border-b border-b-slate-800 font-medium bg-slate-800">Yearly</th>
-        <th className="px-3 py-1.5 text-right border-r border-slate-800 border-b border-b-slate-800 font-medium bg-slate-800">
+        <th className="px-3 py-1.5 text-right border-r border-[#1e3a5f] border-b border-b-[#1e3a5f] font-medium bg-[#153457]">{pyFull}</th>
+        <th className="px-3 py-1.5 text-right border-r border-[#1e3a5f] border-b border-b-[#1e3a5f] font-medium bg-[#153457]">Month</th>
+        <th className="px-3 py-1.5 text-right border-r border-[#1e3a5f] border-b border-b-[#1e3a5f] font-medium bg-[#153457]">{`Upto ${curMonthShort}`}</th>
+        <th className="px-3 py-1.5 text-right border-r border-[#1e3a5f] border-b border-b-[#1e3a5f] font-medium bg-[#153457]">Yearly</th>
+        <th className="px-3 py-1.5 text-right border-r border-[#1e3a5f] border-b border-b-[#1e3a5f] font-medium bg-[#153457]">
           {curMonthShort}'{pyYr.toString().padStart(2, '0')}
         </th>
-        <th className="px-3 py-1.5 text-right border-r border-slate-800 border-b border-b-slate-800 font-medium bg-slate-800">
+        <th className="px-3 py-1.5 text-right border-r border-[#1e3a5f] border-b border-b-[#1e3a5f] font-medium bg-[#153457]">
           {curMonthShort}'{cyYr.toString().padStart(2, '0')}
         </th>
-        <th className="px-3 py-1.5 text-right border-r border-slate-800 border-b border-b-slate-800 font-medium bg-slate-800">%Variation</th>
-        <th className="px-3 py-1.5 text-right border-r border-slate-800 border-b border-b-slate-800 font-medium bg-slate-800">{pyFull}</th>
-        <th className="px-3 py-1.5 text-right border-r border-slate-800 border-b border-b-slate-800 font-medium bg-slate-800">{cyFull}</th>
-        <th className="px-3 py-1.5 text-right border-b border-b-slate-800 font-medium bg-slate-800">%Variation</th>
+        <th className="px-3 py-1.5 text-right border-r border-[#1e3a5f] border-b border-b-[#1e3a5f] font-medium bg-[#153457]">%Variation</th>
+        <th className="px-3 py-1.5 text-right border-r border-[#1e3a5f] border-b border-b-[#1e3a5f] font-medium bg-[#153457]">{pyFull}</th>
+        <th className="px-3 py-1.5 text-right border-r border-[#1e3a5f] border-b border-b-[#1e3a5f] font-medium bg-[#153457]">{cyFull}</th>
+        <th className="px-3 py-1.5 text-right border-b border-b-[#1e3a5f] font-medium bg-[#153457]">%Variation</th>
       </tr>
     </thead>
   );
@@ -236,10 +236,10 @@ export function RevenueTable({
         const summaryRow = isGrandTotal ? topRow : group.find(r => r.revenueHead.isSubTotalFor === topRow.revenueHead.id) || topRow;
         
         return (
-          <div key={topRow.revenueHead.id} className={cn("bg-white rounded-xl shadow-sm border overflow-hidden", isGrandTotal ? "border-indigo-200 shadow-md ring-1 ring-indigo-50" : "border-slate-200")}>
+          <div key={topRow.revenueHead.id} className={cn("bg-white rounded-xl shadow-sm border overflow-hidden", isGrandTotal ? "border-indigo-200 shadow-md ring-1 ring-indigo-50" : "border-[#e2e8f0]")}>
             
             {/* Card Header */}
-            <div className={cn("px-4 py-3 flex items-center justify-between border-b", isGrandTotal ? "bg-indigo-50/50 border-indigo-100" : "bg-slate-50/80 border-slate-200")}>
+            <div className={cn("px-4 py-3 flex items-center justify-between border-b", isGrandTotal ? "bg-indigo-50/50 border-indigo-100" : "bg-slate-50/80 border-[#e2e8f0]")}>
               <div className="flex items-center gap-3">
                 {!isGrandTotal && <span className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: topRow.revenueHead.color || '#94a3b8' }} />}
                 <h3 className={cn("font-bold text-slate-800 text-lg", isGrandTotal ? "text-indigo-900 uppercase tracking-wide" : "")}>{title}</h3>
@@ -272,13 +272,13 @@ export function RevenueTable({
                     return (
                       <tr key={row.revenueHead.id} className={cn("group hover:bg-slate-50/80 transition-colors", hBg)}>
                         <td className={cn(
-                          'sticky left-0 z-10 px-2 py-2 text-center text-[11px] whitespace-nowrap border-r border-slate-200 font-medium',
+                          'sticky left-0 z-10 px-2 py-2 text-center text-[11px] whitespace-nowrap border-r border-[#e2e8f0] font-medium',
                           hBg, 'text-slate-700'
                         )}>
                           {row.revenueHead.sNo || ''}
                         </td>
                         <td className={cn(
-                          'sticky left-[48px] z-10 px-3 py-2 whitespace-nowrap border-r border-slate-200',
+                          'sticky left-[48px] z-10 px-3 py-2 whitespace-nowrap border-r border-[#e2e8f0]',
                           hBg,
                           isHdr ? 'uppercase text-[11px] text-slate-700' : 'text-slate-800',
                           row.revenueHead.parentId ? 'pl-8 text-slate-600' : ''
@@ -300,46 +300,46 @@ export function RevenueTable({
                         </td>
 
                         {showMonthCols && months.map((m, i) => (
-                          <td key={m.id} className="px-2.5 py-2 text-right text-slate-600 whitespace-nowrap text-[11px] border-r border-slate-100 group-hover:border-slate-200">
+                          <td key={m.id} className="px-2.5 py-2 text-right text-slate-600 whitespace-nowrap text-[11px] border-r border-slate-100 group-hover:border-[#e2e8f0]">
                             {isHdr ? '' : row.monthlyActuals[i] !== null ? fmt(row.monthlyActuals[i], unit) : '—'}
                           </td>
                         ))}
 
                         {/* Actuals */}
-                        <td className="px-3 py-2 text-right text-slate-600 whitespace-nowrap border-r border-slate-100 group-hover:border-slate-200">
+                        <td className="px-3 py-2 text-right text-slate-600 whitespace-nowrap border-r border-slate-100 group-hover:border-[#e2e8f0]">
                           {isHdr ? '' : row.actualsPrevPrevYear !== null ? fmt(row.actualsPrevPrevYear, unit) : '—'}
                         </td>
-                        <td className="px-3 py-2 text-right text-slate-600 whitespace-nowrap border-r border-slate-200 bg-slate-50/30">
+                        <td className="px-3 py-2 text-right text-slate-600 whitespace-nowrap border-r border-[#e2e8f0] bg-slate-50/30">
                           {isHdr ? '' : row.actualsPrevYear !== null ? fmt(row.actualsPrevYear, unit) : '—'}
                         </td>
 
                         {/* Target */}
-                        <td className="px-3 py-2 text-right text-indigo-700 whitespace-nowrap border-r border-slate-100 group-hover:border-slate-200">
+                        <td className="px-3 py-2 text-right text-indigo-700 whitespace-nowrap border-r border-slate-100 group-hover:border-[#e2e8f0]">
                           {isHdr ? '' : row.targetMonth !== null ? fmt(row.targetMonth, unit) : '—'}
                         </td>
-                        <td className="px-3 py-2 text-right text-indigo-700 whitespace-nowrap border-r border-slate-100 group-hover:border-slate-200">
+                        <td className="px-3 py-2 text-right text-indigo-700 whitespace-nowrap border-r border-slate-100 group-hover:border-[#e2e8f0]">
                           {isHdr ? '' : row.targetUpto !== null ? fmt(row.targetUpto, unit) : '—'}
                         </td>
-                        <td className="px-3 py-2 text-right text-indigo-700 whitespace-nowrap border-r border-slate-200 bg-indigo-50/10">
+                        <td className="px-3 py-2 text-right text-indigo-700 whitespace-nowrap border-r border-[#e2e8f0] bg-indigo-50/10">
                           {isHdr ? '' : row.targetYearly !== null ? fmt(row.targetYearly, unit) : '—'}
                         </td>
 
                         {/* Current Month */}
-                        <td className="px-3 py-2 text-right text-slate-600 whitespace-nowrap border-r border-slate-100 group-hover:border-slate-200">
+                        <td className="px-3 py-2 text-right text-slate-600 whitespace-nowrap border-r border-slate-100 group-hover:border-[#e2e8f0]">
                           {isHdr ? '' : row.currentMonthPY !== null ? fmt(row.currentMonthPY, unit) : '—'}
                         </td>
-                        <td className="px-3 py-2 text-right text-slate-900 font-medium whitespace-nowrap border-r border-slate-100 group-hover:border-slate-200">
+                        <td className="px-3 py-2 text-right text-slate-900 font-medium whitespace-nowrap border-r border-slate-100 group-hover:border-[#e2e8f0]">
                           {isHdr ? '' : row.currentMonthCY !== null ? fmt(row.currentMonthCY, unit) : '—'}
                         </td>
-                        <td className={cn("px-3 py-2 text-right font-semibold whitespace-nowrap border-r border-slate-200", getVariationColour(row.currentMonthVarPct ?? null))}>
+                        <td className={cn("px-3 py-2 text-right font-semibold whitespace-nowrap border-r border-[#e2e8f0]", getVariationColour(row.currentMonthVarPct ?? null))}>
                           {isHdr ? '' : row.currentMonthVarPct !== null ? formatPct(row.currentMonthVarPct ?? null) : '—'}
                         </td>
 
                         {/* Cumulative */}
-                        <td className="px-3 py-2 text-right text-slate-600 whitespace-nowrap border-r border-slate-100 group-hover:border-slate-200">
+                        <td className="px-3 py-2 text-right text-slate-600 whitespace-nowrap border-r border-slate-100 group-hover:border-[#e2e8f0]">
                           {isHdr ? '' : row.cumulativePreviousYear !== null ? fmt(row.cumulativePreviousYear, unit) : '—'}
                         </td>
-                        <td className="px-3 py-2 text-right text-blue-900 font-semibold whitespace-nowrap bg-blue-50/30 border-r border-slate-100 group-hover:border-slate-200">
+                        <td className="px-3 py-2 text-right text-blue-900 font-semibold whitespace-nowrap bg-blue-50/30 border-r border-slate-100 group-hover:border-[#e2e8f0]">
                           {isHdr ? '' : row.cumulativeCurrentYear !== null ? fmt(row.cumulativeCurrentYear, unit) : '—'}
                         </td>
                         <td className={cn("px-3 py-2 text-right font-bold whitespace-nowrap", getVariationColour(row.variationPct))}>
