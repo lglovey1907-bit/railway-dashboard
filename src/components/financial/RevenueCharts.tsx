@@ -12,6 +12,8 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { cn } from '@/lib/utils';
+import { AnimatedTabs } from '@/components/animations/AnimatedTabs';
+import { AnimatedCard } from '@/components/animations/AnimatedCard';
 import type { CumulativeRow, MonthlyTrendPoint, ContributionPoint } from '@/lib/financial/types';
 import type { FYMonth } from '@/lib/financial/types';
 import { FY_MONTHS } from '@/lib/financial/types';
@@ -110,25 +112,10 @@ export function RevenueCharts({ rows, records, fyId, upToMonth }: Props) {
   return (
     <div className="space-y-3">
       {/* Tabs */}
-      <div className="flex items-center gap-0.5 bg-slate-100 rounded-xl p-1 overflow-x-auto">
-        {TABS.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={cn(
-              'flex-1 min-w-max px-3 py-1.5 rounded-lg text-[10px] font-semibold whitespace-nowrap transition-all',
-              tab === t.id
-                ? 'bg-white text-slate-900 shadow-sm'
-                : 'text-slate-500 hover:text-slate-700',
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <AnimatedTabs tabs={TABS} activeTab={tab} onChange={(id) => setTab(id as ChartTab)} className="w-full flex-wrap gap-y-1 overflow-x-auto" />
 
       {/* Chart area */}
-      <div className="bg-white rounded-xl border border-slate-100 p-4">
+      <AnimatedCard delay={0.1} className="p-4">
 
         {/* Monthly Trend */}
         {tab === 'monthly' && (
@@ -317,7 +304,7 @@ export function RevenueCharts({ rows, records, fyId, upToMonth }: Props) {
             </div>
           </div>
         )}
-      </div>
+      </AnimatedCard>
     </div>
   );
 }

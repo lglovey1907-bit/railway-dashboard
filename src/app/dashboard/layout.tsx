@@ -8,9 +8,9 @@ import { useSidebarStore } from '@/store/sidebarStore';
 import { Sidebar, NAV_ITEMS } from '@/components/layout/Sidebar';
 import { TopBar } from '@/components/layout/TopBar';
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav';
-import { PendingRequestsToast } from '@/components/layout/PendingRequestsToast';
 import { ChangePasswordGate } from '@/components/auth/ChangePasswordGate';
 import { getCellBySlug } from '@/lib/cells/cellRegistry';
+import { PageTransition } from '@/components/animations/PageTransition';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, isInitialized, initialize } = useAuthStore();
@@ -97,7 +97,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <>
-      <PendingRequestsToast />
       {user.mustChangePassword && !gatePassed && (
         <ChangePasswordGate onComplete={() => setGatePassed(true)}/>
       )}
@@ -106,8 +105,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           <TopBar title={info.title} subtitle={info.subtitle}/>
           {/* pb-16 on mobile clears the fixed bottom nav */}
-          <main className="flex-1 overflow-x-auto overflow-y-auto p-4 md:p-6 custom-scroll pb-20 md:pb-6">
-            {children}
+          <main className="flex-1 overflow-x-hidden overflow-y-auto p-4 md:p-6 custom-scroll pb-20 md:pb-6">
+            <PageTransition>
+              {children}
+            </PageTransition>
           </main>
         </div>
       </div>
