@@ -93,7 +93,7 @@ export function buildCumulativeRows(
     }
     
     const currentMonthCY = curRec?.actual ?? null;
-    const currentMonthPY = curRec?.previousYearActual ?? null;
+    const currentMonthPY = curRec?.currentMonthPY ?? curRec?.previousYearActual ?? null;
     const currentMonthVarPct = currentMonthCY !== null && currentMonthPY !== null && currentMonthPY !== 0 
       ? ((currentMonthCY - currentMonthPY) / currentMonthPY) * 100 : null;
 

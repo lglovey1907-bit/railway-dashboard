@@ -70,6 +70,7 @@ export function DataEntryModal({ fyId, onClose, currentUser = 'User', canApprove
         targetUpto: parseNum(form.targetUpto),
         targetYearly: parseNum(form.targetYearly),
         currentMonthPY: parseNum(form.currentMonthPY),
+        previousYearActual: parseNum(form.currentMonthPY), // Must sync for cumulative calcs!
         actual: parseNum(form.actual),
         remarks: form.remarks,
         // We will default to available if it's new
