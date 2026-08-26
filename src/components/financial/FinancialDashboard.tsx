@@ -329,7 +329,7 @@ export function FinancialDashboard({
         // e.g., Passenger Revenue \d+\.\d+ ... \d+\.\d+ \d+\.\d+
         // Very basic stub parser:
         // Parse full text rather than per-line, as PDF formatting often breaks lines unpredictably
-        const fullText = data.text.replace(/\r/g, '');
+        const fullText = data.text.replace(/[\r\n]+/g, ' ');
         // Build targetMap from ALL active revenue heads
         const targetMap: Record<string, string> = {};
         store.revenueHeads.forEach(rh => {
@@ -359,11 +359,8 @@ export function FinancialDashboard({
               // Only these 4 specific rows have Targets in the PDF
               const hasTargetsInPDF = ['rh-pass', 'rh-oc-parc', 'rh-freight', 'rh-opt'].includes(targetId);
 
-              let cumulPY = null;
-              let cumulCY = null;
-              
               if (hasTargetsInPDF) {
-                // 2024-25, 2025-26, TargetMonth, TargetUpto, TargetYearly, PY Month, CY Month, %Var, Cumul PY, Cumul CY
+                // 2024-25, 2025-26, TargetMonth, TargetUpto, TargetYearly, PY Month, CY Month
                 aPrevPrev = parseFloat(nums[0].replace(/,/g, ''));
                 aPrev = parseFloat(nums[1].replace(/,/g, ''));
                 tMonth = parseFloat(nums[2].replace(/,/g, ''));
@@ -371,21 +368,13 @@ export function FinancialDashboard({
                 tYear = parseFloat(nums[4].replace(/,/g, ''));
                 pyStr = nums[5].replace(/,/g, '');
                 cyStr = nums[6].replace(/,/g, '');
-                if (nums.length > 9) {
-                  cumulPY = parseFloat(nums[8].replace(/,/g, ''));
-                  cumulCY = parseFloat(nums[9].replace(/,/g, ''));
-                }
               } else {
                 // No Targets in PDF.
-                // 2024-25, 2025-26, PY Month, CY Month, %Var, Cumul PY, Cumul CY
+                // 2024-25, 2025-26, PY Month, CY Month
                 aPrevPrev = parseFloat(nums[0].replace(/,/g, ''));
                 aPrev = parseFloat(nums[1].replace(/,/g, ''));
                 pyStr = nums[2].replace(/,/g, '');
                 cyStr = nums[3].replace(/,/g, '');
-                if (nums.length > 6) {
-                  cumulPY = parseFloat(nums[5].replace(/,/g, ''));
-                  cumulCY = parseFloat(nums[6].replace(/,/g, ''));
-                }
               }
               
               const cy = parseFloat(cyStr);
@@ -402,13 +391,13 @@ export function FinancialDashboard({
                   status: 'published',
                   targetStatus: 'available'
                 };
-                if (aPrevPrev !== null && !isNaN(aPrevPrev)) newRec.actualsPrevPrevYear = aPrevPrev;
-                if (aPrev !== null && !isNaN(aPrev)) newRec.actualsPrevYear = aPrev;
-                if (tMonth !== null && !isNaN(tMonth)) newRec.targetMonth = tMonth;
-                if (tUpto !== null && !isNaN(tUpto)) newRec.targetUpto = tUpto;
-                if (tYear !== null && !isNaN(tYear)) newRec.targetYearly = tYear;
-                if (cumulPY !== null && !isNaN(cumulPY)) newRec.cumulPY = cumulPY;
-                if (cumulCY !== null && !isNaN(cumulCY)) newRec.cumulCY = cumulCY;
+                newRec.actualsPrevPrevYear = aPrevPrev !== null && !isNaN(aPrevPrev) ? aPrevPrev : null;
+                newRec.actualsPrevYear = aPrev !== null && !isNaN(aPrev) ? aPrev : null;
+                
+                // EXPLICITLY set targets to null if they don't exist, to wipe out corrupted old data
+                newRec.targetMonth = tMonth !== null && !isNaN(tMonth) ? tMonth : null;
+                newRec.targetUpto = tUpto !== null && !isNaN(tUpto) ? tUpto : null;
+                newRec.targetYearly = tYear !== null && !isNaN(tYear) ? tYear : null;
                 
                 store.upsertRecord(newRec, 'Auto-Fill from PDF');
               }

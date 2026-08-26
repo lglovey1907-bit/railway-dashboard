@@ -104,8 +104,8 @@ export function buildCumulativeRows(
     let targetYearly = curRec?.targetYearly ?? null;
     if (targetYearly === null) targetYearly = aprRec?.budgetEstimate ?? computeCumulative(records, fyId, 12, rh.id, 'target');
 
-    const cCurrent = curRec?.cumulCY ?? computeCumulative(records, fyId, upToMonth, rh.id, 'actual');
-    const cPrev    = curRec?.cumulPY ?? computeCumulative(records, fyId, upToMonth, rh.id, 'previousYearActual');
+    const cCurrent = computeCumulative(records, fyId, upToMonth, rh.id, 'actual');
+    const cPrev    = computeCumulative(records, fyId, upToMonth, rh.id, 'previousYearActual');
     const target   = computeCumulative(records, fyId, upToMonth, rh.id, 'target');
 
     // Budget Estimate stored on April (month 1) record

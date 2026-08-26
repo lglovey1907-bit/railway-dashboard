@@ -91,8 +91,6 @@ export interface MonthlyRecord {
   currentMonthPY?: number;
   currentMonthCY?: number;
   currentMonthVarPct?: number;
-  cumulPY?: number;
-  cumulCY?: number;
   remarks?: string;
   updatedBy?: string;
   updatedAt?: string;
