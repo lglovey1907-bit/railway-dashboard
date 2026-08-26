@@ -41,6 +41,8 @@ export function DataEntryModal({ fyId, onClose, currentUser = 'User', canApprove
     targetYearly: '',
     currentMonthPY: '',
     actual: '', // Current Month CY
+    cumulPY: '',
+    cumulCY: '',
     remarks: '',
   });
 
@@ -55,6 +57,8 @@ export function DataEntryModal({ fyId, onClose, currentUser = 'User', canApprove
       targetYearly: rec.targetYearly?.toString() ?? '',
       currentMonthPY: rec.currentMonthPY?.toString() ?? '',
       actual: rec.actual?.toString() ?? '',
+      cumulPY: rec.cumulPY?.toString() ?? '',
+      cumulCY: rec.cumulCY?.toString() ?? '',
       remarks: rec.remarks ?? '',
     });
   };
@@ -72,6 +76,8 @@ export function DataEntryModal({ fyId, onClose, currentUser = 'User', canApprove
         currentMonthPY: parseNum(form.currentMonthPY),
         previousYearActual: parseNum(form.currentMonthPY), // Must sync for cumulative calcs!
         actual: parseNum(form.actual),
+        cumulPY: parseNum(form.cumulPY),
+        cumulCY: parseNum(form.cumulCY),
         remarks: form.remarks,
         // We will default to available if it's new
         targetStatus: 'available',
@@ -247,7 +253,7 @@ export function DataEntryModal({ fyId, onClose, currentUser = 'User', canApprove
                                   <button
                                     onClick={() => {
                                       if (rec) { openEdit(rec); }
-                                      else { setEditingId(`new-${head.id}`); setForm({ actualsPrevPrevYear: '', actualsPrevYear: '', targetMonth: '', targetUpto: '', targetYearly: '', currentMonthPY: '', actual: '', remarks: '' }); }
+                                      else { setEditingId(`new-${head.id}`); setForm({ actualsPrevPrevYear: '', actualsPrevYear: '', targetMonth: '', targetUpto: '', targetYearly: '', currentMonthPY: '', actual: '', cumulPY: '', cumulCY: '', remarks: '' }); }
                                     }}
                                     className="px-1.5 py-0.5 text-[9px] bg-white border border-slate-200 rounded hover:border-rail-400 hover:text-rail-600 text-slate-600 font-medium uppercase"
                                   >

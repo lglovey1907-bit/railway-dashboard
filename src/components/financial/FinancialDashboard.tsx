@@ -359,8 +359,11 @@ export function FinancialDashboard({
               // Only these 4 specific rows have Targets in the PDF
               const hasTargetsInPDF = ['rh-pass', 'rh-oc-parc', 'rh-freight', 'rh-opt'].includes(targetId);
 
+              let cumulPY = null;
+              let cumulCY = null;
+              
               if (hasTargetsInPDF) {
-                // 2024-25, 2025-26, TargetMonth, TargetUpto, TargetYearly, PY Month, CY Month
+                // 2024-25, 2025-26, TargetMonth, TargetUpto, TargetYearly, PY Month, CY Month, %Var, Cumul PY, Cumul CY
                 aPrevPrev = parseFloat(nums[0].replace(/,/g, ''));
                 aPrev = parseFloat(nums[1].replace(/,/g, ''));
                 tMonth = parseFloat(nums[2].replace(/,/g, ''));
@@ -368,13 +371,21 @@ export function FinancialDashboard({
                 tYear = parseFloat(nums[4].replace(/,/g, ''));
                 pyStr = nums[5].replace(/,/g, '');
                 cyStr = nums[6].replace(/,/g, '');
+                if (nums.length > 9) {
+                  cumulPY = parseFloat(nums[8].replace(/,/g, ''));
+                  cumulCY = parseFloat(nums[9].replace(/,/g, ''));
+                }
               } else {
                 // No Targets in PDF.
-                // 2024-25, 2025-26, PY Month, CY Month
+                // 2024-25, 2025-26, PY Month, CY Month, %Var, Cumul PY, Cumul CY
                 aPrevPrev = parseFloat(nums[0].replace(/,/g, ''));
                 aPrev = parseFloat(nums[1].replace(/,/g, ''));
                 pyStr = nums[2].replace(/,/g, '');
                 cyStr = nums[3].replace(/,/g, '');
+                if (nums.length > 6) {
+                  cumulPY = parseFloat(nums[5].replace(/,/g, ''));
+                  cumulCY = parseFloat(nums[6].replace(/,/g, ''));
+                }
               }
               
               const cy = parseFloat(cyStr);
@@ -396,6 +407,8 @@ export function FinancialDashboard({
                 if (tMonth !== null && !isNaN(tMonth)) newRec.targetMonth = tMonth;
                 if (tUpto !== null && !isNaN(tUpto)) newRec.targetUpto = tUpto;
                 if (tYear !== null && !isNaN(tYear)) newRec.targetYearly = tYear;
+                if (cumulPY !== null && !isNaN(cumulPY)) newRec.cumulPY = cumulPY;
+                if (cumulCY !== null && !isNaN(cumulCY)) newRec.cumulCY = cumulCY;
                 
                 store.upsertRecord(newRec, 'Auto-Fill from PDF');
               }
