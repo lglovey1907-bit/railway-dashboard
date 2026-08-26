@@ -121,8 +121,16 @@ export function buildCumulativeRows(
     const targetStatus: TargetStatus = latestRec?.targetStatus ?? 'pending';
 
     const variation    = cCurrent !== null && cPrev !== null ? cCurrent - cPrev : null;
-    const variationPct = variation !== null && cPrev !== null && cPrev !== 0
-      ? (variation / cPrev) * 100 : null;
+    let variationPct: number | null = null;
+    if (variation !== null && cPrev !== null && cCurrent !== null) {
+      if (cPrev === 0 && cCurrent === 0) {
+        variationPct = null;
+      } else if (cPrev === 0) {
+        variationPct = cCurrent > 0 ? 100 : -100;
+      } else {
+        variationPct = (variation / Math.abs(cPrev)) * 100;
+      }
+    }
     const achievementPct = cCurrent !== null && target !== null && target !== 0
       ? (cCurrent / target) * 100 : null;
 
@@ -174,8 +182,14 @@ export function buildCumulativeRows(
     const currentMonthPY = sumNullable(targetRows.map(r => r.currentMonthPY ?? null));
     
     let currentMonthVarPct: number | null = null;
-    if (currentMonthCY !== null && currentMonthPY !== null && currentMonthPY !== 0) {
-      currentMonthVarPct = ((currentMonthCY - currentMonthPY) / currentMonthPY) * 100;
+    if (currentMonthCY !== null && currentMonthPY !== null) {
+      if (currentMonthPY === 0 && currentMonthCY === 0) {
+        currentMonthVarPct = null;
+      } else if (currentMonthPY === 0) {
+        currentMonthVarPct = currentMonthCY > 0 ? 100 : -100;
+      } else {
+        currentMonthVarPct = ((currentMonthCY - currentMonthPY) / Math.abs(currentMonthPY)) * 100;
+      }
     }
 
     const cCurrent = sumNullable(targetRows.map(r => r.cumulativeCurrentYear));
@@ -184,8 +198,16 @@ export function buildCumulativeRows(
     const budget   = sumNullable(targetRows.map(r => r.budgetEstimate));
 
     const variation    = cCurrent !== null && cPrev !== null ? cCurrent - cPrev : null;
-    const variationPct = variation !== null && cPrev !== null && cPrev !== 0
-      ? (variation / cPrev) * 100 : null;
+    let variationPct: number | null = null;
+    if (variation !== null && cPrev !== null && cCurrent !== null) {
+      if (cPrev === 0 && cCurrent === 0) {
+        variationPct = null;
+      } else if (cPrev === 0) {
+        variationPct = cCurrent > 0 ? 100 : -100;
+      } else {
+        variationPct = (variation / Math.abs(cPrev)) * 100;
+      }
+    }
     const achievementPct = cCurrent !== null && target !== null && target !== 0
       ? (cCurrent / target) * 100 : null;
 
