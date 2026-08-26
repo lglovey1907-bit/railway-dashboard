@@ -212,7 +212,7 @@ export function buildCumulativeRows(
     };
   });
 
-  return [...nonTotalRows, ...totalRows];
+  return [...nonTotalRows, ...totalRows].sort((a, b) => a.revenueHead.order - b.revenueHead.order);
 }
 
 // ── Monthly trend for charts ──────────────────────────────────────────────────

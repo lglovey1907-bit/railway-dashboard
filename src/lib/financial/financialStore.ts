@@ -45,7 +45,7 @@ const SEED_HEADS: RevenueHead[] = [
   { id: 'rh-oc-tc', name: 'Ticket Checking', code: 'TC', order: 4, isTotal: false, isActive: true, color: '#6366f1', parentId: 'rh-oc-hdr' },
   { id: 'rh-oc-pf', name: 'PF Tickets', code: 'PF', order: 5, isTotal: false, isActive: true, color: '#a855f7', parentId: 'rh-oc-hdr' },
   { id: 'rh-oc-misc', name: 'Other Misc', code: 'OCM', order: 6, isTotal: false, isActive: true, color: '#d946ef', parentId: 'rh-oc-hdr' },
-  { id: 'rh-oc-tot', name: 'Other Coaching Total', code: 'OCT', order: 7, isTotal: true, isActive: true, color: '#4c1d95', isSubTotalFor: 'rh-oc-hdr' },
+  { id: 'rh-oc-tot', name: 'Other Coaching Total', code: 'OCT', order: 27.1, isTotal: true, isActive: true, color: '#4c1d95', isSubTotalFor: 'rh-oc-hdr' },
   
   { id: 'rh-freight', name: 'Freight Revenue', code: 'FRT', order: 8, isTotal: false, isActive: true, color: '#f59e0b' },
   
@@ -53,7 +53,7 @@ const SEED_HEADS: RevenueHead[] = [
   { id: 'rh-sun-park', name: 'Parking Contracts etc', code: 'PRK', order: 10, isTotal: false, isActive: true, color: '#06b6d4', parentId: 'rh-sun-hdr' },
   { id: 'rh-sun-adv', name: 'Commercial Advertisements etc (with ATM)', code: 'ADV', order: 11, isTotal: false, isActive: true, color: '#0ea5e9', parentId: 'rh-sun-hdr' },
   { id: 'rh-sun-misc', name: 'Misc Others', code: 'SUNM', order: 12, isTotal: false, isActive: true, color: '#38bdf8', parentId: 'rh-sun-hdr' },
-  { id: 'rh-sun-tot', name: 'Sundry Total', code: 'SUNT', order: 13, isTotal: true, isActive: true, color: '#164e63', isSubTotalFor: 'rh-sun-hdr' },
+  { id: 'rh-sun-tot', name: 'Sundry Total', code: 'SUNT', order: 27.2, isTotal: true, isActive: true, color: '#164e63', isSubTotalFor: 'rh-sun-hdr' },
   
   { id: 'rh-nfr-hdr', name: 'Non Fare Revenue', code: 'NFR', order: 14, isTotal: false, isActive: true, color: '#10b981', isHeader: true, excludeFromGrandTotal: true },
   { id: 'rh-nfr-park', name: 'Parking cum stacking', code: 'NPK', order: 15, isTotal: false, isActive: true, color: '#10b981', parentId: 'rh-nfr-hdr', excludeFromGrandTotal: true },
@@ -67,7 +67,7 @@ const SEED_HEADS: RevenueHead[] = [
   { id: 'rh-nfr-pack', name: 'Parcel Packet Packing', code: 'PACK', order: 23, isTotal: false, isActive: true, color: '#022c22', parentId: 'rh-nfr-hdr', excludeFromGrandTotal: true },
   { id: 'rh-nfr-scan', name: 'Parcel Scanner', code: 'SCAN', order: 24, isTotal: false, isActive: true, color: '#86efac', parentId: 'rh-nfr-hdr', excludeFromGrandTotal: true },
   { id: 'rh-nfr-nrhp', name: 'Non Rail head parking', code: 'NRHP', order: 25, isTotal: false, isActive: true, color: '#bbf7d0', parentId: 'rh-nfr-hdr', excludeFromGrandTotal: true },
-  { id: 'rh-nfr-tot', name: 'Non Fare Total', code: 'NFRT', order: 26, isTotal: true, isActive: true, color: '#065f46', isSubTotalFor: 'rh-nfr-hdr' },
+  { id: 'rh-nfr-tot', name: 'Non Fare Total', code: 'NFRT', order: 27.3, isTotal: true, isActive: true, color: '#065f46', isSubTotalFor: 'rh-nfr-hdr' },
 
   { id: 'rh-total', name: 'Over All Revenue', code: 'TOTAL', order: 27, isTotal: true, isActive: true, color: '#1e3a5f' },
   
