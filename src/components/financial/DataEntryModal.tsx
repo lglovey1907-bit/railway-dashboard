@@ -69,6 +69,7 @@ export function DataEntryModal({ fyId, onClose, currentUser = 'User', canApprove
         actualsPrevPrevYear: parseNum(form.actualsPrevPrevYear),
         actualsPrevYear: parseNum(form.actualsPrevYear),
         targetMonth: parseNum(form.targetMonth),
+        target: parseNum(form.targetMonth), // ALWAYS sync target with targetMonth
         targetUpto: parseNum(form.targetUpto),
         targetYearly: parseNum(form.targetYearly),
         currentMonthPY: parseNum(form.currentMonthPY),
