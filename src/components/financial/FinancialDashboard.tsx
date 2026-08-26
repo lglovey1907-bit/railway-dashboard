@@ -359,8 +359,9 @@ export function FinancialDashboard({
               // Only these 4 specific rows have Targets in the PDF
               const hasTargetsInPDF = ['rh-pass', 'rh-oc-parc', 'rh-freight', 'rh-opt'].includes(targetId);
 
+              let cumulPY = null;
               if (hasTargetsInPDF) {
-                // 2024-25, 2025-26, TargetMonth, TargetUpto, TargetYearly, PY Month, CY Month
+                // 2024-25, 2025-26, TargetMonth, TargetUpto, TargetYearly, PY Month, CY Month, %Var, Cumul PY
                 aPrevPrev = parseFloat(nums[0].replace(/,/g, ''));
                 aPrev = parseFloat(nums[1].replace(/,/g, ''));
                 tMonth = parseFloat(nums[2].replace(/,/g, ''));
@@ -368,13 +369,15 @@ export function FinancialDashboard({
                 tYear = parseFloat(nums[4].replace(/,/g, ''));
                 pyStr = nums[5].replace(/,/g, '');
                 cyStr = nums[6].replace(/,/g, '');
+                if (nums.length > 8) cumulPY = parseFloat(nums[8].replace(/,/g, ''));
               } else {
                 // No Targets in PDF.
-                // 2024-25, 2025-26, PY Month, CY Month
+                // 2024-25, 2025-26, PY Month, CY Month, %Var, Cumul PY
                 aPrevPrev = parseFloat(nums[0].replace(/,/g, ''));
                 aPrev = parseFloat(nums[1].replace(/,/g, ''));
                 pyStr = nums[2].replace(/,/g, '');
                 cyStr = nums[3].replace(/,/g, '');
+                if (nums.length > 5) cumulPY = parseFloat(nums[5].replace(/,/g, ''));
               }
               
               const cy = parseFloat(cyStr);
@@ -393,6 +396,7 @@ export function FinancialDashboard({
                 };
                 newRec.actualsPrevPrevYear = aPrevPrev !== null && !isNaN(aPrevPrev) ? aPrevPrev : null;
                 newRec.actualsPrevYear = aPrev !== null && !isNaN(aPrev) ? aPrev : null;
+                if (cumulPY !== null && !isNaN(cumulPY)) newRec.cumulPY = cumulPY;
                 
                 // EXPLICITLY set targets to null if they don't exist, to wipe out corrupted old data
                 newRec.targetMonth = tMonth !== null && !isNaN(tMonth) ? tMonth : null;
