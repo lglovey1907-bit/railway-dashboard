@@ -400,6 +400,7 @@ export function FinancialDashboard({
                 
                 // EXPLICITLY set targets to null if they don't exist, to wipe out corrupted old data
                 newRec.targetMonth = tMonth !== null && !isNaN(tMonth) ? tMonth : null;
+                newRec.target = tMonth !== null && !isNaN(tMonth) ? tMonth : null;
                 newRec.targetUpto = tUpto !== null && !isNaN(tUpto) ? tUpto : null;
                 newRec.targetYearly = tYear !== null && !isNaN(tYear) ? tYear : null;
                 
