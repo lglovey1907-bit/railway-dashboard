@@ -27,8 +27,8 @@ export function DataEntryModal({ fyId, onClose, currentUser = 'User', canApprove
   const store = useFinancialStore();
   // Include headers now for grouping
   const revenueHeads = store.revenueHeads.filter(h => h.isActive && !h.isTotal);
-  const records      = store.getAllRecords(fyId);
-
+  const [localFyId, setLocalFyId] = useState<string>(fyId);
+  const records      = store.getAllRecords(localFyId);
   const [selectedMonth, setSelectedMonth] = useState<FYMonth>(1);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -63,7 +63,7 @@ export function DataEntryModal({ fyId, onClose, currentUser = 'User', canApprove
     const parseNum = (v: string) => v.trim() !== '' ? parseFloat(v) : undefined;
     store.upsertRecord(
       {
-        fyId, month: selectedMonth, revenueHeadId: rhId,
+        fyId: localFyId, month: selectedMonth, revenueHeadId: rhId,
         actualsPrevPrevYear: parseNum(form.actualsPrevPrevYear),
         actualsPrevYear: parseNum(form.actualsPrevYear),
         targetMonth: parseNum(form.targetMonth),
@@ -116,6 +116,18 @@ export function DataEntryModal({ fyId, onClose, currentUser = 'User', canApprove
             <p className="text-[10px] text-slate-500 uppercase tracking-wide">All figures in Crore (₹ Cr)</p>
           </div>
           <div className="flex items-center gap-3">
+            <div className="relative">
+              <select
+                value={localFyId}
+                onChange={e => { setLocalFyId(e.target.value); setEditingId(null); }}
+                className="pl-3 pr-7 py-1.5 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-rail-400 appearance-none font-semibold text-slate-800"
+              >
+                {store.financialYears.map(fy => (
+                  <option key={fy.id} value={fy.id}>{fy.label}</option>
+                ))}
+              </select>
+              <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400"/>
+            </div>
             <div className="relative">
               <select
                 value={selectedMonth}
