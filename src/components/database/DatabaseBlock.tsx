@@ -3,7 +3,7 @@ import { useState, useMemo } from 'react';
 import {
   Table2, Columns, Calendar, LayoutGrid, BarChart2,
   Plus, Filter, SortAsc, Settings2, RefreshCcw, Download,
-  ChevronDown, Search, X, Sigma,
+  ChevronDown, Search, X, Sigma, Copy,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { TableDef, RowDef, FieldDef } from '@/lib/cellData/types';
@@ -220,20 +220,32 @@ export function DatabaseBlock({
       {/* Header bar */}
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-slate-100 bg-slate-50/80 flex-wrap gap-y-2">
         {/* Table name */}
-        <div className="flex items-center gap-1.5">
-          <Table2 size={13} className="text-slate-400"/>
-          <button
-            onClick={() => setSelectedTableId(undefined)}
-            className="text-xs font-bold text-slate-700 hover:text-rail-600 transition-colors"
-          >
-            {table.name}
-          </button>
-          {tables.length > 1 && (
-            <ChevronDown size={10} className="text-slate-400 cursor-pointer" onClick={() => setSelectedTableId(undefined)}/>
-          )}
-        </div>
+       <div className="flex items-center gap-1.5">
+         <Table2 size={13} className="text-slate-400"/>
+         <button
+           onClick={() => setSelectedTableId(undefined)}
+           className="text-xs font-bold text-slate-700 hover:text-rail-600 transition-colors"
+           title="Switch table"
+         >
+           {table.name}
+         </button>
+         {tables.length > 1 && (
+           <ChevronDown size={10} className="text-slate-400 cursor-pointer" onClick={() => setSelectedTableId(undefined)}/>
+         )}
+         {canManage && (
+           <button
+             onClick={() => {
+               hook.duplicateTable(table.id);
+             }}
+             className="ml-1 p-1 text-slate-300 hover:text-indigo-600 hover:bg-slate-100 rounded transition-colors"
+             title="Duplicate Table"
+           >
+             <Copy size={12}/>
+           </button>
+         )}
+       </div>
 
-        <div className="w-px h-4 bg-slate-200 mx-1"/>
+       <div className="w-px h-4 bg-slate-200 mx-1"/>
 
         {/* View tabs */}
         <div className="flex items-center gap-0.5">

@@ -10,7 +10,7 @@ import {
  DollarSign, Calendar, Mail, Globe, List, CheckSquare, Phone,
  Sigma, ChevronRight, SlidersHorizontal, Share2, History,
  WrapText, AlignJustify, Maximize2, GripVertical,
- ArrowUpAZ, ArrowDownAZ,
+ ArrowUpAZ, ArrowDownAZ, LayoutGrid, Copy,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { TableDef, FieldDef, RowDef, FieldType, DropdownOption } from '@/lib/cellData/types';
@@ -718,6 +718,7 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  const [dragColId, setDragColId] = useState<string | null>(null);
  const [dragOverColId, setDragOverColId] = useState<string | null>(null);
  const [showSheet, setShowSheet] = useState(false);
+ const [showGroupMenu, setShowGroupMenu] = useState(false);
  const [showTableNominees, setShowTableNominees] = useState(false);
  const [showTableViewers, setShowTableViewers] = useState(false);
  const [showTableEditors, setShowTableEditors] = useState(false);
@@ -915,7 +916,7 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  {table.sheet?.syncError && <span className="text-[10px] text-red-600 flex items-center gap-1"><AlertCircle size={9}/> Sync error</span>}
  </div>
 
- {/* Right: controls */}
+ // Right: controls
  <div className="flex items-center gap-1">
  {isLinked && (
  <button onClick={manualSync} disabled={syncing} title="Refresh now"
@@ -923,6 +924,40 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  <RefreshCw size={12} className={syncing ? 'animate-spin' : ''}/>
  </button>
  )}
+
+ {/* Group By */}
+ <div className="relative">
+   <button
+     onClick={() => setShowGroupMenu(!showGroupMenu)}
+     className={cn('flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-colors',
+       table.groupBy ? 'bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700')}
+   >
+     <LayoutGrid size={12}/>{table.groupBy ? 'Grouped' : 'Group'}
+   </button>
+   {showGroupMenu && (
+     <>
+       <div className="fixed inset-0 z-40" onClick={() => setShowGroupMenu(false)}/>
+       <div className="absolute top-full right-0 mt-1 w-48 bg-white border border-slate-200 rounded-xl shadow-lg z-50 p-2 max-h-64 overflow-y-auto">
+         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-1">Group By</p>
+         <button
+           onClick={() => { hook.updateTable(table.id, { groupBy: undefined }); setShowGroupMenu(false); }}
+           className={cn('w-full text-left px-2 py-1.5 text-xs rounded-lg transition-colors', !table.groupBy ? 'bg-slate-100 font-semibold' : 'hover:bg-slate-50 text-slate-600')}
+         >
+           None
+         </button>
+         {table.fields.map(f => (
+           <button
+             key={f.id}
+             onClick={() => { hook.updateTable(table.id, { groupBy: f.id }); setShowGroupMenu(false); }}
+             className={cn('w-full text-left px-2 py-1.5 text-xs rounded-lg transition-colors truncate', table.groupBy === f.id ? 'bg-violet-50 text-violet-700 font-semibold' : 'hover:bg-slate-50 text-slate-600')}
+           >
+             {f.label}
+           </button>
+         ))}
+       </div>
+     </>
+   )}
+ </div>
 
  {/* Comfortable / Compact row height */}
  <button

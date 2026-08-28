@@ -417,6 +417,77 @@ export function useWorkspace(cell: string, currentUser?: { id: string; name: str
  commit(w => ({ ...w, tables: w.tables.map(t => t.id !== tId ? t : { ...t, rows: t.rows.map(r => r.id !== rId ? r : { ...r, nominatedUserIds: ids }) }) }), 'Set row nominees');
  }, [commit]);
 
+ const updateRow = useCallback((tId: string, rId: string, patch: Partial<RowDef>) => {
+   commit(w => ({ ...w, tables: w.tables.map(t => t.id !== tId ? t : { ...t, rows: t.rows.map(r => r.id !== rId ? r : { ...r, ...patch }) }) }), 'Update row');
+ }, [commit]);
+
+ const duplicateTable = useCallback((tId: string) => {
+   let newTableId = '';
+   commit(w => {
+     const table = w.tables.find(t => t.id === tId);
+     if (!table) return w;
+     
+     // Clone table but regenerate IDs for fields and rows
+     const newTableIdGen = gid('t');
+     newTableId = newTableIdGen;
+     
+     const fieldIdMap = new Map<string, string>();
+     const newFields = table.fields.map(f => {
+       const newFid = gid('f');
+       fieldIdMap.set(f.id, newFid);
+       return { ...f, id: newFid };
+     });
+     
+     const rowIdMap = new Map<string, string>();
+     const newRows = table.rows.map(r => {
+       const newRid = gid('r');
+       rowIdMap.set(r.id, newRid);
+       return { ...r, id: newRid };
+     });
+     
+     const newValues: Record<string, string> = {};
+     Object.entries(table.values).forEach(([key, val]) => {
+       const [rId, fId] = key.split(':');
+       if (fId === '__label__') {
+         if (rowIdMap.has(rId)) newValues[ck(rowIdMap.get(rId)!, '__label__')] = val;
+       } else {
+         if (rowIdMap.has(rId) && fieldIdMap.has(fId)) {
+           newValues[ck(rowIdMap.get(rId)!, fieldIdMap.get(fId)!)] = val;
+         }
+       }
+     });
+
+     const newCellColors: Record<string, string> = {};
+     if (table.cellColors) {
+       Object.entries(table.cellColors).forEach(([key, color]) => {
+         const [rId, fId] = key.split(':');
+         if (fId === '__label__') {
+           if (rowIdMap.has(rId)) newCellColors[ck(rowIdMap.get(rId)!, '__label__')] = color;
+         } else {
+           if (rowIdMap.has(rId) && fieldIdMap.has(fId)) {
+             newCellColors[ck(rowIdMap.get(rId)!, fieldIdMap.get(fId)!)] = color;
+           }
+         }
+       });
+     }
+     
+     const newColumnOrder = (table.columnOrder ?? table.fields.map(f => f.id)).map(id => fieldIdMap.get(id) || id);
+
+     const newTable: TableDef = {
+       ...table,
+       id: newTableIdGen,
+       name: `${table.name} (Copy)`,
+       fields: newFields,
+       rows: newRows,
+       values: newValues,
+       cellColors: newCellColors,
+       columnOrder: newColumnOrder,
+     };
+     
+     return { ...w, tables: [...w.tables, newTable] };
+   }, 'Duplicate table');
+ }, [commit]);
+
  // ── Cell values ───────────────────────────────────────────────────────────────
  const setCellValue = useCallback((tId: string, rId: string, fId: string, val: string) => {
  setWs(prev => {
@@ -610,11 +681,11 @@ export function useWorkspace(cell: string, currentUser?: { id: string; name: str
  // widgets
  addTableToSection, addTextToSection, addKpiToSection, removeWidget, updateWidget,
  // table
- updateTable, setFirstColLabel, setTableNominees, setTableViewers, setTableEditors, setSort, setFilter, clearFilter,
+ updateTable, duplicateTable, setFirstColLabel, setTableNominees, setTableViewers, setTableEditors, setSort, setFilter, clearFilter,
  // columns
  addColumn, removeColumn, updateColumn, moveColumn, setColumnNominees,
  // rows
- addRow, removeRow, moveRow, setRowNominees,
+ addRow, removeRow, moveRow, updateRow, setRowNominees,
  // cells
  setCellValue, getCellValue,
  // sheets

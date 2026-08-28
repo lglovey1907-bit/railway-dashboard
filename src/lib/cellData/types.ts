@@ -34,6 +34,7 @@ export interface FieldDef {
  dateFormat?: string; // 'full', 'short', 'MM/DD/YYYY', 'DD/MM/YYYY', 'YYYY/MM/DD', 'relative'
  timeFormat?: string; // 'hidden', '12h', '24h'
  dateNotification?: string; // 'none', 'day_of', '1_day', '2_days', '1_week'
+ color?: string; // NEW: column background highlight color
 }
 
 export interface RowDef {
@@ -41,6 +42,7 @@ export interface RowDef {
  nominatedUserIds: string[];
  order: number; // for drag-reorder
  deletedAt?: string; // soft-delete timestamp
+ color?: string; // NEW: row background highlight color
 }
 
 // ── Undo / Redo history entry ─────────────────────────────────────────────────
@@ -88,6 +90,8 @@ export interface TableDef {
  filters?: Record<string, string>;
  columnOrder?: string[];
  locked?: boolean; // NEW: locked tables block edits
+ groupBy?: string; // NEW: fieldId to group rows by
+ cellColors?: Record<string, string>; // NEW: key: `rowId:fieldId` -> color string
 }
 
 // ── Widgets ───────────────────────────────────────────────────────────────────
