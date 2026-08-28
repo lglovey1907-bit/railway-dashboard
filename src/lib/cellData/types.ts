@@ -26,6 +26,10 @@ export interface FieldDef {
  autoHeight?: boolean; // row height expands with content (default: true when wrapText on)
  frozen?: boolean; // freeze/pin column to left edge
  hidden?: boolean; // hide column from view
+ // number display
+ numberFormat?: string; // 'number', 'number_with_separators', 'percent', 'inr', 'usd', etc.
+ decimalPlaces?: string; // 'default', '0', '1', '2', '3', '4'
+ showAs?: 'number' | 'bar' | 'ring';
 }
 
 export interface RowDef {

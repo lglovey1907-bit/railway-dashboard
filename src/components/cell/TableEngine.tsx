@@ -133,12 +133,18 @@ function ColSettingsModal({ field, tableId, hook, cellStaff, onClose }: {
  const [frozen, setFrozen] = useState(field.frozen ?? false);
  const [hidden, setHidden] = useState(field.hidden ?? false);
 
+ // Number format options
+ const [numberFormat, setNumberFormat] = useState(field.numberFormat ?? 'number');
+ const [decimalPlaces, setDecimalPlaces] = useState(field.decimalPlaces ?? 'default');
+ const [showAs, setShowAs] = useState<'number'|'bar'|'ring'>(field.showAs ?? 'number');
+
  const save = () => {
  hook.updateColumn(tableId, field.id, {
  label: label.trim() || field.label, type,
  formula: formula || undefined, options,
  wrapText, autoHeight: wrapText ? autoHeight : false,
  frozen, hidden,
+ numberFormat, decimalPlaces, showAs,
  });
  onClose();
  };
@@ -227,6 +233,47 @@ function ColSettingsModal({ field, tableId, hook, cellStaff, onClose }: {
  Reference other column values using {'{'}Column Name{'}'}.
  Supports: SUM(), AVERAGE(), MIN(), MAX(), COUNT(), IF(), ROUND(), CONCAT(), TODAY()
  </p>
+ </div>
+ )}
+
+ {type === 'number' && (
+ <div className="border border-slate-200 rounded-xl p-3 space-y-3 bg-slate-50 mt-2">
+ <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Number Formatting</p>
+ <div className="space-y-2">
+   <div className="flex items-center justify-between">
+     <label className="text-xs font-medium text-slate-600">Number format</label>
+     <select value={numberFormat} onChange={e => setNumberFormat(e.target.value)} className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs outline-none focus:border-indigo-400">
+       <option value="number">Number</option>
+       <option value="number_with_separators">Number with separators</option>
+       <option value="percent">Percent</option>
+       <option value="inr">Rupee (INR)</option>
+       <option value="usd">US Dollar (USD)</option>
+       <option value="eur">Euro (EUR)</option>
+       <option value="gbp">Pound (GBP)</option>
+     </select>
+   </div>
+   <div className="flex items-center justify-between">
+     <label className="text-xs font-medium text-slate-600">Decimal places</label>
+     <select value={decimalPlaces} onChange={e => setDecimalPlaces(e.target.value)} className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs outline-none focus:border-indigo-400">
+       <option value="default">Default</option>
+       <option value="0">0</option>
+       <option value="1">1</option>
+       <option value="2">2</option>
+       <option value="3">3</option>
+       <option value="4">4</option>
+     </select>
+   </div>
+   <div>
+     <label className="text-xs font-medium text-slate-600 block mb-1">Show as</label>
+     <div className="flex gap-2">
+       {(['number', 'bar', 'ring'] as const).map(mode => (
+         <button key={mode} onClick={() => setShowAs(mode)} className={cn('flex-1 py-1.5 rounded-lg border text-xs capitalize transition-all', showAs === mode ? 'border-indigo-600 bg-indigo-50 text-indigo-700 font-semibold' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50')}>
+           {mode}
+         </button>
+       ))}
+     </div>
+   </div>
+ </div>
  </div>
  )}
 
@@ -344,9 +391,71 @@ function CellView({ value, field }: { value: string; field: FieldDef }) {
  if (!value && field.type !== 'checkbox') return <span className="text-slate-300">—</span>;
  switch (field.type) {
  case 'checkbox': return <input type="checkbox"checked={value === 'true'} readOnly className="accent-blue-600 w-4 h-4 cursor-default"/>;
+ case 'number':
  case 'currency': {
- const n = parseFloat(value);
- return <span className="font-medium">{isNaN(n) ? value : `₹${n.toLocaleString('en-IN')}`}</span>;
+   const num = parseFloat(value);
+   if (isNaN(num)) return wrap ? <span className="whitespace-pre-wrap break-words leading-relaxed">{value}</span> : <span className="truncate block">{value}</span>;
+
+   const isCurrency = field.type === 'currency';
+   const format = isCurrency ? 'inr' : (field.numberFormat || 'number');
+   const decimals = field.decimalPlaces || 'default';
+   const showAs = field.showAs || 'number';
+
+   let formattedNum = value;
+   let prefix = '';
+   let suffix = '';
+
+   if (format === 'percent') suffix = '%';
+   else if (format === 'inr') prefix = '₹';
+   else if (format === 'usd') prefix = '$';
+   else if (format === 'eur') prefix = '€';
+   else if (format === 'gbp') prefix = '£';
+
+   if (format === 'number_with_separators' || format === 'inr' || format === 'usd' || format === 'eur' || format === 'gbp') {
+     const opts: Intl.NumberFormatOptions = {};
+     if (decimals !== 'default') {
+       opts.minimumFractionDigits = parseInt(decimals);
+       opts.maximumFractionDigits = parseInt(decimals);
+     }
+     
+     let locale = 'en-US';
+     if (format === 'inr') locale = 'en-IN';
+     else if (format === 'eur') locale = 'en-IE';
+     else if (format === 'gbp') locale = 'en-GB';
+
+     formattedNum = prefix + num.toLocaleString(locale, opts) + suffix;
+   } else if (decimals !== 'default' && !isNaN(parseInt(decimals))) {
+     formattedNum = num.toFixed(parseInt(decimals)) + suffix;
+   } else {
+     formattedNum = num.toString() + suffix;
+   }
+
+   if (showAs === 'bar') {
+     const pct = Math.min(100, Math.max(0, num));
+     return (
+       <div className="flex items-center gap-2">
+         <div className="w-12 h-1.5 bg-slate-100 rounded-full overflow-hidden shrink-0">
+           <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${pct}%` }} />
+         </div>
+         <span className={cn('truncate block', isCurrency && 'font-medium')}>{formattedNum}</span>
+       </div>
+     );
+   } else if (showAs === 'ring') {
+     const pct = Math.min(100, Math.max(0, num));
+     const dashArray = 2 * Math.PI * 6; 
+     const dashOffset = dashArray * ((100 - pct) / 100);
+     return (
+       <div className="flex items-center gap-2">
+         <svg className="w-4 h-4 transform -rotate-90 shrink-0" viewBox="0 0 16 16">
+           <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" fill="none" className="text-slate-100" />
+           <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" fill="none" className="text-indigo-500" strokeDasharray={dashArray} strokeDashoffset={dashOffset} strokeLinecap="round" />
+         </svg>
+         <span className={cn('truncate block', isCurrency && 'font-medium')}>{formattedNum}</span>
+       </div>
+     );
+   }
+
+   return <span className={cn(isCurrency && 'font-medium', wrap ? 'break-all' : 'truncate block')}>{formattedNum}</span>;
  }
  case 'url': return <a href={value.startsWith('http') ? value : `https://${value}`} target="_blank"rel="noreferrer"onClick={e => e.stopPropagation()} className={cn('text-blue-600 underline', wrap ? 'break-all' : 'truncate block')}>{value}</a>;
  case 'email': return <a href={`mailto:${value}`} onClick={e => e.stopPropagation()} className="text-blue-600 underline">{value}</a>;
