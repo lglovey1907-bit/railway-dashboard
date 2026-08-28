@@ -138,6 +138,11 @@ function ColSettingsModal({ field, tableId, hook, cellStaff, onClose }: {
  const [decimalPlaces, setDecimalPlaces] = useState(field.decimalPlaces ?? 'default');
  const [showAs, setShowAs] = useState<'number'|'bar'|'ring'>(field.showAs ?? 'number');
 
+ // Date format options
+ const [dateFormat, setDateFormat] = useState(field.dateFormat ?? 'full');
+ const [timeFormat, setTimeFormat] = useState(field.timeFormat ?? 'hidden');
+ const [dateNotification, setDateNotification] = useState(field.dateNotification ?? 'none');
+
  const save = () => {
  hook.updateColumn(tableId, field.id, {
  label: label.trim() || field.label, type,
@@ -145,6 +150,7 @@ function ColSettingsModal({ field, tableId, hook, cellStaff, onClose }: {
  wrapText, autoHeight: wrapText ? autoHeight : false,
  frozen, hidden,
  numberFormat, decimalPlaces, showAs,
+ dateFormat, timeFormat, dateNotification,
  });
  onClose();
  };
@@ -272,6 +278,43 @@ function ColSettingsModal({ field, tableId, hook, cellStaff, onClose }: {
          </button>
        ))}
      </div>
+   </div>
+ </div>
+ </div>
+ )}
+
+ {type === 'date' && (
+ <div className="border border-slate-200 rounded-xl p-3 space-y-3 bg-slate-50 mt-2">
+ <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Date Formatting</p>
+ <div className="space-y-2">
+   <div className="flex items-center justify-between">
+     <label className="text-xs font-medium text-slate-600">Date format</label>
+     <select value={dateFormat} onChange={e => setDateFormat(e.target.value)} className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs outline-none focus:border-indigo-400">
+       <option value="full">Full date</option>
+       <option value="short">Short date</option>
+       <option value="MM/DD/YYYY">Month/Day/Year</option>
+       <option value="DD/MM/YYYY">Day/Month/Year</option>
+       <option value="YYYY/MM/DD">Year/Month/Day</option>
+       <option value="relative">Relative</option>
+     </select>
+   </div>
+   <div className="flex items-center justify-between">
+     <label className="text-xs font-medium text-slate-600">Time format</label>
+     <select value={timeFormat} onChange={e => setTimeFormat(e.target.value)} className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs outline-none focus:border-indigo-400">
+       <option value="hidden">Hidden</option>
+       <option value="12h">12 hour</option>
+       <option value="24h">24 hour</option>
+     </select>
+   </div>
+   <div className="flex items-center justify-between">
+     <label className="text-xs font-medium text-slate-600">Notifications</label>
+     <select value={dateNotification} onChange={e => setDateNotification(e.target.value)} className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs outline-none focus:border-indigo-400">
+       <option value="none">None</option>
+       <option value="day_of">On day of event (9:00 AM)</option>
+       <option value="1_day">1 day before (9:00 AM)</option>
+       <option value="2_days">2 days before (9:00 AM)</option>
+       <option value="1_week">1 week before (9:00 AM)</option>
+     </select>
    </div>
  </div>
  </div>
@@ -455,7 +498,38 @@ function CellView({ value, field }: { value: string; field: FieldDef }) {
      );
    }
 
-   return <span className={cn(isCurrency && 'font-medium', wrap ? 'break-all' : 'truncate block')}>{formattedNum}</span>;
+ return <span className={cn(isCurrency && 'font-medium', wrap ? 'break-all' : 'truncate block')}>{formattedNum}</span>;
+ }
+ case 'date': {
+   const d = new Date(value);
+   if (isNaN(d.getTime())) return <span className={cn('text-slate-700', wrap ? 'whitespace-pre-wrap break-words' : 'truncate block')}>{value}</span>;
+   
+   const dFormat = field.dateFormat || 'full';
+   const tFormat = field.timeFormat || 'hidden';
+   
+   let dateStr = '';
+   if (dFormat === 'full') dateStr = d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+   else if (dFormat === 'short') dateStr = d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+   else if (dFormat === 'MM/DD/YYYY') dateStr = `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}/${d.getFullYear()}`;
+   else if (dFormat === 'DD/MM/YYYY') dateStr = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+   else if (dFormat === 'YYYY/MM/DD') dateStr = `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+   else if (dFormat === 'relative') {
+      const diffDays = Math.round((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+      if (diffDays === 0) dateStr = 'Today';
+      else if (diffDays === 1) dateStr = 'Tomorrow';
+      else if (diffDays === -1) dateStr = 'Yesterday';
+      else if (diffDays > 0) dateStr = `In ${diffDays} days`;
+      else dateStr = `${Math.abs(diffDays)} days ago`;
+   } else {
+     dateStr = d.toLocaleDateString();
+   }
+   
+   let timeStr = '';
+   if (tFormat === '12h') timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+   else if (tFormat === '24h') timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false });
+   
+   const finalStr = timeStr ? `${dateStr} ${timeStr}` : dateStr;
+   return <span className={cn('text-slate-700', wrap ? 'whitespace-pre-wrap break-words leading-relaxed' : 'truncate block')}>{finalStr}</span>;
  }
  case 'url': return <a href={value.startsWith('http') ? value : `https://${value}`} target="_blank"rel="noreferrer"onClick={e => e.stopPropagation()} className={cn('text-blue-600 underline', wrap ? 'break-all' : 'truncate block')}>{value}</a>;
  case 'email': return <a href={`mailto:${value}`} onClick={e => e.stopPropagation()} className="text-blue-600 underline">{value}</a>;

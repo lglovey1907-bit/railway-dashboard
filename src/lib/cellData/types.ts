@@ -30,6 +30,10 @@ export interface FieldDef {
  numberFormat?: string; // 'number', 'number_with_separators', 'percent', 'inr', 'usd', etc.
  decimalPlaces?: string; // 'default', '0', '1', '2', '3', '4'
  showAs?: 'number' | 'bar' | 'ring';
+ // date display
+ dateFormat?: string; // 'full', 'short', 'MM/DD/YYYY', 'DD/MM/YYYY', 'YYYY/MM/DD', 'relative'
+ timeFormat?: string; // 'hidden', '12h', '24h'
+ dateNotification?: string; // 'none', 'day_of', '1_day', '2_days', '1_week'
 }
 
 export interface RowDef {
