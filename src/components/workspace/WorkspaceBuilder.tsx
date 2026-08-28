@@ -1312,8 +1312,8 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
         style={{ boxShadow: '0 1px 6px rgba(15,23,42,0.08)' }}>
 
         {/* Tab row */}
-        <div className="flex items-center border-b border-slate-100 px-2 overflow-x-auto"
-          style={{ overflowY: 'visible' }}>
+        <div className="flex items-center border-b border-slate-100 overflow-visible pr-2">
+          <div className="flex-1 flex items-center px-2 overflow-x-auto" style={{ overflowY: 'visible' }}>
           {visibleWindows.map(win => {
             const isActive = win.id === winStore.activeWindowId;
             return (
@@ -1368,8 +1368,10 @@ export function WorkspaceBuilder({ cell, pendingWidget, onPendingConsumed, enter
             </button>
           )}
 
+          </div>
+
           {/* Right: toolbar actions */}
-          <div className="ml-auto flex items-center gap-1.5 px-3 shrink-0">
+          <div className="ml-auto flex items-center gap-1.5 px-3 shrink-0 border-l border-slate-100 pl-3">
             <div className="relative">
               <button
                 onClick={() => setShowDbMenu(v => !v)}

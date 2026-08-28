@@ -122,7 +122,7 @@ function TotalsFooter({ table, config, onConfigChange }: {
   const cols = table.fields.filter(f => !f.hidden);
 
   return (
-    <div className="flex items-center border-t border-slate-200 bg-slate-50/80 text-[10px] overflow-x-auto shrink-0">
+    <div className="flex items-center border-t border-slate-200 bg-slate-50/80 text-[10px]  shrink-0">
       {/* Label column */}
       <div className="px-3 py-2 shrink-0 font-bold text-slate-500 min-w-[120px] w-[120px]">
         <span className="flex items-center gap-1"><Sigma size={10}/> Totals</span>
@@ -299,7 +299,7 @@ export function DatabaseBlock({
       </div>
 
       {/* View content */}
-      <div className={cn('overflow-auto', activeView !== 'table' && 'p-4')}>
+      <div className={cn('', activeView !== 'table' && 'p-4')}>
         {activeView === 'table' && (
           <TableEngine
             table={filteredTable}
