@@ -111,7 +111,7 @@ export function DatabasePeekModal({ cell, mode, onClose, onChangeMode }: Props) 
         style={{ backgroundColor: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)' }}
         onClick={onClose}>
         <div
-          className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col overflow-hidden"
+          className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col "
           style={{ maxHeight: '88vh', minHeight: 400 }}
           onClick={e => e.stopPropagation()}>
           <PeekHeader mode={mode} onClose={onClose} onChangeMode={onChangeMode}/>
@@ -157,7 +157,7 @@ export function DatabasePeekModal({ cell, mode, onClose, onChangeMode }: Props) 
 // ── Inline full-page wrapper (used directly in canvas) ────────────────────────
 export function DatabaseFullPage({ cell, onClose, onChangeMode }: Omit<Props, 'mode'>) {
   return (
-    <div className="flex flex-col h-full bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+    <div className="flex flex-col h-full bg-white rounded-xl border border-slate-200  shadow-sm">
       <PeekHeader mode="fullpage" onClose={onClose} onChangeMode={onChangeMode}/>
       <div className="flex-1 overflow-y-auto custom-scroll">
         <CellDataManager cell={cell}/>

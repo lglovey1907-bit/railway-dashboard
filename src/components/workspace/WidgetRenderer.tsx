@@ -3374,17 +3374,6 @@ ${sheet('Station Earning',[
   // ── VIEW MODE ──────────────────────────────────────────────────────────────
   const hasData = !!(d.stationName || d.stationCode);
 
-  if (!hasData && canManage) return (
-    <div className="text-center py-8 space-y-3">
-      <p className="text-4xl">🗂️</p>
-      <p className="text-slate-300 text-sm italic">No station data yet</p>
-      <button onClick={startEditing}
-        className="px-4 py-2 text-xs bg-amber-600 text-white rounded-lg hover:bg-amber-700">
-        Fill Station Data
-      </button>
-    </div>
-  );
-  if (!hasData) return <p className="text-xs text-slate-300 italic text-center py-4">No station data</p>;
 
   // Only show a counter if it has at least one data value — hides rows like STBA or
   // Announcement that exist in the list but were never filled in for this station.
@@ -3442,6 +3431,27 @@ ${sheet('Station Earning',[
       </div>
     )}
 
+    {!hasData ? (
+      canManage ? (
+        <div className="text-center py-8 space-y-3">
+          <p className="text-4xl">🗂️</p>
+          <p className="text-slate-300 text-sm italic">No station data yet</p>
+          <div className="flex items-center justify-center gap-2">
+            <button onClick={startEditing}
+              className="px-4 py-2 text-xs bg-amber-600 text-white rounded-lg hover:bg-amber-700">
+              Fill Station Data
+            </button>
+            <button onClick={()=>setShowDataSources(true)} title="Linked Data Sources"
+              className="px-4 py-2 text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg flex items-center gap-1 border border-slate-200 shadow-sm">
+              🔗 Link Source
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-slate-300 italic text-center py-4">No station data</p>
+      )
+    ) : (
+      <>
     <div className="space-y-3">
       {/* Header */}
       <div className="bg-amber-600 text-white rounded-xl px-4 py-3 flex items-start justify-between">
@@ -3837,6 +3847,9 @@ ${sheet('Station Earning',[
         </div>
       )}
     </div>
+
+      </>
+    )}
 
     {/* ── Cell Config Modal (admin only) ──────────────────────────────────── */}
     {showCellConfig && (

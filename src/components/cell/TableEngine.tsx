@@ -701,7 +701,7 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
 
 
  return (
- <div className="rounded-xl border border-slate-200 overflow-hidden bg-white shadow-sm">
+ <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
 
  {/* ── Toolbar ── */}
  <div className="flex items-center gap-2 px-3 py-2 bg-white border-b border-slate-200 flex-wrap">

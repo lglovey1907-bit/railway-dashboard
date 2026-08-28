@@ -38,10 +38,14 @@ async function redisSet(key: string, value: string): Promise<boolean> {
   const { url, token, ok } = getUpstash();
   if (!ok) return false;
   try {
-    // Upstash REST: POST /set/{key}/{value}
+    // Upstash REST: POST /set/{key} with body
     const res = await fetch(
-      `${url}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}`,
-      { method: 'POST', headers: { Authorization: `Bearer ${token}` } }
+      `${url}/set/${encodeURIComponent(key)}`,
+      { 
+        method: 'POST', 
+        headers: { Authorization: `Bearer ${token}` },
+        body: value
+      }
     );
     return res.ok;
   } catch { return false; }
