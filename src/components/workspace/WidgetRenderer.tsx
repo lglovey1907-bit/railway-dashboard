@@ -4208,20 +4208,21 @@ function TableMultiView({ tables, scope, scopeLabel, hook, cell, canManage, user
         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0">
           {scopeLabel}
         </span>
-        {tables.length > 1 && (
-          <div className="flex items-center gap-1 flex-1 overflow-x-auto min-w-0">
-            {tables.map((t: any) => (
-              <button key={t.id} onClick={() => setActiveId(t.id)}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap transition-all ${
-                  t.id === effectiveId
+        <div className="flex items-center gap-1 flex-1 overflow-x-auto min-w-0">
+          {tables.map((t: any) => (
+            <button key={t.id} onClick={() => setActiveId(t.id)}
+              className={cn(
+                'px-2.5 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap transition-all',
+                tables.length === 1 
+                  ? 'bg-transparent text-slate-700 font-bold px-1 text-sm'
+                  : t.id === effectiveId
                     ? 'bg-rail-600 text-white shadow-sm'
                     : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                }`}>
-                {t.name}
-              </button>
-            ))}
-          </div>
-        )}
+              )}>
+              {t.name}
+            </button>
+          ))}
+        </div>
         {onReset && (
           <button onClick={onReset}
             className="text-[10px] text-slate-400 hover:text-slate-600 flex items-center gap-1 shrink-0 ml-auto">
@@ -4370,7 +4371,7 @@ export function WidgetRenderer({
         tables={resolvedTables} scope={scope} scopeLabel={
           scope === 'all' ? 'All Tables' :
           scope === 'section' ? (wsSections.find((s: any) => s.id === scopeSecId)?.title ?? 'Section') :
-          resolvedTables[0]?.name ?? 'Table'
+          'Table'
         }
         hook={workspaceHook} cell={cell} canManage={canManage}
         userId={userId} userName={userName}
