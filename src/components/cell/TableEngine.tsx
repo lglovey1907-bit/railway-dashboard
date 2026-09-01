@@ -1,4 +1,5 @@
-'use client';
+"use client";
+import React from "react";
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { createPortal } from 'react-dom';
@@ -884,6 +885,129 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  : 'truncate block';
 
 
+  const renderRow = (row: RowDef, idx: number) => {
+ const labelVal = table.values[`${row.id}:__label__`] || (isLinked ? '' : `Row ${idx + 1}`);
+ return (
+ <tr key={row.id}
+ onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverRowId(row.id); }}
+ onDragLeave={() => setDragOverRowId(null)}
+ onDrop={e => {
+ e.preventDefault();
+ const srcId = e.dataTransfer.getData('rowId');
+ if (srcId && srcId !== row.id) handleRowDrop(srcId, row.id);
+ setDragRowId(null); setDragOverRowId(null);
+ }}
+ className={cn(
+ 'group/row hover:bg-indigo-50/20 transition-colors border-b border-slate-100',
+ idx % 2 === 1 && 'bg-slate-50/30',
+ dragOverRowId === row.id && dragRowId !== row.id && 'border-t-2 border-t-indigo-400 bg-indigo-50/40',
+ dragRowId === row.id && 'opacity-40',
+ )}>
+
+ {/* Row number + drag handle (only handle is draggable) */}
+ <td data-label="S.No" className="w-8 border-r border-slate-100 align-middle">
+ <div className="relative flex items-center justify-center min-h-[28px]">
+ {canManage && !isLinked ? (
+ <>
+ <span className="text-[10px] text-slate-300 leading-none group-hover/row:opacity-0 transition-opacity select-none absolute">{idx + 1}</span>
+ <div
+ draggable
+ onDragStart={e => {
+ e.dataTransfer.effectAllowed = 'move';
+ e.dataTransfer.setData('rowId', row.id);
+ setDragRowId(row.id);
+ }}
+ onDragEnd={() => { setDragRowId(null); setDragOverRowId(null); }}
+ className="text-slate-300 hover:text-indigo-500 cursor-grab opacity-0 group-hover/row:opacity-100 transition-opacity p-px absolute"
+ title="Drag to reorder row">
+ <GripVertical size={12}/>
+ </div>
+ </>
+ ) : (
+ <span className="text-[10px] text-slate-300 select-none">{idx + 1}</span>
+ )}
+ </div>
+ </td>
+
+ {/* Label cell */}
+ <td data-label={table.firstColLabel || 'Name'} className="border-r border-slate-100 px-2 py-1.5 font-medium text-slate-700"
+ style={{ width: colWidths['__label__'] ?? 140 }}>
+ {isLinked ? (
+ <span className="whitespace-pre-wrap break-words block text-xs">{labelVal}</span>
+ ) : editFirstCol === row.id ? (
+ <input value={table.values[`${row.id}:__label__`] ?? ''}
+ autoFocus
+ onChange={e => hook.setCellValue(table.id, row.id, '__label__', e.target.value)}
+ onBlur={() => setEditFirstCol(null)}
+ onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setEditFirstCol(null); }}
+ className="w-full bg-white border border-indigo-400 rounded px-1.5 py-0.5 text-xs text-slate-900 outline-none"/>
+ ) : (
+ <div className="flex items-center gap-1 group/lbl">
+ <button onDoubleClick={() => setEditFirstCol(row.id)} className="flex-1 text-left text-xs truncate">
+ {labelVal || <span className="text-slate-300 italic text-[10px]">double-click to edit</span>}
+ </button>
+ {canManage && (
+ <button onClick={() => setShowRowNominees(row.id)}
+ className="opacity-0 group-hover/lbl:opacity-100 text-slate-300 hover:text-blue-500 shrink-0 transition-opacity"
+ title="Row access"><Users size={10}/></button>
+ )}
+ {row.nominatedUserIds.length > 0 && (
+ <span className="text-[8px] bg-blue-100 text-blue-700 rounded-full px-1 shrink-0">{row.nominatedUserIds.length}</span>
+ )}
+ {canManage && !isLinked && (
+ <button onClick={() => setConfirmDelete({ type: 'row', id: row.id, label: labelVal || `Row ${idx + 1}` })}
+ className="opacity-0 group-hover/lbl:opacity-100 text-slate-300 hover:text-red-500 shrink-0 transition-opacity"
+ title="Delete row"><Trash2 size={10}/></button>
+ )}
+ </div>
+ )}
+ </td>
+
+ {/* Data cells */}
+ {orderedFields.map(field => {
+ const isFormula = field.type === 'formula';
+ const cellEditable = canFill(userId, canManage, table, row, field) && !isLinked && !isFormula;
+ const val = getVal(row.id, field.id);
+ const isEditing = editing?.rId === row.id && editing?.fId === field.id;
+ return (
+ <td key={field.id}
+ data-label={field.label}
+ className={cn(
+ 'border-r border-slate-100 px-2',
+ field.frozen ? 'sticky left-0 bg-white z-[1]' : '',
+ isWrapped(field) && rowHeightMode === 'auto' ? 'py-2 align-top' : 'py-1.5 align-middle',
+ cellEditable && !isEditing && 'cursor-text',
+ )}
+ style={{ width: W(field) }}
+ onDoubleClick={() => cellEditable && setEditing({ rId: row.id, fId: field.id })}>
+ {isEditing ? (
+ <CellEditor value={val} field={field}
+ onSave={v => { hook.setCellValue(table.id, row.id, field.id, v); setEditing(null); }}
+ onCancel={() => setEditing(null)}/>
+ ) : (
+ <div className={cn(
+ 'min-h-[20px]',
+ isFormula && 'text-indigo-600 font-medium',
+ !val && cellEditable && 'text-slate-200 italic',
+ !isWrapped(field) || rowHeightMode === 'fixed' ? 'max-h-10 overflow-hidden' : '',
+ )}>
+ {isFormula && !val
+ ? <span className="text-[10px] opacity-50">={field.formula}</span>
+ : <CellView value={val} field={{ ...field, wrapText: isWrapped(field) }}/>
+ }
+ {rowHeightMode === 'fixed' && isWrapped(field) && val.length > 60 && (
+ <span className="text-[9px] text-indigo-400">…more</span>
+ )}
+ </div>
+ )}
+ </td>
+ );
+ })}
+ {canManage && !isLinked && <td/>}
+ </tr>
+ );
+  };
+
  return (
  <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
 
@@ -1214,128 +1338,28 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  </thead>
 
  <tbody>
- {visibleRows.map((row, idx) => {
- const labelVal = table.values[`${row.id}:__label__`] || (isLinked ? '' : `Row ${idx + 1}`);
- return (
- <tr key={row.id}
- onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverRowId(row.id); }}
- onDragLeave={() => setDragOverRowId(null)}
- onDrop={e => {
- e.preventDefault();
- const srcId = e.dataTransfer.getData('rowId');
- if (srcId && srcId !== row.id) handleRowDrop(srcId, row.id);
- setDragRowId(null); setDragOverRowId(null);
- }}
- className={cn(
- 'group/row hover:bg-indigo-50/20 transition-colors border-b border-slate-100',
- idx % 2 === 1 && 'bg-slate-50/30',
- dragOverRowId === row.id && dragRowId !== row.id && 'border-t-2 border-t-indigo-400 bg-indigo-50/40',
- dragRowId === row.id && 'opacity-40',
- )}>
 
- {/* Row number + drag handle (only handle is draggable) */}
- <td data-label="S.No" className="w-8 border-r border-slate-100 align-middle">
- <div className="relative flex items-center justify-center min-h-[28px]">
- {canManage && !isLinked ? (
- <>
- <span className="text-[10px] text-slate-300 leading-none group-hover/row:opacity-0 transition-opacity select-none absolute">{idx + 1}</span>
- <div
- draggable
- onDragStart={e => {
- e.dataTransfer.effectAllowed = 'move';
- e.dataTransfer.setData('rowId', row.id);
- setDragRowId(row.id);
- }}
- onDragEnd={() => { setDragRowId(null); setDragOverRowId(null); }}
- className="text-slate-300 hover:text-indigo-500 cursor-grab opacity-0 group-hover/row:opacity-100 transition-opacity p-px absolute"
- title="Drag to reorder row">
- <GripVertical size={12}/>
- </div>
- </>
- ) : (
- <span className="text-[10px] text-slate-300 select-none">{idx + 1}</span>
- )}
- </div>
- </td>
-
- {/* Label cell */}
- <td data-label={table.firstColLabel || 'Name'} className="border-r border-slate-100 px-2 py-1.5 font-medium text-slate-700"
- style={{ width: colWidths['__label__'] ?? 140 }}>
- {isLinked ? (
- <span className="whitespace-pre-wrap break-words block text-xs">{labelVal}</span>
- ) : editFirstCol === row.id ? (
- <input value={table.values[`${row.id}:__label__`] ?? ''}
- autoFocus
- onChange={e => hook.setCellValue(table.id, row.id, '__label__', e.target.value)}
- onBlur={() => setEditFirstCol(null)}
- onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setEditFirstCol(null); }}
- className="w-full bg-white border border-indigo-400 rounded px-1.5 py-0.5 text-xs text-slate-900 outline-none"/>
- ) : (
- <div className="flex items-center gap-1 group/lbl">
- <button onDoubleClick={() => setEditFirstCol(row.id)} className="flex-1 text-left text-xs truncate">
- {labelVal || <span className="text-slate-300 italic text-[10px]">double-click to edit</span>}
- </button>
- {canManage && (
- <button onClick={() => setShowRowNominees(row.id)}
- className="opacity-0 group-hover/lbl:opacity-100 text-slate-300 hover:text-blue-500 shrink-0 transition-opacity"
- title="Row access"><Users size={10}/></button>
- )}
- {row.nominatedUserIds.length > 0 && (
- <span className="text-[8px] bg-blue-100 text-blue-700 rounded-full px-1 shrink-0">{row.nominatedUserIds.length}</span>
- )}
- {canManage && !isLinked && (
- <button onClick={() => setConfirmDelete({ type: 'row', id: row.id, label: labelVal || `Row ${idx + 1}` })}
- className="opacity-0 group-hover/lbl:opacity-100 text-slate-300 hover:text-red-500 shrink-0 transition-opacity"
- title="Delete row"><Trash2 size={10}/></button>
- )}
- </div>
- )}
- </td>
-
- {/* Data cells */}
- {orderedFields.map(field => {
- const isFormula = field.type === 'formula';
- const cellEditable = canFill(userId, canManage, table, row, field) && !isLinked && !isFormula;
- const val = getVal(row.id, field.id);
- const isEditing = editing?.rId === row.id && editing?.fId === field.id;
- return (
- <td key={field.id}
- data-label={field.label}
- className={cn(
- 'border-r border-slate-100 px-2',
- field.frozen ? 'sticky left-0 bg-white z-[1]' : '',
- isWrapped(field) && rowHeightMode === 'auto' ? 'py-2 align-top' : 'py-1.5 align-middle',
- cellEditable && !isEditing && 'cursor-text',
- )}
- style={{ width: W(field) }}
- onDoubleClick={() => cellEditable && setEditing({ rId: row.id, fId: field.id })}>
- {isEditing ? (
- <CellEditor value={val} field={field}
- onSave={v => { hook.setCellValue(table.id, row.id, field.id, v); setEditing(null); }}
- onCancel={() => setEditing(null)}/>
- ) : (
- <div className={cn(
- 'min-h-[20px]',
- isFormula && 'text-indigo-600 font-medium',
- !val && cellEditable && 'text-slate-200 italic',
- !isWrapped(field) || rowHeightMode === 'fixed' ? 'max-h-10 overflow-hidden' : '',
- )}>
- {isFormula && !val
- ? <span className="text-[10px] opacity-50">={field.formula}</span>
- : <CellView value={val} field={{ ...field, wrapText: isWrapped(field) }}/>
- }
- {rowHeightMode === 'fixed' && isWrapped(field) && val.length > 60 && (
- <span className="text-[9px] text-indigo-400">…more</span>
- )}
- </div>
- )}
- </td>
- );
- })}
- {canManage && !isLinked && <td/>}
- </tr>
- );
- })}
+  {table.groupBy ? (
+    Object.entries(
+      visibleRows.reduce((acc, row) => {
+        const val = table.values[`${row.id}:${table.groupBy!}`] || 'Uncategorized';
+        if (!acc[val]) acc[val] = [];
+        acc[val].push(row);
+        return acc;
+      }, {} as Record<string, RowDef[]>)
+    ).map(([groupName, rows]) => (
+      <React.Fragment key={groupName}>
+        <tr>
+          <td colSpan={orderedFields.length + 3} className="bg-slate-100 border-y border-slate-200 px-3 py-1.5 font-bold text-slate-700 text-xs shadow-inner uppercase tracking-wider sticky left-0">
+            {groupName} <span className="text-[10px] text-slate-400 font-normal ml-2 lowercase normal-case">({rows.length} items)</span>
+          </td>
+        </tr>
+        {rows.map((row, idx) => renderRow(row, idx))}
+      </React.Fragment>
+    ))
+  ) : (
+    visibleRows.map((row, idx) => renderRow(row, idx))
+  )}
 
  {/* Empty state */}
  {!visibleRows.length && (
