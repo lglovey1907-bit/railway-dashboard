@@ -821,16 +821,16 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  };
 
  // Column resize
- const startResize = (e: React.MouseEvent, id: string) => {
+ const startResize = (e: React.PointerEvent, id: string) => {
  e.preventDefault();
  const startW = colWidths[id] ?? (orderedFields.find(f => f.id === id)?.width ?? 160);
  resizeRef.current = { id, startX: e.clientX, startW };
- const move = (ev: MouseEvent) => {
+ const move = (ev: PointerEvent) => {
  if (!resizeRef.current) return;
  setColWidths(p => ({ ...p, [resizeRef.current!.id]: Math.max(60, resizeRef.current!.startW + ev.clientX - resizeRef.current!.startX) }));
  };
- const up = () => { resizeRef.current = null; window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
- window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+ const up = () => { resizeRef.current = null; window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+ window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
  };
 
  // Auto-sync
@@ -1040,8 +1040,28 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  {table.sheet?.syncError && <span className="text-[10px] text-red-600 flex items-center gap-1"><AlertCircle size={9}/> Sync error</span>}
  </div>
 
- // Right: controls
+ {/* Right: controls */}
  <div className="flex items-center gap-1">
+ {canManage && !isLinked && (
+   <>
+     <button onClick={() => hook.addRow(table.id)}
+       className="flex items-center gap-1 px-2 py-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg text-[10px] font-semibold transition-colors">
+       <Plus size={12}/> Add Row
+     </button>
+     <button onClick={() => hook.addColumn(table.id)}
+       className="flex items-center gap-1 px-2 py-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg text-[10px] font-semibold transition-colors">
+       <Plus size={12}/> Add Column
+     </button>
+     <div className="w-px h-4 bg-slate-200 mx-1"/>
+   </>
+ )}
+ <button
+   onClick={() => setRowHeightMode(m => m === 'auto' ? 'fixed' : 'auto')}
+   className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition-colors"
+ >
+   <AlignJustify size={12}/> {rowHeightMode === 'auto' ? 'Wrap' : 'Compact'}
+ </button>
+
  {isLinked && (
  <button onClick={manualSync} disabled={syncing} title="Refresh now"
  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors">
@@ -1083,16 +1103,7 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
    )}
  </div>
 
- {/* Comfortable / Compact row height */}
- <button
- onClick={() => setRowHeightMode(m => m === 'auto' ? 'fixed' : 'auto')}
- title={rowHeightMode === 'auto' ? 'Switch to compact rows' : 'Switch to comfortable rows'}
- className={cn('flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-colors',
- rowHeightMode === 'auto'
- ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
- : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700')}>
- <AlignJustify size={12}/>{rowHeightMode === 'auto' ? 'Comfortable' : 'Compact'}
- </button>
+ 
 
  {/* Reset column widths */}
  {canManage && (
@@ -1183,7 +1194,7 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  </div>
  {/* Resize handle */}
  <div className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize opacity-0 group-hover/col:opacity-100 bg-indigo-400 transition-opacity"
- onMouseDown={e => startResize(e, '__label__')}
+ onPointerDown={e => startResize(e, '__label__')}
  onDoubleClick={() => setColWidths(p => { const { ['__label__']: _, ...rest } = p; return rest; })}
  title="Drag to resize · Double-click to auto-fit"/>
  </th>
@@ -1256,7 +1267,7 @@ export function TableEngine({ table, hook, cell, canManage, userId, userName }: 
  </div>
  {/* Resize handle */}
  <div className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize opacity-0 group-hover/col:opacity-100 bg-indigo-400 transition-opacity"
- onMouseDown={e => startResize(e, field.id)}
+ onPointerDown={e => startResize(e, field.id)}
  onDoubleClick={() => setColWidths(p => { const { [field.id]: _, ...rest } = p; return rest; })}
  title="Drag to resize · Double-click to auto-fit"/>
  </th>
