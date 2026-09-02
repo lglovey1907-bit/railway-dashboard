@@ -609,6 +609,24 @@ function CellEditor({ value, field, onSave, onCancel }: {
 }
 
 // ── Create Table modal (exported for CellDataManager) ─────────────────────────
+
+export const TABLE_TEMPLATES = [
+  {
+    id: 'blank',
+    name: 'Blank Table',
+    firstCol: 'Label',
+    cols: 3,
+    fields: []
+  },
+  {
+    id: 'plan_head_53',
+    name: 'Plan Head 53 work',
+    firstCol: 'Short Name of Work',
+    cols: 10,
+    fields: ['PROJECTID', 'UWID', 'Year of Sanction', 'Current Cost', 'Expenditure upto date', 'Now Anticipated TDC', '%age Phy. Progress', 'REMARKS', 'Progress Reported by']
+  }
+];
+
 export function CreateTableModal({ onClose, onCreated, cell = '', cellStaff = [] }: {
  onClose: () => void; onCreated: (t: TableDef) => void; cell?: string; cellStaff?: StaffOption[];
 }) {
@@ -620,9 +638,19 @@ export function CreateTableModal({ onClose, onCreated, cell = '', cellStaff = []
  const [editorIds, setEditorIds] = useState<string[]>([]);
  const [showViewerPicker, setShowViewerPicker] = useState(false);
  const [showEditorPicker, setShowEditorPicker] = useState(false);
+ const [selectedTemplate, setSelectedTemplate] = useState('blank');
  const create = () => {
  if (!name.trim()) return;
- onCreated(makeTable(name.trim(), cols, rows, firstCol.trim() || 'Label', cell, viewerIds, editorIds));
+ const table = makeTable(name.trim(), cols, rows, firstCol.trim() || 'Label', cell, viewerIds, editorIds);
+ if (selectedTemplate && selectedTemplate !== 'blank') {
+   const tmpl = TABLE_TEMPLATES.find(t => t.id === selectedTemplate);
+   if (tmpl && tmpl.fields.length > 0) {
+     for (let i = 0; i < tmpl.fields.length; i++) {
+       if (table.fields[i]) table.fields[i].label = tmpl.fields[i];
+     }
+   }
+ }
+ onCreated(table);
  onClose();
  };
  return (
@@ -633,6 +661,22 @@ export function CreateTableModal({ onClose, onCreated, cell = '', cellStaff = []
  className="bg-white border border-slate-200 rounded-2xl p-6 w-full max-w-md shadow-2xl"onClick={e => e.stopPropagation()}>
  <h3 className="font-bold text-slate-900 text-base mb-5">Create Table</h3>
  <div className="space-y-3 mb-5">
+ <div>
+ <label className="text-xs text-slate-500 font-medium block mb-1.5">Template</label>
+ <select value={selectedTemplate} onChange={e => {
+   const val = e.target.value;
+   setSelectedTemplate(val);
+   const tmpl = TABLE_TEMPLATES.find(t => t.id === val);
+   if (tmpl) {
+     if (tmpl.name !== 'Blank Table') setName(tmpl.name);
+     setFirstCol(tmpl.firstCol);
+     setCols(tmpl.cols);
+   }
+ }} className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-400">
+   {TABLE_TEMPLATES.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+ </select>
+ </div>
+
  <div>
  <label className="text-xs text-slate-500 font-medium block mb-1.5">Table Name</label>
  <input value={name} onChange={e => setName(e.target.value)} autoFocus onKeyDown={e => e.key==='Enter' && create()} placeholder="e.g. Platform Inventory"

@@ -8,6 +8,8 @@ import { BarChart3, Download, Plus, Calendar, FileText, TrendingUp, Train, Ticke
 import { cn } from '@/lib/utils';
 
 const REPORT_TEMPLATES = [
+ { id: 'plan-head-53', name: 'Plan Head 53 work', icon: FileText, cell: 'All', color: 'indigo' },
+
  { id: 'monthly-revenue', name: 'Monthly Revenue Summary', icon: TrendingUp, cell: 'All', color: 'emerald' },
  { id: 'uts-daily', name: 'UTS Daily Statement', icon: Ticket, cell: 'UTS', color: 'blue' },
  { id: 'prs-booking', name: 'PRS Booking Analysis', icon: Train, cell: 'PRS', color: 'violet' },

@@ -175,6 +175,17 @@ export const TEMPLATES: Record<string, { label: string; columns: LayoutColumn[] 
  makeCol(20, [makeWidget('announcements', 'Notices & Circulars')]),
  ],
  },
+  plan_head_53: {
+ label: 'Plan Head 53 work',
+ columns: [
+ makeCol(60, [makeWidget('table', 'Works Register')]),
+ makeCol(40, [
+ makeWidget('kpi', 'Total Works'),
+ makeWidget('kpi', 'Funds Utilized'),
+ makeWidget('announcements', 'Recent Updates'),
+ ]),
+ ],
+ },
  publicity: {
  label: 'Publicity Template',
  columns: [
