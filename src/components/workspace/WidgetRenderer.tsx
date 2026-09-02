@@ -4202,7 +4202,7 @@ function TableMultiView({ tables, scope, scopeLabel, hook, cell, canManage, user
   const activeTbl = tables.find((t: any) => t.id === effectiveId);
 
   return (
-    <div className="flex flex-col gap-0">
+    <div className="flex flex-col gap-0 w-full overflow-hidden max-w-full">
       {/* Header bar: scope label + tab strip + reset */}
       <div className="flex items-center gap-2 mb-2 flex-wrap">
         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0">

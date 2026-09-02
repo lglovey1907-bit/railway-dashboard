@@ -176,7 +176,7 @@ function SectionBlock({ section, hook, isFirst, isLast, canManage, cell, userId,
  </p>
  ) : (
  section.widgets.map(widget => (
- <div key={widget.id} className="relative group/widget">
+ <div key={widget.id} className="relative group/widget w-full overflow-hidden max-w-full">
  {widget.type === 'table' && (() => {
  const table = hook.ws.tables.find(t => t.id === (widget as TableWidget).tableId);
  if (!table) return null;

@@ -90,7 +90,7 @@ function SharedTableCard({ share, table, userId, userName }: {
  const shim = useMemo(() => makeShim(table), [table]);
 
  return (
- <div className="space-y-3">
+ <div className="space-y-3 w-full overflow-hidden max-w-full">
  <div>
  <div className="flex items-center gap-2 flex-wrap mb-1">
  <h3 className="font-bold text-slate-900 text-sm">{table.name}</h3>
