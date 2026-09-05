@@ -86,17 +86,7 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
               return obj;
             }).filter((row: any) => row['UWID'] || row['PROJECTID'] || row['SN'] || row['Station']);
             
-            // To ensure we aren't showing fallback data (gviz/tq quirk), we check if the data actually belongs to the section
-            // The first cell of the sheet usually has the section name.
-            const firstCell = String((parsed.data[0] as any)[0] || '');
-            if (firstCell && firstCell.includes('PH 53') && !firstCell.includes(selectedSection) && !firstCell.includes(selectedSection.trim())) {
-              console.warn(`Data returned appears to be fallback data. Expected ${selectedSection}, got ${firstCell}`);
-              // Google Sheets fell back to a default sheet because this sheet is completely empty or newly created
-              // We'll just show empty
-              setData([]);
-            } else {
-              setData(rowData);
-            }
+            setData(rowData);
           } else {
             setData([]);
           }
