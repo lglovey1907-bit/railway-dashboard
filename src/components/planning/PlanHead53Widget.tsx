@@ -11,7 +11,10 @@ const SECTIONS = [
   'DUK section',
   'DEE Section',
   'SMQL section ',
-  'FDB Section'
+  'FDB Section',
+  'Ring Rly',
+  'Misc.',
+  'Branch Line'
 ];
 
 export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
