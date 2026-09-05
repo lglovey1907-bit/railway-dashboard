@@ -99,6 +99,19 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
     ];
   }, [data]);
 
+  const KNOWN_COLUMNS = [
+    'SN', 'PROJECTID', 'UWID', 'Station', 'Short Name of Work',
+    'Year of Sanction', 'Current Cost', 'Expenditure upto date',
+    '%age Phy. Progress', 'Now Anticipated TDC', 'REMARKS', 'Progress Reported by'
+  ];
+
+  // Extract any dynamic/extra columns added in the Google Sheet
+  const dynamicColumns = useMemo(() => {
+    if (!data || data.length === 0) return [];
+    const allKeys = Object.keys(data[0]);
+    return allKeys.filter(k => k && !KNOWN_COLUMNS.includes(k));
+  }, [data]);
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col w-full h-full min-h-[400px]">
       <div className="px-4 py-3 border-b border-slate-100 flex flex-wrap gap-4 items-center justify-between bg-slate-50/50">
@@ -158,6 +171,9 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
                   <th className="px-3 py-2 font-semibold text-slate-600">Anticipated TDC</th>
                   <th className="px-3 py-2 font-semibold text-slate-600">Remarks</th>
                   <th className="px-3 py-2 font-semibold text-slate-600">Reported By</th>
+                  {dynamicColumns.map(col => (
+                    <th key={col} className="px-3 py-2 font-semibold text-indigo-600 bg-indigo-50/50">{col}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -191,6 +207,11 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
                     <td className="px-3 py-2 text-slate-500">{row['Now Anticipated TDC']}</td>
                     <td className="px-3 py-2 text-slate-500 min-w-[200px] whitespace-normal">{row['REMARKS']}</td>
                     <td className="px-3 py-2 text-slate-500">{row['Progress Reported by']}</td>
+                    {dynamicColumns.map(col => (
+                      <td key={col} className="px-3 py-2 text-indigo-700 font-medium bg-indigo-50/30 whitespace-normal min-w-[100px]">
+                        {row[col]}
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
