@@ -98,7 +98,7 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
                       <div className="text-[10px] text-slate-400">{row.UWID}</div>
                     </td>
                     <td className="px-3 py-2 font-medium text-slate-700">{row.Station}</td>
-                    <td className="px-3 py-2 text-slate-600 max-w-[200px] truncate" title={row['Short Name of Work']}>
+                    <td className="px-3 py-2 text-slate-600 min-w-[200px] whitespace-normal">
                       {row['Short Name of Work']}
                     </td>
                     <td className="px-3 py-2 text-slate-500">{row['Year of Sanction']}</td>
@@ -118,7 +118,7 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
                       </div>
                     </td>
                     <td className="px-3 py-2 text-slate-500">{row['Now Anticipated TDC']}</td>
-                    <td className="px-3 py-2 text-slate-500 max-w-[200px] truncate" title={row.REMARKS}>{row.REMARKS}</td>
+                    <td className="px-3 py-2 text-slate-500 min-w-[200px] whitespace-normal">{row.REMARKS}</td>
                     <td className="px-3 py-2 text-slate-500">{row['Progress Reported by']}</td>
                   </tr>
                 ))}
