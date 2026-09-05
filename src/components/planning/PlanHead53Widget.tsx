@@ -14,7 +14,8 @@ const SECTIONS = [
   'FDB Section',
   'Ring Rly',
   'Misc.',
-  'Branch Line'
+  'Branch Line',
+  'KG Section'
 ];
 
 export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
