@@ -1020,7 +1020,7 @@ function toDocHtmlUrl(url: string): string | null {
  * Covers every HD field including arrays (ff, trains, primes, stationEarning,
  * counterHeads, commercial) and earningBifurcation.
  */
-type DocFields = {
+export type DocFields = {
   ffComp?: any;
   stationCode?: string; stationName?: string; category?: string;
   state?: string; section?: string; cmi?: string; division?: string;
@@ -1425,7 +1425,7 @@ function renderStatusBullets(status: string) {
  * to isolate BOTH the text section AND the HTML table search for that station.
  * Stations are separated by <hr> elements in the Google Docs HTML export.
  */
-function parseDocForHandout(html: string, stationHint = ''): DocFields {
+export function parseDocForHandout(html: string, stationHint = ''): DocFields {
   if (typeof document === 'undefined') return {};
   const result: DocFields = {};
 
@@ -2697,6 +2697,111 @@ ${sheet('Station Earning',[
   };
 
   const updFF  = (r: number, c: number, v: string) => setD(p => { const a = p.ff.map(x=>[...x]); a[r][c]=v; return {...p, ff: a}; });
+  const batchFetchAndFillFromDoc = async (src: DataSource) => {
+    const exportUrl = toDocHtmlUrl(src.url);
+    if (!exportUrl) {
+      setDsPreview({ id: src.id, text: '⚠ Invalid Google Doc URL. Use the standard docs.google.com/document/d/... link.', error: true });
+      return;
+    }
+    setFetchingDocId(src.id);
+    setDsPreview({ id: src.id, text: '⏳ Fetching master document...' });
+    try {
+      const res = await fetch(`/api/fetch-doc?url=${encodeURIComponent(exportUrl)}`);
+      const data: { content?: string; error?: string } = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+      const rawHtml = data.content ?? '';
+
+      if (rawHtml.includes('accounts.google.com') || rawHtml.includes('ServiceLogin') || rawHtml.includes('signin/oauth')) {
+        throw new Error('Google is asking for sign-in. Make sure the document is shared with "Anyone with the link can view".');
+      }
+
+      setDsPreview({ id: src.id, text: '⏳ Parsing stations...' });
+      const hrBlocks = rawHtml.split(/<hr[^>]*\/?>/gi);
+      let updatedCount = 0;
+      let newCodes: string[] = [];
+
+      for (const blk of hrBlocks) {
+        const extracted = parseDocForHandout(blk, '');
+        const code = extracted.stationCode?.toUpperCase().trim();
+        
+        if (code) {
+          // Attempt to load existing handout from Upstash
+          let existing: HD = {
+            stationCode: code, stationName: '', category: '', state: '', section: '', cmi: '', division: 'Delhi Division', date: '',
+            ff: [['','','',''],['','','',''],['','','','']], platforms: '', fob: '', waitingRooms: '',
+            trains: [['','','',''],['','','',''],['','','','']], counterHeads: [], sanitation: '', commercial: [], primes: [], stationEarning: [], earningBifurcation: ''
+          } as unknown as HD;
+          try {
+            import('@/lib/config/sharedSync').then(({ sharedRead }) => {
+              sharedRead(`handout_${code}`).then((val: any) => {
+                if (val && typeof val === 'object') {
+                  existing = { ...existing, ...val };
+                }
+              }).catch(() => {});
+            });
+          } catch { /* ignore */ }
+
+          // Quick wait for sharedRead (simulated sync wait is tricky here without await, but let's just do an await on it)
+          const { sharedRead, sharedWrite } = await import('@/lib/config/sharedSync');
+          try {
+            const val: any = await sharedRead(`handout_${code}`);
+            if (val && typeof val === 'object') existing = { ...existing, ...val };
+          } catch { /* ignore */ }
+
+          // Merge fields
+          const simpleKeys: (keyof DocFields)[] = ['stationCode','stationName','category','state','section','cmi','division','platforms','fob','waitingRooms','sanitation','earningBifurcation'];
+          const merged: any = { ...existing };
+          simpleKeys.forEach(k => { if (extracted[k]) merged[k] = extracted[k]; });
+          
+          if (extracted.ff) merged.ff = extracted.ff;
+          if (extracted.ffComp) merged.ffComp = extracted.ffComp;
+          if (extracted.trains) merged.trains = extracted.trains;
+          if (extracted.primes) merged.primes = extracted.primes;
+          if (extracted.stationEarning) merged.stationEarning = extracted.stationEarning;
+          
+          if (extracted.counterHeads?.length) {
+            const byName = new Map<string, CounterHead>();
+            for (const ch of existing.counterHeads) if (ch.name?.trim()) byName.set(ch.name.trim().toLowerCase(), ch);
+            for (const ch of extracted.counterHeads) {
+              const key = ch.name.trim().toLowerCase();
+              const exist = byName.get(key);
+              byName.set(key, exist ? { ...exist, ...ch, extraFields: exist.extraFields, sides: ch.sides, sideMode: ch.sideMode } : ch as any);
+            }
+            const named = [...byName.values()];
+            const blanks = existing.counterHeads.filter(ch => !ch.name?.trim());
+            merged.counterHeads = [...named, ...blanks];
+          }
+          if (extracted.commercial?.length) merged.commercial = extracted.commercial;
+          
+          // Current station updates local state
+          if (code === (d.stationCode?.toUpperCase().trim())) {
+            setD(merged);
+            persistHD(merged);
+          }
+          
+          await sharedWrite(`handout_${code}`, merged);
+          updatedCount++;
+          newCodes.push(code);
+        }
+      }
+
+      // Update codes index
+      if (newCodes.length > 0) {
+        try {
+          const { sharedRead, sharedWrite } = await import('@/lib/config/sharedSync');
+          const codesVal: any = await sharedRead('handout_codes');
+          const serverCodes: string[] = Array.isArray(codesVal) ? codesVal : [];
+          const allCodes = [...new Set([...serverCodes, ...newCodes])];
+          await sharedWrite('handout_codes', allCodes);
+        } catch { /* ignore */ }
+      }
+
+      setDsPreview({ id: src.id, text: `✅ Master Batch Sync complete! Updated ${updatedCount} stations.` });
+    } catch (e) {
+      setDsPreview({ id: src.id, text: `⚠ ${e instanceof Error ? e.message : String(e)}`, error: true });
+    }
+    setFetchingDocId(null);
+  };
   const updTr  = (r: number, c: number, v: string) => setD(p => { const a = p.trains.map(x=>[...x]); a[r][c]=v; return {...p, trains: a}; });
   const updPr  = (r: number, c: number, v: string) => setD(p => { const a = p.primes.map(x=>[...x]); a[r][c]=v; return {...p, primes: a}; });
   const updSE  = (r: number, c: number, v: string) => setD(p => { const a = p.stationEarning.map(x=>[...x]); a[r][c]=v; return {...p, stationEarning: a}; });
@@ -3958,11 +4063,20 @@ ${sheet('Station Earning',[
                     )}
 
                     {src.type === 'docs' && (
-                      <button onClick={()=>fetchAndFillFromDoc(src)}
-                        disabled={fetchingDocId === src.id}
-                        className="px-2 py-1 text-[10px] bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 rounded-lg text-emerald-700 font-medium">
-                        {fetchingDocId === src.id ? '⏳ Fetching…' : '📥 Fetch & Fill'}
-                      </button>
+                      <div className="flex gap-1">
+                        <button onClick={()=>fetchAndFillFromDoc(src)}
+                          disabled={fetchingDocId === src.id}
+                          className="px-2 py-1 text-[10px] bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 rounded-lg text-emerald-700 font-medium"
+                          title="Fetch and fill just this station">
+                          {fetchingDocId === src.id ? '⏳ Fetching…' : '📥 Fetch & Fill'}
+                        </button>
+                        <button onClick={()=>batchFetchAndFillFromDoc(src)}
+                          disabled={fetchingDocId === src.id}
+                          className="px-2 py-1 text-[10px] bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 rounded-lg text-indigo-700 font-medium"
+                          title="Fetch ALL stations from this master document">
+                          {fetchingDocId === src.id ? '⏳ Batching…' : '📥 Batch Sync All'}
+                        </button>
+                      </div>
                     )}
                     <button onClick={()=>removeDataSource(src.id)}
                       className="px-2 py-1 text-[10px] bg-red-50 hover:bg-red-100 rounded-lg text-red-500">
