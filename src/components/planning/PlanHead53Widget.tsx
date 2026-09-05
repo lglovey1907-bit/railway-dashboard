@@ -5,30 +5,56 @@ import { cn } from '@/lib/utils';
 import Papa from 'papaparse';
 
 const SHEET_ID = '1Cpt_xevyq8HlxTm_F5GdDLyWRk3YnR2lxoaPvCB-THY';
-const SECTIONS = [
-  'MTC section (MWC-TPZ)',
-  'SPR Section',
-  'DUK section',
-  'DEE Section',
-  'SMQL section ',
-  'FDB Section',
-  'Ring Rly',
-  'Misc.',
-  'Branch Line',
-  'KG Section'
-];
 
 export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
-  const [selectedSection, setSelectedSection] = useState<string>(SECTIONS[0]);
+  const [sections, setSections] = useState<string[]>([]);
+  const [selectedSection, setSelectedSection] = useState<string>('');
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingSections, setLoadingSections] = useState(true);
 
   const [selectedStations, setSelectedStations] = useState<string[]>([]);
   const [isStationMenuOpen, setIsStationMenuOpen] = useState(false);
 
+  // 1. Fetch available sections dynamically
   useEffect(() => {
     let mounted = true;
+    
+    const fetchSections = async () => {
+      try {
+        const res = await fetch(`/api/gsheet-sheets?id=${SHEET_ID}`);
+        if (!res.ok) throw new Error('Failed to fetch sections');
+        const json = await res.json();
+        if (mounted && json.sheets && json.sheets.length > 0) {
+          setSections(json.sheets);
+          
+          // If no section is selected, or the currently selected section was deleted, switch to the first available section
+          setSelectedSection(current => {
+            if (!current || !json.sheets.includes(current)) {
+              return json.sheets[0];
+            }
+            return current;
+          });
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        if (mounted) setLoadingSections(false);
+      }
+    };
+
+    fetchSections();
+    const interval = setInterval(fetchSections, 60000); // Check for added/deleted sheets every 60s
+    return () => { mounted = false; clearInterval(interval); };
+  }, []);
+
+  // 2. Fetch data for the currently selected section
+  useEffect(() => {
+    if (!selectedSection) return;
+    
+    let mounted = true;
     setLoading(true);
+    
     const fetchSheet = async () => {
       try {
         const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(selectedSection)}`;
@@ -40,8 +66,7 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
           const parsed = Papa.parse(csv, { header: false, skipEmptyLines: true });
           
           if (parsed.data && parsed.data.length > 1) {
-            // The first row often contains merged title. We need to find the actual header row.
-            // Usually it's row 0 or 1. Let's find the row that has 'PROJECTID' or 'UWID'.
+            // Find header row
             const headerRowIdx = parsed.data.findIndex((row: any) => 
               row.some((c: string) => typeof c === 'string' && (c.includes('PROJECTID') || c.includes('UWID')))
             ) || 0;
@@ -49,7 +74,6 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
             const rawHeaders = parsed.data[headerRowIdx] as string[];
             const headers = rawHeaders.map((h, i) => {
               const trimmed = h?.trim() || '';
-              // The first column header is often mangled with the sheet title in CSV exports of merged sheets
               if (i === 0 && trimmed.includes('SN')) return 'SN';
               return trimmed;
             });
@@ -62,7 +86,17 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
               return obj;
             }).filter((row: any) => row['UWID'] || row['PROJECTID'] || row['SN'] || row['Station']);
             
-            setData(rowData);
+            // To ensure we aren't showing fallback data (gviz/tq quirk), we check if the data actually belongs to the section
+            // The first cell of the sheet usually has the section name.
+            const firstCell = String(parsed.data[0][0] || '');
+            if (firstCell && firstCell.includes('PH 53') && !firstCell.includes(selectedSection) && !firstCell.includes(selectedSection.trim())) {
+              console.warn(`Data returned appears to be fallback data. Expected ${selectedSection}, got ${firstCell}`);
+              // Google Sheets fell back to a default sheet because this sheet is completely empty or newly created
+              // We'll just show empty
+              setData([]);
+            } else {
+              setData(rowData);
+            }
           } else {
             setData([]);
           }
@@ -77,10 +111,7 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
       }
     };
     
-    // Initial fetch
     fetchSheet();
-
-    // Auto-refresh every 30 seconds
     const interval = setInterval(fetchSheet, 30000);
     return () => { 
       mounted = false; 
@@ -142,6 +173,15 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
     const allKeys = Object.keys(data[0]);
     return allKeys.filter(k => k && !KNOWN_COLUMNS.includes(k));
   }, [data]);
+
+  if (loadingSections) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col w-full h-full min-h-[400px] items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-600 mb-2" />
+        <p className="text-sm font-medium text-slate-500">Loading Configuration...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col w-full h-full min-h-[400px]">
@@ -207,7 +247,7 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
             onChange={(e) => setSelectedSection(e.target.value)}
             className="text-xs bg-white border border-slate-200 text-slate-600 font-medium px-3 py-1.5 rounded-lg outline-none focus:border-indigo-400"
           >
-            {SECTIONS.map(s => (
+            {sections.map(s => (
               <option key={s} value={s}>{s.trim()}</option>
             ))}
           </select>
