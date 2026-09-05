@@ -118,7 +118,46 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
   };
 
   const handlePrint = () => {
-    window.print();
+    const tableEl = document.getElementById('plan-head-table');
+    if (!tableEl) return;
+
+    const printWindow = window.open('', '', 'width=1000,height=800');
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>${selectedSection.trim()} Works Register - Print</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+          <style>
+            @media print {
+              @page { size: landscape; margin: 10mm; }
+              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            }
+            body { padding: 20px; font-family: sans-serif; }
+            h2 { font-size: 1.5rem; font-weight: bold; margin-bottom: 20px; color: #1e293b; }
+            table { width: 100% !important; border-collapse: collapse !important; }
+            /* Force wrapping so the table fits on paper */
+            th, td { white-space: normal !important; word-wrap: break-word !important; }
+            /* Make progress bars visible when printing */
+            .bg-indigo-50 { background-color: #eef2ff !important; }
+            .bg-indigo-500 { background-color: #6366f1 !important; }
+          </style>
+        </head>
+        <body>
+          <h2>${selectedSection.trim()} Works Register</h2>
+          ${tableEl.outerHTML}
+          <script>
+            // Wait for Tailwind to process classes
+            setTimeout(() => {
+              window.print();
+              window.close();
+            }, 1000);
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   // When changing sections, reset the station filter
@@ -298,7 +337,7 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
         {/* Data Table */}
         <div className="flex-1 border border-slate-200 rounded-xl overflow-hidden flex flex-col">
           <div className="overflow-auto flex-1">
-            <table className="w-full text-left text-xs whitespace-nowrap">
+            <table id="plan-head-table" className="w-full text-left text-xs whitespace-nowrap">
               <thead className="bg-slate-50 sticky top-0 z-10 shadow-sm">
                 <tr>
                   <th className="px-3 py-2 font-semibold text-slate-600">SN</th>
