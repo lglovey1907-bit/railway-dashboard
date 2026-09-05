@@ -76,22 +76,29 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
             <table className="w-full text-left text-xs whitespace-nowrap">
               <thead className="bg-slate-50 sticky top-0 z-10 shadow-sm">
                 <tr>
-                  <th className="px-3 py-2 font-semibold text-slate-600">ID</th>
+                  <th className="px-3 py-2 font-semibold text-slate-600">SN</th>
+                  <th className="px-3 py-2 font-semibold text-slate-600">Project ID / UWID</th>
                   <th className="px-3 py-2 font-semibold text-slate-600">Station</th>
                   <th className="px-3 py-2 font-semibold text-slate-600 w-full">Work Description</th>
                   <th className="px-3 py-2 font-semibold text-slate-600">Sanction Yr</th>
                   <th className="px-3 py-2 font-semibold text-slate-600 text-right">Cost (Th)</th>
                   <th className="px-3 py-2 font-semibold text-slate-600 text-right">Exp (Th)</th>
                   <th className="px-3 py-2 font-semibold text-slate-600 text-center">Progress</th>
+                  <th className="px-3 py-2 font-semibold text-slate-600">Anticipated TDC</th>
+                  <th className="px-3 py-2 font-semibold text-slate-600">Remarks</th>
                   <th className="px-3 py-2 font-semibold text-slate-600">Reported By</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredData.map((row, i) => (
                   <tr key={i} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-3 py-2 text-slate-500">{row.UWID}</td>
+                    <td className="px-3 py-2 text-slate-500">{row.SN}</td>
+                    <td className="px-3 py-2 text-slate-500">
+                      <div className="font-medium text-slate-700">{row.PROJECTID}</div>
+                      <div className="text-[10px] text-slate-400">{row.UWID}</div>
+                    </td>
                     <td className="px-3 py-2 font-medium text-slate-700">{row.Station}</td>
-                    <td className="px-3 py-2 text-slate-600 max-w-[300px] truncate" title={row['Short Name of Work']}>
+                    <td className="px-3 py-2 text-slate-600 max-w-[200px] truncate" title={row['Short Name of Work']}>
                       {row['Short Name of Work']}
                     </td>
                     <td className="px-3 py-2 text-slate-500">{row['Year of Sanction']}</td>
@@ -110,6 +117,8 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
                         </span>
                       </div>
                     </td>
+                    <td className="px-3 py-2 text-slate-500">{row['Now Anticipated TDC']}</td>
+                    <td className="px-3 py-2 text-slate-500 max-w-[200px] truncate" title={row.REMARKS}>{row.REMARKS}</td>
                     <td className="px-3 py-2 text-slate-500">{row['Progress Reported by']}</td>
                   </tr>
                 ))}
