@@ -1,6 +1,6 @@
 'use client';
 import { useState, useMemo, useEffect } from 'react';
-import { Pickaxe, Loader2 } from 'lucide-react';
+import { Pickaxe, Loader2, RefreshCw, Printer } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Papa from 'papaparse';
 
@@ -12,6 +12,8 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingSections, setLoadingSections] = useState(true);
+  const [syncCounter, setSyncCounter] = useState(0);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const [selectedStations, setSelectedStations] = useState<string[]>([]);
   const [isStationMenuOpen, setIsStationMenuOpen] = useState(false);
@@ -44,9 +46,8 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
     };
 
     fetchSections();
-    const interval = setInterval(fetchSections, 60000); // Check for added/deleted sheets every 60s
-    return () => { mounted = false; clearInterval(interval); };
-  }, []);
+    return () => { mounted = false; };
+  }, [syncCounter]);
 
   // 2. Fetch data for the currently selected section
   useEffect(() => {
@@ -90,24 +91,35 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
           } else {
             setData([]);
           }
-          if (mounted) setLoading(false);
+          if (mounted) {
+            setLoading(false);
+            setIsSyncing(false);
+          }
         }
       } catch (err) {
         console.error('Failed to fetch plan head data:', err);
         if (mounted) {
           setData([]);
           setLoading(false);
+          setIsSyncing(false);
         }
       }
     };
     
     fetchSheet();
-    const interval = setInterval(fetchSheet, 30000);
     return () => { 
       mounted = false; 
-      clearInterval(interval);
     };
-  }, [selectedSection]);
+  }, [selectedSection, syncCounter]);
+
+  const handleSync = () => {
+    setIsSyncing(true);
+    setSyncCounter(c => c + 1);
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
 
   // When changing sections, reset the station filter
   useEffect(() => {
@@ -175,7 +187,7 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col w-full h-full min-h-[400px]">
-      <div className="px-4 py-3 border-b border-slate-100 flex flex-wrap gap-4 items-center justify-between bg-slate-50/50">
+      <div className="px-4 py-3 border-b border-slate-100 flex flex-wrap gap-4 items-center justify-between bg-slate-50/50 print:hidden">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center">
             <Pickaxe size={16} />
@@ -186,6 +198,25 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
         </div>
         
         <div className="flex items-center gap-2 relative">
+          <button
+            onClick={handleSync}
+            disabled={isSyncing}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors disabled:opacity-50"
+            title="Sync Data from Google Sheets"
+          >
+            <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
+            Sync
+          </button>
+          
+          <button
+            onClick={handlePrint}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors"
+            title="Print Table"
+          >
+            <Printer size={14} />
+            Print
+          </button>
+
           <div className="relative">
             <button 
               onClick={() => setIsStationMenuOpen(!isStationMenuOpen)}
