@@ -56,13 +56,13 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
                 if (h) obj[h] = row[i];
               });
               return obj;
-            }).filter((row: any) => row['UWID'] || row['PROJECTID']);
+            }).filter((row: any) => row['UWID'] || row['PROJECTID'] || row['SN'] || row['Station']);
             
             setData(rowData);
           } else {
             setData([]);
           }
-          setLoading(false);
+          if (mounted) setLoading(false);
         }
       } catch (err) {
         console.error('Failed to fetch plan head data:', err);
@@ -72,8 +72,16 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
         }
       }
     };
+    
+    // Initial fetch
     fetchSheet();
-    return () => { mounted = false; };
+
+    // Auto-refresh every 30 seconds
+    const interval = setInterval(fetchSheet, 30000);
+    return () => { 
+      mounted = false; 
+      clearInterval(interval);
+    };
   }, [selectedSection]);
 
   const stats = useMemo(() => {
