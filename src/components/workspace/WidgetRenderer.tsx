@@ -18,6 +18,7 @@ const KnowledgeBaseBlock = dynamic(() => import('@/components/knowledge/Knowledg
 const TaskManagerBlock = dynamic(() => import('@/components/tasks/TaskManagerBlock').then(m => ({ default: m.TaskManagerBlock })), { ssr: false });
 const FinancialDashboard = dynamic(() => import('@/components/financial/FinancialDashboard').then(m => ({ default: m.FinancialDashboard })), { ssr: false });
 const MonthlyReportWidget = dynamic(() => import('@/components/monthly/MonthlyReportWidget').then(m => ({ default: m.MonthlyReportWidget })), { ssr: false });
+const PlanHead53Widget = dynamic(() => import('@/components/planning/PlanHead53Widget').then(m => ({ default: m.PlanHead53Widget })), { ssr: false });
 import { SanitationStatusWidget } from '@/components/dashboard/SanitationStatusWidget';
 import { QRPatrolWidget } from '@/components/dashboard/QRPatrolWidget';
 import { PassengerFeedbackWidget } from '@/components/dashboard/PassengerFeedbackWidget';
@@ -4481,6 +4482,9 @@ export function WidgetRenderer({
         />
       );
 
+    case 'plan_head_53':
+      return <PlanHead53Widget canManage={canManage} />;
+      
     case 'monthly_report':
       return (
         <MonthlyReportWidget

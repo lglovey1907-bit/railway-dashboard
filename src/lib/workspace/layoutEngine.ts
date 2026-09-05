@@ -19,7 +19,8 @@ export type WidgetType =
  | 'sanitation_status'
  | 'passenger_feedback_sanitation'
  | 'qr_patrol_sanitation'
- | 'spoof_audit';
+ | 'spoof_audit'
+ | 'plan_head_53';
 
 /** A single data source for an advanced KPI card */
 export type KpiAggregation = 'count' | 'sum' | 'avg' | 'min' | 'max' | 'unique';

@@ -369,6 +369,7 @@ function WindowMenu({ win, btnRef, open, onClose, onRename, onDuplicate, onDelet
 // ── Workspace Row ─────────────────────────────────────────────────────────────
 // ── Block picker data ─────────────────────────────────────────────────────────
 const BLOCK_TEMPLATES: { type: WidgetType; label: string; icon: string; desc: string }[] = [
+  { type: 'plan_head_53', label: 'Plan Head 53 work', icon: '🏗️', desc: 'Passenger amenities works dashboard' },
   { type: 'financial',     label: 'Revenue Dashboard',  icon: '💰', desc: 'Financial performance overview' },
   { type: 'monthly_report',label: 'Monthly Statement',  icon: '📋', desc: 'Revenue comparative report' },
   { type: 'handout',       label: 'Station Handout',    icon: '🗂️', desc: 'Station info card — footfall, trains, commercial' },
@@ -489,17 +490,28 @@ function WorkspaceRow({
 
     const filter = (items: typeof BLOCK_TEMPLATES) => {
       let hasSanitationAccess = false;
-      if (user?.role === 'admin' || user?.role === 'maintenance') hasSanitationAccess = true;
-      else if ((user as any)?.cells?.includes('Sanitation') || user?.cell === 'Sanitation') hasSanitationAccess = true;
+      let hasPlanHeadAccess = false;
+
+      if (user?.role === 'admin' || user?.role === 'maintenance') {
+        hasSanitationAccess = true;
+        hasPlanHeadAccess = true;
+      }
       else {
+        if ((user as any)?.cells?.includes('Sanitation') || user?.cell === 'Sanitation') hasSanitationAccess = true;
+        if ((user as any)?.cells?.includes('Planning') || user?.cell === 'Planning') hasPlanHeadAccess = true;
+        
         try {
           const mems = JSON.parse(localStorage.getItem('rly_cell_memberships') ?? '[]');
           const approved = mems.filter((m: any) => m.employeeId === user?.id && m.approvalStatus === 'approved').map((m: any) => m.cellName);
           if (approved.includes('Sanitation')) hasSanitationAccess = true;
+          if (approved.includes('Planning')) hasPlanHeadAccess = true;
         } catch {}
       }
       
       const allowed = items.filter(b => {
+        if (b.type === 'plan_head_53') {
+          return hasPlanHeadAccess;
+        }
         if (b.type === 'sanitation_status' || b.type === 'passenger_feedback_sanitation' || b.type === 'qr_patrol_sanitation' || b.type === 'spoof_audit') {
           return hasSanitationAccess;
         }
