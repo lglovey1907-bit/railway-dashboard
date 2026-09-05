@@ -22,6 +22,9 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [selectedStations, setSelectedStations] = useState<string[]>([]);
+  const [isStationMenuOpen, setIsStationMenuOpen] = useState(false);
+
   useEffect(() => {
     let mounted = true;
     setLoading(true);
@@ -84,12 +87,31 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
     };
   }, [selectedSection]);
 
+  // When changing sections, reset the station filter
+  useEffect(() => {
+    setSelectedStations([]);
+  }, [selectedSection]);
+
+  const uniqueStations = useMemo(() => {
+    const stations = new Set<string>();
+    data.forEach(d => {
+      const s = d['Station']?.trim();
+      if (s) stations.add(s);
+    });
+    return Array.from(stations).sort();
+  }, [data]);
+
+  const filteredData = useMemo(() => {
+    if (selectedStations.length === 0) return data;
+    return data.filter(d => selectedStations.includes(d['Station']?.trim()));
+  }, [data, selectedStations]);
+
   const stats = useMemo(() => {
     let totalCost = 0;
     let totalExp = 0;
     let completed = 0;
     
-    data.forEach(d => {
+    filteredData.forEach(d => {
       const cost = Number(d['Current Cost']?.replace(/,/g, '') || 0);
       const exp = Number(d['Expenditure upto date']?.replace(/,/g, '') || 0);
       const prog = Number(d['%age Phy. Progress'] || 0);
@@ -100,12 +122,12 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
     });
 
     return [
-      { label: 'Total Works', value: data.length, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+      { label: 'Total Works', value: filteredData.length, color: 'text-indigo-600', bg: 'bg-indigo-50' },
       { label: 'Completed', value: completed, color: 'text-emerald-600', bg: 'bg-emerald-50' },
       { label: 'Total Cost (Cr)', value: '₹' + (totalCost / 10000).toFixed(2), color: 'text-amber-600', bg: 'bg-amber-50' },
       { label: 'Expenditure (Cr)', value: '₹' + (totalExp / 10000).toFixed(2), color: 'text-rose-600', bg: 'bg-rose-50' },
     ];
-  }, [data]);
+  }, [filteredData]);
 
   const KNOWN_COLUMNS = [
     'SN', 'PROJECTID', 'UWID', 'Station', 'Short Name of Work',
@@ -131,15 +153,64 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
             <h3 className="font-bold text-slate-800 text-sm">{selectedSection.trim()} Works Register</h3>
           </div>
         </div>
-        <select 
-          value={selectedSection}
-          onChange={(e) => setSelectedSection(e.target.value)}
-          className="text-xs bg-white border border-slate-200 text-slate-600 font-medium px-3 py-1.5 rounded-lg outline-none focus:border-indigo-400"
-        >
-          {SECTIONS.map(s => (
-            <option key={s} value={s}>{s.trim()}</option>
-          ))}
-        </select>
+        
+        <div className="flex items-center gap-2 relative">
+          <div className="relative">
+            <button 
+              onClick={() => setIsStationMenuOpen(!isStationMenuOpen)}
+              className="text-xs bg-white border border-slate-200 text-slate-600 font-medium px-3 py-1.5 rounded-lg outline-none hover:border-indigo-400 flex items-center gap-2"
+            >
+              {selectedStations.length === 0 
+                ? 'All Stations' 
+                : `${selectedStations.length} Station${selectedStations.length > 1 ? 's' : ''} Selected`}
+            </button>
+            {isStationMenuOpen && (
+              <div className="absolute top-full right-0 mt-1 w-64 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden flex flex-col max-h-64">
+                <div className="px-3 py-2 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                  <span className="text-xs font-semibold text-slate-700">Filter Stations</span>
+                  <button 
+                    onClick={() => { setSelectedStations([]); setIsStationMenuOpen(false); }}
+                    className="text-[10px] font-medium text-indigo-600 hover:text-indigo-800"
+                  >
+                    Clear All
+                  </button>
+                </div>
+                <div className="overflow-y-auto flex-1 p-2 flex flex-col gap-1">
+                  {uniqueStations.map(s => (
+                    <label key={s} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        checked={selectedStations.includes(s)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedStations([...selectedStations, s]);
+                          } else {
+                            setSelectedStations(selectedStations.filter(st => st !== s));
+                          }
+                        }}
+                      />
+                      <span className="text-xs text-slate-700">{s}</span>
+                    </label>
+                  ))}
+                  {uniqueStations.length === 0 && (
+                    <div className="text-xs text-slate-500 p-2 text-center">No stations found</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <select 
+            value={selectedSection}
+            onChange={(e) => setSelectedSection(e.target.value)}
+            className="text-xs bg-white border border-slate-200 text-slate-600 font-medium px-3 py-1.5 rounded-lg outline-none focus:border-indigo-400"
+          >
+            {SECTIONS.map(s => (
+              <option key={s} value={s}>{s.trim()}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="p-4 flex-1 flex flex-col gap-4 overflow-hidden relative">
@@ -185,7 +256,7 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {data.map((row, i) => (
+                {filteredData.map((row, i) => (
                   <tr key={i} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-3 py-2 text-slate-500">{row['SN']}</td>
                     <td className="px-3 py-2 text-slate-500">
