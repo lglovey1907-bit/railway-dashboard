@@ -105,7 +105,6 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
           </div>
           <div>
             <h3 className="font-bold text-slate-800 text-sm">{selectedSection.trim()} Works Register</h3>
-            <p className="text-[10px] text-slate-500">Live from Google Sheets (Plan Head 53)</p>
           </div>
         </div>
         <select 
