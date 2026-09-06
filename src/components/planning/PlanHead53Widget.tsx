@@ -119,6 +119,7 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
 
   const handlePrint = () => {
     const tableEl = document.getElementById('plan-head-table');
+    const kpiEl = document.getElementById('plan-head-kpis');
     if (!tableEl) return;
 
     const printWindow = window.open('', '', 'width=1000,height=800');
@@ -142,10 +143,19 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
             /* Make progress bars visible when printing */
             .bg-indigo-50 { background-color: #eef2ff !important; }
             .bg-indigo-500 { background-color: #6366f1 !important; }
+            /* Map tailwind colors for print mode */
+            .text-indigo-600 { color: #4f46e5 !important; }
+            .text-emerald-600 { color: #059669 !important; }
+            .text-amber-600 { color: #d97706 !important; }
+            .text-rose-600 { color: #e11d48 !important; }
+            .bg-emerald-50 { background-color: #ecfdf5 !important; }
+            .bg-amber-50 { background-color: #fffbeb !important; }
+            .bg-rose-50 { background-color: #fff1f2 !important; }
           </style>
         </head>
         <body>
           <h2>${selectedSection.trim()} Works Register</h2>
+          ${kpiEl ? `<div style="margin-bottom: 20px;">${kpiEl.outerHTML}</div>` : ''}
           ${tableEl.outerHTML}
           <script>
             // Wait for Tailwind to process classes
@@ -325,7 +335,7 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
         )}
 
         {/* KPI Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 shrink-0">
+        <div id="plan-head-kpis" className="grid grid-cols-2 md:grid-cols-4 gap-3 shrink-0">
           {stats.map((s, i) => (
             <div key={i} className={cn("rounded-xl p-3 border border-slate-100", s.bg)}>
               <p className="text-[10px] font-semibold text-slate-600 mb-1">{s.label}</p>
