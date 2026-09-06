@@ -132,14 +132,41 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
           <script src="https://cdn.tailwindcss.com"></script>
           <style>
             @media print {
-              @page { size: landscape; margin: 10mm; }
-              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              @page { size: landscape; margin: 8mm; }
+              body { 
+                -webkit-print-color-adjust: exact; 
+                print-color-adjust: exact; 
+                font-size: 10px !important; 
+              }
             }
-            body { padding: 20px; font-family: sans-serif; }
-            h2 { font-size: 1.5rem; font-weight: bold; margin-bottom: 20px; color: #1e293b; }
-            table { width: 100% !important; border-collapse: collapse !important; }
+            body { padding: 15px; font-family: sans-serif; }
+            h2 { font-size: 1.25rem; font-weight: bold; margin-bottom: 15px; color: #1e293b; }
+            table { width: 100% !important; border-collapse: collapse !important; table-layout: fixed !important; }
             /* Force wrapping so the table fits on paper */
-            th, td { white-space: normal !important; word-wrap: break-word !important; }
+            th, td { 
+              white-space: normal !important; 
+              word-wrap: break-word !important; 
+              font-size: 9px !important;
+              padding: 4px 6px !important;
+              line-height: 1.3 !important;
+            }
+            /* Override tailwind min-w and w-full which causes overflow in print */
+            th.w-full { width: auto !important; }
+            td.min-w-\\[200px\\] { min-width: 0 !important; }
+            
+            /* Assign specific widths to columns to guarantee they fit in landscape */
+            th:nth-child(1) { width: 3% !important; }   /* SN */
+            th:nth-child(2) { width: 8% !important; }   /* Project ID */
+            th:nth-child(3) { width: 6% !important; }   /* Station */
+            th:nth-child(4) { width: 28% !important; }  /* Work Description */
+            th:nth-child(5) { width: 5% !important; }   /* Sanction Yr */
+            th:nth-child(6) { width: 5% !important; }   /* Cost */
+            th:nth-child(7) { width: 5% !important; }   /* Exp */
+            th:nth-child(8) { width: 6% !important; }   /* Progress */
+            th:nth-child(9) { width: 6% !important; }   /* TDC */
+            th:nth-child(10) { width: 20% !important; } /* Remarks */
+            th:nth-child(11) { width: 8% !important; }  /* Reported By */
+            
             /* Make progress bars visible when printing */
             .bg-indigo-50 { background-color: #eef2ff !important; }
             .bg-indigo-500 { background-color: #6366f1 !important; }
