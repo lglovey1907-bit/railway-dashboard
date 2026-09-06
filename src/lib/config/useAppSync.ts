@@ -268,10 +268,16 @@ export function useAppSync(userId: string | undefined): SyncStatus {
                 localStorage.getItem('rly_dashboard_custom_tabs') ?? '[]'
               );
               const needed = tabs
-                .map(tab => ({
-                  lsKey: `workspace_v2_dashboard_tab_${tab.id.replace(/[^a-zA-Z0-9]/g, '_')}`,
-                  nsKey: `ws_dashboard_tab_${tab.id.replace(/[^a-zA-Z0-9]/g, '_')}`,
-                }))
+                .flatMap(tab => [
+                  {
+                    lsKey: `workspace_v2_dashboard_tab_${tab.id.replace(/[^a-zA-Z0-9]/g, '_')}`,
+                    nsKey: `ws_dashboard_tab_${tab.id.replace(/[^a-zA-Z0-9]/g, '_')}`,
+                  },
+                  {
+                    lsKey: `rly_tab_access_${tab.id}`,
+                    nsKey: `tab_access_${tab.id}`
+                  }
+                ])
                 .filter(e => !localStorage.getItem(e.lsKey));   // skip already-populated
 
               if (needed.length > 0) {

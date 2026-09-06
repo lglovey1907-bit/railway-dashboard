@@ -560,6 +560,17 @@ export default function DashboardHomePage() {
         const fresh = JSON.parse(localStorage.getItem('rly_dashboard_custom_tabs') ?? '[]');
         if (Array.isArray(fresh)) setCustomTabs(fresh);
       } catch { /* ignore */ }
+      
+      // Also refresh tabAccessMap now that cloud values are in localStorage
+      const ids = ['overview', 'revenue', 'policies'];
+      try {
+        const tabs: Array<{id: string}> = JSON.parse(localStorage.getItem('rly_dashboard_custom_tabs') ?? '[]');
+        tabs.forEach(t => ids.push(t.id));
+      } catch { /* ignore */ }
+      
+      const map: Record<string, OverviewAccess> = {};
+      ids.forEach(id => { map[id] = getTabAccess(id); });
+      setTabAccessMap(map);
     };
     window.addEventListener('rly_cloud_sync_complete', handleSyncComplete);
     return () => window.removeEventListener('rly_cloud_sync_complete', handleSyncComplete);

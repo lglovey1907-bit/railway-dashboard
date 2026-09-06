@@ -303,7 +303,7 @@ export function OverviewAccessModal({ tabId, tabLabel, onClose, onSave }: {
 
         {/* Footer */}
         <div className="px-5 py-4 border-t border-slate-100 flex items-center justify-between">
-          <p className="text-[10px] text-slate-400">Settings saved locally on this device</p>
+          <p className="text-[10px] text-slate-400">Settings automatically sync across all devices</p>
           <div className="flex gap-2">
             <button onClick={onClose}
               className="px-4 py-2 text-xs text-slate-500 hover:bg-slate-100 rounded-lg">Cancel</button>
