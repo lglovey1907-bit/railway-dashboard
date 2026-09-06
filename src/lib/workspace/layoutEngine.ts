@@ -38,10 +38,11 @@ export interface KpiSource {
 export type KpiCombineMode = 'first' | 'sum' | 'difference' | 'ratio';
 
 export interface LayoutWidget {
- id: string;
- type: WidgetType;
- title: string;
- // type-specific data
+  id: string;
+  type: WidgetType;
+  title: string;
+  icon?: string; // emoji icon for the widget header
+  // type-specific data
  tableId?: string; // for 'table' widgets
  sharedTableId?: string; // for 'shared_table' widgets
  // ── KPI ─────────────────────────────────────────────────────

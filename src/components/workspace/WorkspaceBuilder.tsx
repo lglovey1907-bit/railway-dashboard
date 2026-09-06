@@ -427,6 +427,7 @@ function WorkspaceRow({
 
   // ── Double-click rename state ─────────────────────────────────────────────
   const [editingTitle, setEditingTitle] = useState<string | null>(null); // widget.id being renamed
+  const [editingIconWidgetId, setEditingIconWidgetId] = useState<string | null>(null);
   const [titleDraft,   setTitleDraft]   = useState('');
   const titleInputRef = useRef<HTMLInputElement>(null);
 
@@ -435,6 +436,13 @@ function WorkspaceRow({
     if (trimmed && trimmed !== original) onUpdateWidget(colId, widgetId, { title: trimmed });
     setEditingTitle(null);
   };
+  
+  const commitIconEdit = (colId: string, widgetId: string, icon: string) => {
+    onUpdateWidget(colId, widgetId, { icon });
+    setEditingIconWidgetId(null);
+  };
+  
+  const WIDGET_ICONS = Array.from(new Set([...WINDOW_ICONS, '💡','ℹ️','⚠️','🚨','✅','📌','🔥','💬','🎯','📢','🔔','❗','🌟','🛑','👀','📝','📊','📈','📉','🗂️']));
 
   // ── Column layout live-preview state ─────────────────────────────────────
   // Saved original columns so we can revert on Cancel
@@ -656,6 +664,38 @@ function WorkspaceRow({
                       <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-50">
                         {isEditing && <GripVertical size={11} className="text-slate-300 shrink-0 cursor-grab"/>}
 
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                          <div className="relative">
+                            <button
+                              type="button"
+                              className={cn("flex items-center justify-center shrink-0", canManage && "hover:bg-slate-100 rounded cursor-pointer p-0.5 -m-0.5")}
+                              disabled={!canManage}
+                              onClick={e => { if (canManage) { e.stopPropagation(); setEditingIconWidgetId(editingIconWidgetId === widget.id ? null : widget.id); } }}>
+                              {widget.icon ? (
+                                <span className="text-sm leading-none">{widget.icon}</span>
+                              ) : (
+                                canManage && <span className="text-[10px] text-slate-400 opacity-0 group-hover/widget:opacity-100 transition-opacity">☻</span>
+                              )}
+                            </button>
+                            {editingIconWidgetId === widget.id && (
+                              <>
+                                <div className="fixed inset-0 z-[9]" onClick={() => setEditingIconWidgetId(null)}/>
+                                <div className="absolute top-full left-0 mt-1 z-[10] bg-white border border-slate-200 rounded-xl shadow-xl p-2 grid grid-cols-6 gap-1 w-48 max-h-48 overflow-y-auto">
+                                  <button onClick={() => commitIconEdit(col.id, widget.id, '')} className="col-span-6 text-xs text-slate-500 hover:bg-slate-50 rounded py-1 mb-1 border border-slate-100">Remove Icon</button>
+                                  {WIDGET_ICONS.map(em => (
+                                    <button
+                                      key={em}
+                                      type="button"
+                                      onClick={() => commitIconEdit(col.id, widget.id, em)}
+                                      className={cn('text-lg p-1 rounded-lg hover:bg-slate-100 transition-colors', widget.icon === em && 'bg-rail-50 ring-1 ring-rail-400')}>
+                                      {em}
+                                    </button>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+                          </div>
+
                         {editingTitle === widget.id ? (
                           /* Inline rename input */
                           <input
@@ -678,7 +718,7 @@ function WorkspaceRow({
                               'text-xs font-semibold text-slate-700 flex-1 truncate',
                               canManage && 'cursor-text select-none'
                             )}
-                            title={canManage ? 'Double-click to rename' : widget.title}
+                            title={canManage ? 'Double-click to rename text, click icon to change icon' : widget.title}
                             onDoubleClick={() => {
                               if (!canManage) return;
                               setTitleDraft(widget.title);
@@ -687,6 +727,7 @@ function WorkspaceRow({
                             {widget.title}
                           </p>
                         )}
+                        </div>
 
                         <div className="flex gap-0.5 opacity-0 group-hover/widget:opacity-100 transition-opacity">
                           <button onClick={() => onToggleWidget(col.id, widget.id, 'collapsed')} title="Collapse"
