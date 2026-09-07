@@ -49,15 +49,28 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
     return () => { mounted = false; };
   }, [syncCounter]);
 
-  // 2. Fetch data for the currently selected section
+  // 2. Fetch data for the currently selected section (from cache or sheet if forced)
   useEffect(() => {
     if (!selectedSection) return;
     
     let mounted = true;
     setLoading(true);
     
-    const fetchSheet = async () => {
+    const fetchSheet = async (force: boolean) => {
       try {
+        if (!force) {
+          const { sharedRead } = await import('@/lib/config/sharedSync');
+          const cached = await sharedRead(`ph53_data_${selectedSection}`);
+          if (cached && Array.isArray(cached) && cached.length > 0) {
+            if (mounted) {
+              setData(cached);
+              setLoading(false);
+              setIsSyncing(false);
+              return; // Successfully loaded from cache
+            }
+          }
+        }
+
         const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(selectedSection)}`;
         const proxyUrl = `/api/gsheet-proxy?url=${encodeURIComponent(url)}`;
         const res = await fetch(proxyUrl);
@@ -88,6 +101,8 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
             }).filter((row: any) => row['UWID'] || row['PROJECTID'] || row['SN'] || row['Station']);
             
             setData(rowData);
+            const { sharedWrite } = await import('@/lib/config/sharedSync');
+            await sharedWrite(`ph53_data_${selectedSection}`, rowData);
           } else {
             setData([]);
           }
@@ -106,7 +121,7 @@ export function PlanHead53Widget({ canManage }: { canManage: boolean }) {
       }
     };
     
-    fetchSheet();
+    fetchSheet(syncCounter > 0);
     return () => { 
       mounted = false; 
     };

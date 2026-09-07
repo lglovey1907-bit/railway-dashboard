@@ -7,7 +7,7 @@ import {
   Globe, TrendingUp, ExternalLink, Edit3, Check, X, ChevronRight,
   Database, Bot, BookOpen, CheckSquare, Plus, Trash2, Settings2,
   ChevronDown, TrendingDown, Target, Layers, Filter,
-  FolderOpen, Settings, Printer, Download, FileDown,
+  FolderOpen, Settings, Printer, Download, FileDown, MapPin
 } from 'lucide-react';
 import type { KpiSource, KpiAggregation, KpiCombineMode } from '@/lib/workspace/layoutEngine';
 import type { TableDef } from '@/lib/cellData/types';
@@ -1974,6 +1974,58 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
     return [...new Set(ovRows.map(r => String(r[colCMI] ?? '').trim()).filter(Boolean))].sort();
   }, [ovRows, colCMI]);
 
+  // ── Browser Logic ──────────────────────────────────────────────────────────
+  const browserSections = useMemo(() => {
+    if (!colSec || !ovRows.length) return [];
+    return [...new Set(ovRows.map(r => String(r[colSec] ?? '').trim()).filter(Boolean))].sort();
+  }, [ovRows, colSec]);
+
+  const [activeSection, setActiveSection] = useState<string>('');
+  
+  useEffect(() => {
+    if (!activeSection && browserSections.length > 0) {
+      setActiveSection(d.section || browserSections[0]);
+    }
+  }, [activeSection, browserSections, d.section]);
+
+  const browserStations = useMemo(() => {
+    if (!colSec || !activeSection || !ovRows.length) return [];
+    return ovRows.filter(r => String(r[colSec] ?? '').trim() === activeSection)
+      .map(r => ({
+        code: colCode ? String(r[colCode] ?? '').trim() : '',
+        name: colName ? String(r[colName] ?? '').trim() : ''
+      }))
+      .filter(s => s.code || s.name)
+      .sort((a,b) => a.name.localeCompare(b.name));
+  }, [ovRows, colSec, colCode, colName, activeSection]);
+
+  const switchStation = (code: string) => {
+    if (!code) return;
+    const row = ovRows.find(r => (colCode ? String(r[colCode] ?? '').trim() : '') === code);
+    if (!row) return;
+    
+    import('@/lib/config/sharedSync').then(({ sharedRead }) => {
+      sharedRead(`handout_${code.toUpperCase()}`).then((val: unknown) => {
+        if (val && typeof val === 'object') {
+          const hd = val as HD;
+          setD(hd);
+          onUpdate({ handoutData: hd } as any);
+        } else {
+          const skeleton = mkHD();
+          skeleton.stationCode = code;
+          skeleton.stationName = colName ? String(row[colName] ?? '') : '';
+          skeleton.category = colCat ? String(row[colCat] ?? '') : '';
+          skeleton.state = colState ? String(row[colState] ?? '') : '';
+          skeleton.section = colSec ? String(row[colSec] ?? '') : '';
+          skeleton.cmi = colCMI ? String(row[colCMI] ?? '') : '';
+          setD(skeleton);
+          onUpdate({ handoutData: skeleton } as any);
+        }
+        setEditing(false);
+      }).catch(() => {});
+    }).catch(() => {});
+  };
+
   const searchRows = (field: 'code'|'name', query: string) => {
     if (!query || query.length < 1) return [];
     const q = query.toLowerCase();
@@ -2854,10 +2906,36 @@ ${sheet('Station Earning',[
   const PR_ROWS = ['UTS', 'PRS', 'Total'];
   const PR_COLS = ['Tickets / day', 'Passengers / day', 'Earning / day'];
 
+  const BrowserToolbar = browserSections.length > 0 ? (
+    <div className="flex flex-wrap items-center gap-2 mb-4 bg-slate-50 border border-slate-200 p-2 rounded-xl">
+      <div className="flex items-center gap-2 flex-1 min-w-[150px]">
+        <FolderOpen size={14} className="text-amber-600" />
+        <select 
+          value={activeSection} 
+          onChange={e => { setActiveSection(e.target.value); switchStation(''); }}
+          className="bg-white border border-slate-200 text-xs font-medium text-slate-700 px-2 py-1.5 rounded-lg focus:outline-none focus:border-amber-400 w-full"
+        >
+          {browserSections.map(s => <option key={s} value={s}>{s || 'Unknown Section'}</option>)}
+        </select>
+      </div>
+      <div className="flex items-center gap-2 flex-1 min-w-[150px]">
+        <MapPin size={14} className="text-amber-600" />
+        <select 
+          value={d.stationCode || ''}
+          onChange={e => switchStation(e.target.value)}
+          className="bg-white border border-slate-200 text-xs font-medium text-slate-700 px-2 py-1.5 rounded-lg focus:outline-none focus:border-amber-400 w-full"
+        >
+          <option value="" disabled>Select Station...</option>
+          {browserStations.map(s => <option key={s.code} value={s.code}>{s.name} ({s.code})</option>)}
+        </select>
+      </div>
+    </div>
+  ) : null;
+
   // ── EDIT MODE ──────────────────────────────────────────────────────────────
   if (editing && canManage) return (
     <div className="space-y-5 text-xs">
-
+      {BrowserToolbar}
       {/* ① Station Info */}
       <div>
         <div className="flex items-center justify-between mb-1.5">
@@ -3525,6 +3603,7 @@ ${sheet('Station Earning',[
 
   return (
     <>
+    {BrowserToolbar}
     {/* Check dialog — renders over view mode */}
     {checkDialog && (
       <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/30 backdrop-blur-sm"
