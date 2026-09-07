@@ -1657,6 +1657,8 @@ type HD = {
   cmiCheckedAt: string;
   /** Linked external data sources */
   dataSources: DataSource[];
+  lastUpdatedBy?: string;
+  lastUpdatedAt?: string;
 };
 const mkCH = (name = ''): CounterHead => ({
   name, total: '', M: '', E: '', N: '', mpSanctioned: '', mpOnRoll: '', mpActual: '',
@@ -1996,12 +1998,17 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
 
   // ── Save — stamp section dates, persist to widget + global store ──────────
   const persistHD = (h: HD) => {
-    onUpdate({ handoutData: h } as any);
-    const code = h.stationCode?.toUpperCase().trim();
+    const finalH = {
+      ...h,
+      lastUpdatedBy: currentUser?.name || 'System',
+      lastUpdatedAt: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    };
+    onUpdate({ handoutData: finalH } as any);
+    const code = finalH.stationCode?.toUpperCase().trim();
     if (code) {
       import('@/lib/config/sharedSync').then(({ sharedWrite, sharedRead }) => {
         // 1. Save the handout data itself (cross-device)
-        sharedWrite(`handout_${code}`, h);
+        sharedWrite(`handout_${code}`, finalH);
         // 2. Maintain an index of all saved codes so HandoutDirectoryTab can enumerate them
         sharedRead('handout_codes').then((existing: unknown) => {
           const codes: string[] = Array.isArray(existing) ? existing : [];
@@ -2853,7 +2860,14 @@ ${sheet('Station Earning',[
 
       {/* ① Station Info */}
       <div>
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Station Info</p>
+        <div className="flex items-center justify-between mb-1.5">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Station Info</p>
+          {(d.lastUpdatedAt && d.lastUpdatedBy) && (
+            <p className="text-[10px] text-slate-400 italic">
+              Last updated by {d.lastUpdatedBy} at {d.lastUpdatedAt}
+            </p>
+          )}
+        </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
 
           {/* Station Code — autocomplete */}
@@ -3571,6 +3585,11 @@ ${sheet('Station Earning',[
             </p>
           )}
           {d.date && <p className="text-amber-200 text-[10px] mt-0.5">As on {d.date}</p>}
+          {(d.lastUpdatedAt && d.lastUpdatedBy) && (
+            <p className="text-amber-200 text-[10px] mt-0.5">
+              Last updated by {d.lastUpdatedBy} at {d.lastUpdatedAt}
+            </p>
+          )}
           {/* CMI check status */}
           {d.cmiCheckedBy && (
             <p className="text-green-300 text-[10px] mt-0.5 font-medium">
