@@ -2038,6 +2038,7 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
   widget: LayoutWidget; onUpdate: (p: Partial<LayoutWidget>) => void; canManage: boolean;
 }) {
   const [editing, setEditing] = useState(false);
+  const [multiData, setMultiData] = useState<HD[]>([]);
   const [d, setD] = useState<HD>(() => {
     const s = (widget as any).handoutData as Partial<HD> | undefined;
     if (!s) return mkHD();
@@ -2282,6 +2283,31 @@ function HandoutWidget({ widget, onUpdate, canManage }: {
 
   const switchStation = (code: string) => {
     if (!code) return;
+
+    if (code === 'ALL') {
+      const stations = HARDCODED_SECTIONS[activeSection] || [];
+      const codes = stations.map(s => s.code.toUpperCase());
+      import('@/lib/config/sharedSync').then(async ({ sharedRead }) => {
+        const loaded: HD[] = [];
+        for (const stnCode of codes) {
+          const val = await sharedRead(`handout_${stnCode}`);
+          if (val && typeof val === 'object') {
+            loaded.push(val as HD);
+          } else {
+             const stn = stations.find(s => s.code === stnCode);
+             const sk = mkHD(); sk.stationCode = stnCode; sk.stationName = stn?.name||''; sk.section = activeSection;
+             loaded.push(sk);
+          }
+        }
+        setMultiData(loaded);
+        const dummyAll = mkHD();
+        dummyAll.stationCode = 'ALL';
+        setD(dummyAll);
+        onUpdate({ handoutData: dummyAll } as any);
+        setEditing(false);
+      });
+      return;
+    }
     
     // Find station details from HARDCODED_SECTIONS first
     let stationDetails = null;
@@ -3366,6 +3392,7 @@ ${sheet('Station Earning',[
             className="bg-white border border-slate-200 text-xs font-medium text-slate-700 px-2 py-1.5 rounded-lg focus:outline-none focus:border-amber-400 w-full"
           >
             <option value="" disabled>Select Station...</option>
+            {activeSection !== 'All Sections' && <option value="ALL" className="font-bold text-amber-800 bg-amber-100">-- ALL STATIONS IN {activeSection} --</option>}
             {activeSection === 'All Sections' ? (
               browserSections.map(sec => (
                 <optgroup key={sec} label={sec}>
@@ -4021,19 +4048,12 @@ ${sheet('Station Earning',[
   );
 
   // ── VIEW MODE ──────────────────────────────────────────────────────────────
-  const hasData = !!(d.stationName || d.stationCode);
+
 
 
   // Only show a counter if it has at least one data value — hides rows like STBA or
   // Announcement that exist in the list but were never filled in for this station.
-  const visibleCH = d.counterHeads.filter(ch =>
-    ch.name && (
-      ch.total || ch.M || ch.E || ch.N ||
-      ch.mpSanctioned || ch.mpOnRoll || ch.mpActual ||
-      (ch.sides && ch.sides.some(s => s.count || s.M || s.E || s.N)) ||
-      (ch.extraFields && ch.extraFields.some(ef => ef.value))
-    )
-  );
+
 
   /** Compact audit trail shown next to each section header */
   const SecMeta = ({ meta, sec }: { meta?: SectionMeta; sec: string }) => {
@@ -4051,6 +4071,8 @@ ${sheet('Station Earning',[
       </div>
     );
   };
+
+  const viewModeData = d.stationCode === 'ALL' ? multiData : [d];
 
   return (
     <>
@@ -4081,7 +4103,26 @@ ${sheet('Station Earning',[
       </div>
     )}
 
-    {!hasData ? (
+    <div className="flex flex-col gap-12">
+    {viewModeData.map((item_d, map_idx) => {
+      const d = item_d;
+      const hasData = !!(d.stationName || d.stationCode);
+      const visibleCH = d.counterHeads.filter(ch =>
+        ch.name && (
+          ch.total || ch.M || ch.E || ch.N ||
+          ch.mpSanctioned || ch.mpOnRoll || ch.mpActual ||
+          (ch.sides && ch.sides.some(s => s.count || s.M || s.E || s.N)) ||
+          (ch.extraFields && ch.extraFields.some(ef => ef.value))
+        )
+      );
+      return (
+        <div key={d.stationCode || map_idx} className="relative space-y-5">
+          {viewModeData.length > 1 && (
+            <div className="sticky top-0 z-10 bg-amber-100 border-b border-amber-300 px-3 py-2 -mx-2 mb-4 rounded-t-lg shadow-sm">
+              <h2 className="text-sm font-bold text-amber-900">{d.stationName} ({d.stationCode})</h2>
+            </div>
+          )}
+          {!hasData ? (
       canManage ? (
         <div className="text-center py-8 space-y-3">
           <p className="text-4xl">🗂️</p>
@@ -4682,6 +4723,10 @@ ${sheet('Station Earning',[
         </div>
       </div>
     )}
+        </div>
+      );
+    })}
+    </div>
     </>
   );
 }
