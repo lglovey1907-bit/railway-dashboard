@@ -3243,9 +3243,30 @@ ${sheet('Station Earning',[
 
   const [batchUrl, setBatchUrl] = useState('');
   const [batchSyncStatus, setBatchSyncStatus] = useState('');
+
+  // Load section-specific batch URL
+  useEffect(() => {
+    if (activeSection && activeSection !== 'All Sections') {
+      import('@/lib/config/sharedSync').then(({ sharedRead }) => {
+        sharedRead(`handout_batch_url_${activeSection}`).then((val) => {
+          if (typeof val === 'string') setBatchUrl(val);
+          else setBatchUrl('');
+        });
+      });
+    } else {
+      setBatchUrl('');
+    }
+  }, [activeSection]);
   
   const handleToolbarBatchSync = async () => {
     if (!batchUrl) return;
+    
+    // Auto-save the URL for this section before starting sync
+    if (activeSection && activeSection !== 'All Sections') {
+      import('@/lib/config/sharedSync').then(({ sharedWrite }) => {
+        sharedWrite(`handout_batch_url_${activeSection}`, batchUrl);
+      });
+    }
     const exportUrl = toDocHtmlUrl(batchUrl);
     if (!exportUrl) {
       setBatchSyncStatus('⚠ Invalid Google Doc URL');
@@ -3354,6 +3375,13 @@ ${sheet('Station Earning',[
             placeholder="Paste Google Doc URL here..." 
             value={batchUrl}
             onChange={e => setBatchUrl(e.target.value)}
+            onBlur={() => {
+              if (activeSection && activeSection !== 'All Sections') {
+                import('@/lib/config/sharedSync').then(({ sharedWrite }) => {
+                  sharedWrite(`handout_batch_url_${activeSection}`, batchUrl);
+                });
+              }
+            }}
             className="flex-1 min-w-[200px] text-[10px] px-2 py-1 rounded border border-amber-300 focus:outline-none focus:border-amber-500 bg-white"
           />
           <button 
